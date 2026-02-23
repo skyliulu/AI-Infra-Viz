@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useState } from 'react';
-import { Github, Cpu, Zap, Menu, X } from 'lucide-react';
+import { Github, Cpu, Zap, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,6 +25,7 @@ function LoadingFallback() {
 export default function MainDashboard() {
   const [activeTab, setActiveTab] = useState(TABS[0].id);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const ActiveComponent = TABS.find((t) => t.id === activeTab)?.component;
 
@@ -41,27 +42,50 @@ export default function MainDashboard() {
       {/* ── Left Sidebar ── */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-30 w-56 flex flex-col bg-slate-900 border-r border-slate-800 transition-transform duration-300',
+          'fixed inset-y-0 left-0 z-30 flex flex-col bg-slate-900 border-r border-slate-800 transition-all duration-300',
+          sidebarCollapsed ? 'w-14' : 'w-44',
           'md:static md:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Logo */}
-        <div className="flex items-center justify-between h-16 px-5 border-b border-slate-800 shrink-0">
-          <span className="text-lg font-bold tracking-tight text-white">
-            AI-Infra-Viz
-          </span>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="md:hidden text-slate-400 hover:text-white transition-colors"
-            aria-label="Close sidebar"
-          >
-            <X size={20} />
-          </button>
+        <div className="flex items-center justify-between h-14 px-3 border-b border-slate-800 shrink-0">
+          {!sidebarCollapsed && (
+            <span className="text-base font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent whitespace-nowrap select-none">
+              AI-Infra-Viz
+            </span>
+          )}
+          <div className={cn('flex items-center gap-1', sidebarCollapsed && 'w-full justify-center')}>
+            {!sidebarCollapsed && (
+              <a
+                href="https://github.com/skyliulu/AI-Infra-Viz"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-400 hover:text-white transition-colors p-1 rounded"
+                aria-label="GitHub repository"
+              >
+                <Github size={16} />
+              </a>
+            )}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="hidden md:block text-slate-400 hover:text-white transition-colors p-1 rounded"
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            </button>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="md:hidden text-slate-400 hover:text-white transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = tab.id === activeTab;
@@ -73,32 +97,35 @@ export default function MainDashboard() {
                   setSidebarOpen(false);
                 }}
                 className={cn(
-                  'w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  sidebarCollapsed && 'justify-center px-0',
                   isActive
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 )}
+                title={sidebarCollapsed ? tab.label : undefined}
               >
                 <Icon size={16} />
-                {tab.label}
+                {!sidebarCollapsed && tab.label}
               </button>
             );
           })}
         </nav>
 
-        {/* GitHub link at bottom */}
-        <div className="px-3 py-4 border-t border-slate-800 shrink-0">
-          <a
-            href="https://github.com/skyliulu/AI-Infra-Viz"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            aria-label="GitHub repository"
-          >
-            <Github size={16} />
-            GitHub
-          </a>
-        </div>
+        {/* GitHub icon shown in collapsed state */}
+        {sidebarCollapsed && (
+          <div className="px-2 py-3 border-t border-slate-800 shrink-0 flex justify-center">
+            <a
+              href="https://github.com/skyliulu/AI-Infra-Viz"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-400 hover:text-white transition-colors p-1.5 rounded"
+              aria-label="GitHub repository"
+            >
+              <Github size={16} />
+            </a>
+          </div>
+        )}
       </aside>
 
       {/* ── Right side: header + content ── */}
@@ -112,11 +139,11 @@ export default function MainDashboard() {
           >
             <Menu size={22} />
           </button>
-          <span className="ml-3 text-base font-semibold text-white">AI-Infra-Viz</span>
+          <span className="ml-3 text-base font-extrabold bg-gradient-to-r from-blue-400 to-violet-400 bg-clip-text text-transparent">AI-Infra-Viz</span>
         </header>
 
-        {/* Main content — fills all available space */}
-        <main className="flex-1 p-4 md:p-6 overflow-auto">
+        {/* Main content — no outer padding to avoid dark border around components */}
+        <main className="flex-1 overflow-auto">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
