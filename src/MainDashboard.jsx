@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useState } from 'react';
-import { Github, Cpu, Zap } from 'lucide-react';
+import { Github, Cpu, Zap, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -16,7 +16,7 @@ const TABS = [
 
 function LoadingFallback() {
   return (
-    <div className="flex items-center justify-center h-64 text-indigo-300 text-lg animate-pulse">
+    <div className="flex items-center justify-center h-64 text-slate-400 text-lg animate-pulse">
       Loading visualization…
     </div>
   );
@@ -24,44 +24,59 @@ function LoadingFallback() {
 
 export default function MainDashboard() {
   const [activeTab, setActiveTab] = useState(TABS[0].id);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const ActiveComponent = TABS.find((t) => t.id === activeTab)?.component;
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-950 text-gray-100">
-      {/* ── Navigation Bar ── */}
-      <nav className="bg-indigo-950 shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
-          <span className="text-xl font-bold tracking-tight text-white">
+    <div className="min-h-screen flex bg-slate-950 text-slate-100">
+      {/* ── Mobile overlay ── */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/60 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* ── Left Sidebar ── */}
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-30 w-56 flex flex-col bg-slate-900 border-r border-slate-800 transition-transform duration-300',
+          'md:static md:translate-x-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        {/* Logo */}
+        <div className="flex items-center justify-between h-16 px-5 border-b border-slate-800 shrink-0">
+          <span className="text-lg font-bold tracking-tight text-white">
             AI-Infra-Viz
           </span>
-          <a
-            href="https://github.com/skyliulu/AI-Infra-Viz"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-indigo-300 hover:text-white transition-colors"
-            aria-label="GitHub repository"
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden text-slate-400 hover:text-white transition-colors"
+            aria-label="Close sidebar"
           >
-            <Github size={24} />
-          </a>
+            <X size={20} />
+          </button>
         </div>
-      </nav>
 
-      {/* ── Tab Bar ── */}
-      <div className="bg-indigo-950/60 border-b border-indigo-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-2">
+        {/* Nav items */}
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = tab.id === activeTab;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setSidebarOpen(false);
+                }}
                 className={cn(
-                  'flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors',
+                  'w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
                   isActive
-                    ? 'border-indigo-400 text-indigo-300'
-                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 )}
               >
                 <Icon size={16} />
@@ -69,30 +84,60 @@ export default function MainDashboard() {
               </button>
             );
           })}
-        </div>
-      </div>
+        </nav>
 
-      {/* ── Main Content ── */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.25 }}
+        {/* GitHub link at bottom */}
+        <div className="px-3 py-4 border-t border-slate-800 shrink-0">
+          <a
+            href="https://github.com/skyliulu/AI-Infra-Viz"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="GitHub repository"
           >
-            <Suspense fallback={<LoadingFallback />}>
-              {ActiveComponent && <ActiveComponent />}
-            </Suspense>
-          </motion.div>
-        </AnimatePresence>
-      </main>
+            <Github size={16} />
+            GitHub
+          </a>
+        </div>
+      </aside>
 
-      {/* ── Footer ── */}
-      <footer className="bg-indigo-950/40 border-t border-indigo-900 py-4 text-center text-xs text-gray-500">
-        © {new Date().getFullYear()} AI-Infra-Viz — Visualizing AI Infrastructure
-      </footer>
+      {/* ── Right side: header + content ── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile top bar */}
+        <header className="md:hidden flex items-center h-14 px-4 bg-slate-900 border-b border-slate-800 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-slate-400 hover:text-white transition-colors"
+            aria-label="Open sidebar"
+          >
+            <Menu size={22} />
+          </button>
+          <span className="ml-3 text-base font-semibold text-white">AI-Infra-Viz</span>
+        </header>
+
+        {/* Main content — fills all available space */}
+        <main className="flex-1 p-4 md:p-6 overflow-auto">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25 }}
+              className="h-full"
+            >
+              <Suspense fallback={<LoadingFallback />}>
+                {ActiveComponent && <ActiveComponent />}
+              </Suspense>
+            </motion.div>
+          </AnimatePresence>
+        </main>
+
+        {/* Footer */}
+        <footer className="shrink-0 border-t border-slate-800 py-3 px-6 text-center text-xs text-slate-500">
+          © {new Date().getFullYear()} AI-Infra-Viz — Visualizing AI Infrastructure
+        </footer>
+      </div>
     </div>
   );
 }
