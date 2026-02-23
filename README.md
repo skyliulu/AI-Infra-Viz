@@ -1,14 +1,14 @@
 # AI-Infra-Viz 🚀
 
-> **掀开大模型推理的"引擎盖"，直观理解 AI 基础设施的底层艺术。**
+> **Lift the hood on large model inference and intuitively understand the low-level art of AI infrastructure.**
 
-`AI-Infra-Viz` 是一个交互式的全景可视化项目，旨在填补"抽象算法"与"底层算子"之间的认知鸿沟。
-它不仅展示了 LLM 是如何思考的，还展示了硬件内存墙（Memory Wall）是如何被 Flash Attention 等技术击碎的。
+`AI-Infra-Viz` is an interactive, panoramic visualization project designed to bridge the cognitive gap between "abstract algorithms" and "low-level operators".
+It shows not only how LLMs think, but also how the hardware Memory Wall is shattered by techniques like Flash Attention.
 
-### 🌟 核心看点
-- **LLM 全景推理**: 实时观察 MoE 路由、RoPE 旋转位置编码以及自回归回路。
-- **Flash Attention 深度解剖**: 物理级模拟 SRAM 与 HBM 之间的数据搬运与切块（Tiling）策略。
-- **零依赖组件**: 所有的可视化逻辑均封装在独立的 React 组件中，可直接复用。
+### 🌟 Highlights
+- **LLM End-to-End Inference**: Watch MoE routing, RoPE positional encoding, and the autoregressive loop in real time.
+- **Flash Attention Deep Dive**: Physics-level simulation of data movement and tiling strategies between SRAM and HBM.
+- **Zero-Dependency Components**: All visualization logic is encapsulated in standalone React components, ready to reuse.
 
-### 🔗 在线演示
-访问 [GitHub Pages](https://skyliulu.github.io/AI-Infra-Viz/) 查看在线演示。
+### 🔗 Live Demo
+Visit the [GitHub Pages](https://skyliulu.github.io/AI-Infra-Viz/) live demo.
