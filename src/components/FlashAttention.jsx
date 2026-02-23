@@ -1,11 +1,5 @@
-// FlashAttention.jsx
-// ─────────────────────────────────────────────────────────────────
-// Paste your Flash Attention visualization logic here.
-// The component is lazy-loaded by MainDashboard.
-// ─────────────────────────────────────────────────────────────────
-
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipForward, RotateCcw, Cpu, Database, Zap, Code, ArrowRight, ArrowDown, Activity, Layers, RefreshCw, EyeOff, Wrench, Info, CheckCircle2 } from 'lucide-react';
+import { Play, Pause, SkipForward, RotateCcw, Cpu, Database, Zap, Code, ArrowRight, Activity, Layers, RefreshCw, EyeOff, Wrench, Info, CheckCircle2 } from 'lucide-react';
 
 const App = () => {
   const [modelType, setModelType] = useState('flash'); 
@@ -13,28 +7,43 @@ const App = () => {
   const [activeModule, setActiveModule] = useState(0); 
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Flash Attention 状态推导函数 (Q:3块, KV:2块)
+  // --- 全局硬核维度 ---
+  const N = 192; // 总序列长度
+  const d = 64;  // 头维度
+  const Br = 64; // Q / O 切块 (192/64 = 3块)
+  const Bc = 96; // K / V 切块 (192/96 = 2块)
+
+  const colorMap = {
+    indigo: { bg: 'bg-indigo-200', border: 'border-indigo-400', text: 'text-indigo-900' },
+    amber: { bg: 'bg-amber-200', border: 'border-amber-400', text: 'text-amber-900' },
+    blue: { bg: 'bg-blue-200', border: 'border-blue-400', text: 'text-blue-900' },
+    emerald: { bg: 'bg-emerald-200', border: 'border-emerald-400', text: 'text-emerald-900' }
+  };
+
+  // 严格依据索引交集的掩码推导
+  // Q1 [0:64], Q2 [64:128], Q3 [128:192]
+  // K1 [0:96], K2 [96:192]
   const getFlashState = (step) => {
     if (step === 1) return { i: 0, j: 0, state: 'setup', mask: null, deltaIo: 0 };
-    // Q1 循环 (Index: 0-63)
+    // Q1 循环 [0:64]
     if (step >= 2 && step <= 5) {
-      if (step === 2) return { i: 1, j: 0, state: 'load_q', mask: null, deltaIo: 1, rangeQ: '0:63' };
-      if (step === 3) return { i: 1, j: 1, state: 'compute', mask: 'partial', deltaIo: 2, rangeQ: '0:63', rangeK: '0:63' }; 
-      if (step === 4) return { i: 1, j: 2, state: 'skip', mask: 'skip', deltaIo: 0, rangeQ: '0:63', rangeK: '64:127' };    
+      if (step === 2) return { i: 1, j: 0, state: 'load_q', mask: null, deltaIo: 1, rangeQ: '0:64' };
+      if (step === 3) return { i: 1, j: 1, state: 'compute', mask: 'partial', deltaIo: 2, rangeQ: '0:64', rangeK: '0:96' }; // K1 [0:96] 与 Q1 交叉
+      if (step === 4) return { i: 1, j: 2, state: 'skip', mask: 'skip', deltaIo: 0, rangeQ: '0:64', rangeK: '96:192' };    // K2 [96:192] 完全在 Q1 未来
       if (step === 5) return { i: 1, j: 0, state: 'write_o', mask: null, deltaIo: 1 };
     }
-    // Q2 循环 (Index: 64-127)
+    // Q2 循环 [64:128]
     if (step >= 6 && step <= 9) {
-      if (step === 6) return { i: 2, j: 0, state: 'load_q', mask: null, deltaIo: 1, rangeQ: '64:127' };
-      if (step === 7) return { i: 2, j: 1, state: 'compute', mask: 'none', deltaIo: 2, rangeQ: '64:127', rangeK: '0:63' }; 
-      if (step === 8) return { i: 2, j: 2, state: 'compute', mask: 'partial', deltaIo: 2, rangeQ: '64:127', rangeK: '64:127' }; 
+      if (step === 6) return { i: 2, j: 0, state: 'load_q', mask: null, deltaIo: 1, rangeQ: '64:128' };
+      if (step === 7) return { i: 2, j: 1, state: 'compute', mask: 'partial', deltaIo: 2, rangeQ: '64:128', rangeK: '0:96' }; // K1 结束于96，处于Q2内部，交叉
+      if (step === 8) return { i: 2, j: 2, state: 'compute', mask: 'partial', deltaIo: 2, rangeQ: '64:128', rangeK: '96:192' }; // K2 开始于96，处于Q2内部，交叉
       if (step === 9) return { i: 2, j: 0, state: 'write_o', mask: null, deltaIo: 1 };
     }
-    // Q3 循环 (Index: 128-191)
+    // Q3 循环 [128:192]
     if (step >= 10 && step <= 13) {
-      if (step === 10) return { i: 3, j: 0, state: 'load_q', mask: null, deltaIo: 1, rangeQ: '128:191' };
-      if (step === 11) return { i: 3, j: 1, state: 'compute', mask: 'none', deltaIo: 2, rangeQ: '128:191', rangeK: '0:63' };
-      if (step === 12) return { i: 3, j: 2, state: 'compute', mask: 'none', deltaIo: 2, rangeQ: '128:191', rangeK: '64:127' };
+      if (step === 10) return { i: 3, j: 0, state: 'load_q', mask: null, deltaIo: 1, rangeQ: '128:192' };
+      if (step === 11) return { i: 3, j: 1, state: 'compute', mask: 'none', deltaIo: 2, rangeQ: '128:192', rangeK: '0:96' }; // K1 [0:96] 完全在 Q3 过去！
+      if (step === 12) return { i: 3, j: 2, state: 'compute', mask: 'partial', deltaIo: 2, rangeQ: '128:192', rangeK: '96:192' }; // K2 [96:192] 与 Q3 交叉
       if (step === 13) return { i: 3, j: 0, state: 'write_o', mask: null, deltaIo: 1 };
     }
     return { i: 0, j: 0, state: 'done', mask: null, deltaIo: 0 };
@@ -63,18 +72,18 @@ const App = () => {
   const getIoText = () => {
     if (phase === 'idle') return "IO 闲置";
     if (modelType === 'standard') {
-      if (activeModule === 1) return "分配 HBM 显存地址";
-      if (activeModule === 2) return "搬运 Q,Kᵀ / 写回 S";
-      if (activeModule === 3) return "搬运 S / 写回 P";
-      if (activeModule >= 4) return "搬运 P,V / 写回 O";
+      if (activeModule === 1) return "分配显存地址";
+      if (activeModule === 2) return "读 Q,K / 写 S";
+      if (activeModule === 3) return "读 S / 写 P";
+      if (activeModule >= 4) return "读 P,V / 写 O";
     } else {
-      if (activeModule === 1) return "SRAM 探测与切块对齐";
-      if (fs.state === 'load_q') return `读取 Q${fs.i} [${fs.rangeQ}]`;
-      if (fs.state === 'compute') return `读取 K${fs.j},V${fs.j} [${fs.rangeK}]`;
-      if (fs.state === 'skip') return `跳过未来分块 K${fs.j}`;
-      if (fs.state === 'write_o') return `写回 O${fs.i} 最终结果`;
+      if (activeModule === 1) return "参数探测与切分";
+      if (fs.state === 'load_q') return `读取 Q 块 (Br×d)`;
+      if (fs.state === 'compute') return `加载 K,V 块 (d×Bc)`;
+      if (fs.state === 'skip') return `拦截未来块 K`;
+      if (fs.state === 'write_o') return `写回 O 归一化块`;
     }
-    return "计算结束";
+    return "完成";
   };
 
   useEffect(() => {
@@ -82,8 +91,8 @@ const App = () => {
     if (isPlaying && phase !== 'done') {
       let delay = 2200; 
       if (activeModule === 0) delay = 500;
-      if (activeModule === 1) delay = 3200;
-      if (modelType === 'flash' && fs.state === 'skip') delay = 1000; 
+      if (activeModule === 1) delay = 3000;
+      if (modelType === 'flash' && fs.state === 'skip') delay = 1200; 
       timer = setTimeout(() => handleNextStep(), delay); 
     }
     return () => clearTimeout(timer);
@@ -124,21 +133,30 @@ const App = () => {
     }
   };
 
+  // 根据 modelType 动态决定 HBM 显示的 blocks 数量
   const hbmMatrices = [
     { 
-      name: 'Q', color: 'indigo', shape: 'vertical', blocks: 3, labels: ['0:63', '64:127', '128:191'],
+      name: 'Q', color: 'indigo', shape: 'vertical', 
+      blocks: modelType === 'flash' ? 3 : 1, 
+      labels: modelType === 'flash' ? ['0:64', '64:128', '128:192'] : ['N=192 (Full)'],
       isActive: (idx) => modelType === 'flash' ? (fs.i === idx + 1 && fs.state !== 'setup') : activeModule >= 2
     },
     { 
-      name: 'K', color: 'amber', shape: 'horizontal', blocks: 2, isTranspose: true, labels: ['0:63', '64:127'],
+      name: 'K', color: 'amber', shape: 'horizontal', isTranspose: true,
+      blocks: modelType === 'flash' ? 2 : 1, 
+      labels: modelType === 'flash' ? ['0:96', '96:192'] : ['N=192 (Full)'],
       isActive: (idx) => modelType === 'flash' ? (fs.j === idx + 1 && fs.state !== 'skip') : activeModule >= 2
     },
     { 
-      name: 'V', color: 'blue', shape: 'vertical', blocks: 2, labels: ['0:63', '64:127'],
+      name: 'V', color: 'blue', shape: 'vertical', 
+      blocks: modelType === 'flash' ? 2 : 1, 
+      labels: modelType === 'flash' ? ['0:96', '96:192'] : ['N=192 (Full)'],
       isActive: (idx) => modelType === 'flash' ? (fs.j === idx + 1 && fs.state !== 'skip') : activeModule >= 4
     },
     { 
-      name: 'O', color: 'emerald', shape: 'vertical', blocks: 3, labels: ['0:63', '64:127', '128:191'],
+      name: 'O', color: 'emerald', shape: 'vertical', 
+      blocks: modelType === 'flash' ? 3 : 1, 
+      labels: modelType === 'flash' ? ['0:64', '64:128', '128:192'] : ['N=192 (Full)'],
       isActive: (idx) => {
         if (modelType !== 'flash') return activeModule >= 4;
         if (idx === 0) return activeModule >= 5;
@@ -151,47 +169,35 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 lg:p-6 selection:bg-indigo-100">
-      <div className="max-w-[90rem] mx-auto space-y-6">
+      <div className="max-w-[90rem] mx-auto space-y-4 md:space-y-6">
         
-        {/* Header & Controls */}
-        <div className="bg-white rounded-2xl p-4 lg:p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2 text-indigo-900">
+        {/* 顶部控制栏 */}
+        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-200 flex flex-col lg:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col">
+            <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2 text-indigo-900">
               <Zap className="text-amber-500" />
               Flash Attention 原理全景可视化
             </h1>
-            <p className="text-slate-500 text-sm mt-1">
-              突破显存墙：切块解耦 (Tiling)、掩码三种物理状态 (Mask) 与在线 Softmax 修正机制
+            <p className="text-slate-500 text-[12px] md:text-sm mt-1">
+              通过真实索引对齐，深刻理解硬件感知的 Tiling 与因果掩码策略
             </p>
           </div>
           
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 mr-2">
-              <button onClick={() => handleModelTypeChange('standard')} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs lg:text-sm font-semibold rounded-md transition-all ${modelType === 'standard' ? 'bg-white shadow-sm text-rose-700' : 'text-slate-500 hover:text-slate-700'}`}>
-                标准 Attention (低效)
+            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+              <button onClick={() => handleModelTypeChange('standard')} className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] md:text-sm font-semibold rounded-md transition-all ${modelType === 'standard' ? 'bg-white shadow-sm text-rose-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                标准 Attention
               </button>
-              <button onClick={() => handleModelTypeChange('flash')} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs lg:text-sm font-semibold rounded-md transition-all ${modelType === 'flash' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:text-slate-700'}`}>
-                <Zap size={14} /> Flash Attention (高效)
+              <button onClick={() => handleModelTypeChange('flash')} className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] md:text-sm font-semibold rounded-md transition-all ${modelType === 'flash' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Zap size={14} /> Flash Attention
               </button>
             </div>
-            <button onClick={reset} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition" title="重置"><RotateCcw size={20} /></button>
-            <button onClick={togglePlay} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white transition shadow-sm ${isPlaying ? 'bg-rose-500 hover:bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-              {isPlaying ? <><Pause size={18} /> 暂停</> : <><Play size={18} /> {phase === 'done' ? '重播' : '自动播放'}</>}
+            <button onClick={reset} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition" title="重置"><RotateCcw size={18} /></button>
+            <button onClick={togglePlay} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white transition shadow-sm ${isPlaying ? 'bg-rose-500 hover:bg-rose-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+              {isPlaying ? <><Pause size={16} /> 暂停</> : <><Play size={16} /> {phase === 'done' ? '重播' : '自动播放'}</>}
             </button>
-            <button onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} className="flex items-center gap-2 px-4 py-2 w-56 justify-center rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 disabled:opacity-50 transition shadow-sm font-semibold">
-              <SkipForward size={18} /> <span className="text-sm truncate">
-                {phase === 'idle' ? '开始执行' : 
-                 (modelType === 'standard' ? 
-                   (activeModule === 1 ? '初始化 Setup' : 
-                    activeModule === 2 ? '算 S 矩阵与掩码' : 
-                    activeModule === 3 ? '算 P (Softmax)' : '输出 O 结果') : 
-                   (activeModule === 1 ? '硬件感知 Setup' : 
-                    fs.state === 'load_q' ? `载入 Q${fs.i}` : 
-                    fs.state === 'compute' ? `计算 K${fs.j}V${fs.j}` : 
-                    fs.state === 'skip' ? `掩码跳过` : `归一化写回 O${fs.i}`)
-                 )
-                }
-              </span>
+            <button onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} className="flex items-center gap-2 px-4 py-2 w-32 md:w-48 justify-center rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 text-sm font-bold disabled:opacity-50 transition shadow-sm">
+              <SkipForward size={16} /> <span className="truncate">下一阶段</span>
             </button>
           </div>
         </div>
@@ -199,155 +205,192 @@ const App = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="col-span-1 lg:col-span-2 space-y-6">
             
-            {/* 顶层可视化：显存架构 (HBM vs SRAM) */}
-            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 relative overflow-hidden flex flex-col gap-4">
-              <h2 className="text-lg font-semibold flex items-center justify-between">
-                <div className="flex items-center gap-2"><Database className="text-indigo-500" size={20} /> 物理硬件：显存读写瓶颈可视化</div>
-              </h2>
+            {/* 物理硬件视角 */}
+            <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-200 relative flex flex-col gap-4">
               
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 relative">
-                {modelType === 'flash' && (
-                  <div className="absolute -top-3 right-4 bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg animate-pulse flex items-center gap-1">
-                    <Activity size={10}/> GPU SM 并行中 (Parallel Mode)
-                  </div>
-                )}
-                
+              {/* 标题与参数看板 */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 font-semibold text-lg text-slate-700">
+                  <Database className="text-indigo-500" size={20} /> 物理层数据交换视图
+                </div>
+                {/* 显眼的核心参数看板 - 仅保留 N 和 d */}
+                <div className="flex items-center divide-x divide-indigo-200 bg-indigo-50 rounded-lg border border-indigo-100 shadow-inner px-2 py-1 text-[11px] md:text-xs text-indigo-800 font-mono">
+                  <div className="px-2">N = <strong className="text-indigo-900">192</strong></div>
+                  <div className="px-2">d = <strong className="text-indigo-900">64</strong></div>
+                </div>
+              </div>
+              
+              {/* IO 流量槽 */}
+              <div className="bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-100">
                 <div className="flex justify-between items-end mb-2">
-                  <span className="text-sm font-bold text-slate-600 flex items-center gap-1"><Activity size={16}/> 累计显存 IO 流量</span>
+                  <span className="text-xs md:text-sm font-bold text-slate-600 flex items-center gap-1"><Activity size={16}/> 显存 IO 累计流量 (HBM)</span>
                   <div className="text-right">
-                    <span className={`text-2xl font-black font-mono ${modelType === 'standard' ? 'text-rose-600' : 'text-emerald-600'}`}>{currentTraffic}</span>
-                    <span className="text-slate-500 text-sm ml-1">MB</span>
+                    <span className={`text-xl md:text-2xl font-black font-mono ${modelType === 'standard' ? 'text-rose-600' : 'text-emerald-600'}`}>{currentTraffic}</span>
+                    <span className="text-slate-500 text-xs ml-1">MB</span>
                   </div>
                 </div>
-                <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden relative">
+                <div className="w-full h-2.5 md:h-3 bg-slate-200 rounded-full overflow-hidden relative">
                   <div className={`h-full rounded-full transition-all duration-700 ease-out ${modelType === 'standard' ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min((currentTraffic / MAX_TRAFFIC) * 100, 100)}%` }}></div>
-                  {currentTraffic > 200 && <div className="absolute top-0 right-4 h-full text-[9px] text-rose-900 font-bold flex items-center">Memory Wall!</div>}
                 </div>
               </div>
 
-              {/* 物理层架构图 */}
-              <div className="flex flex-col md:flex-row gap-4 items-stretch justify-center min-h-[26rem] mt-2">
+              {/* 采用严格的 Grid 布局解决遮挡问题 */}
+              <div className="grid grid-cols-[1fr_80px_1fr] md:grid-cols-[1fr_120px_1fr] gap-2 md:gap-4 items-stretch justify-center min-h-[28rem] md:min-h-[32rem] mt-2 relative">
                 
-                {/* HBM (主显存) */}
-                <div className="flex-[5] bg-slate-100 rounded-xl border-2 border-slate-300 p-4 flex flex-col items-center relative overflow-hidden">
-                  <div className="font-bold text-slate-700 flex items-center gap-1 bg-white px-3 py-1 rounded-full shadow-sm mb-2 z-10">
-                    <Database size={14}/> HBM (容量大/读写慢)
+                {/* HBM */}
+                <div className="bg-slate-100 rounded-2xl border-2 border-slate-300 p-3 md:p-5 flex flex-col items-center relative shadow-sm">
+                  <div className="font-bold text-slate-700 flex items-center gap-1 bg-white px-3 py-1 rounded-full shadow-sm mb-4 border border-slate-200 text-[10px] md:text-xs">
+                    <Database size={14} className="text-blue-500"/> HBM (主显存)
                   </div>
                   
                   <div className="w-full flex-1 flex flex-col justify-start relative pt-2">
-                    <div className="flex justify-center gap-2 md:gap-4 z-10 w-full items-end">
-                      {hbmMatrices.map((mat) => (
-                         <div key={mat.name} className="flex flex-col items-center group">
-                           <span className={`font-serif font-bold mb-1 text-${mat.color}-800`}>{mat.isTranspose ? <>K<sup className="not-italic text-[10px]">T</sup></> : mat.name}</span>
-                           <div className={`
-                             ${mat.shape === 'horizontal' ? 'w-24 md:w-32 h-10 md:h-12 flex-row' : 'w-10 md:w-12 h-28 md:h-32 flex-col'} 
-                             border-2 rounded flex relative overflow-hidden shadow-sm border-${mat.color}-300 transition-all duration-500
-                           `}>
-                              {Array.from({ length: mat.blocks }).map((_, idx) => (
-                                <div key={idx} className={`flex-1 flex flex-col items-center justify-center transition-all duration-300 
-                                  ${mat.shape === 'horizontal' && idx < mat.blocks-1 ? `border-r border-dashed border-${mat.color}-300` : ''} 
-                                  ${mat.shape === 'vertical' && idx < mat.blocks-1 ? `border-b border-dashed border-${mat.color}-300` : ''} 
-                                  ${mat.isActive(idx) ? `bg-${mat.color}-200 ring-inset ring-2 ring-${mat.color}-400` : 'bg-white'}`}>
-                                   <span className={`font-serif text-[9px] font-bold ${mat.isActive(idx) ? `text-${mat.color}-900` : 'text-slate-300'}`}>
-                                     {mat.isTranspose ? <>K<sup className="not-italic">T</sup></> : mat.name}<sub>{idx+1}</sub>
-                                   </span>
-                                   <span className={`text-[7px] font-mono mt-0.5 opacity-60 ${mat.isActive(idx) ? 'text-black' : 'text-slate-300'}`}>[{mat.labels[idx]}]</span>
-                                </div>
-                              ))}
+                    <div className="flex justify-center gap-3 md:gap-6 z-10 w-full items-end">
+                      {hbmMatrices.map((mat) => {
+                         const styles = colorMap[mat.color];
+                         return (
+                           <div key={mat.name} className="flex flex-col items-center group relative">
+                             <span className={`font-serif font-black mb-1 ${styles.text} text-sm md:text-base`}>
+                               {mat.isTranspose ? <>K<sup className="not-italic text-[10px]">T</sup></> : mat.name}
+                             </span>
+                             
+                             {/* 修复：基于 N=192, d=64 强行应用精确的 3:1 和 1:3 长宽比 */}
+                             <div className={`
+                               ${mat.shape === 'horizontal' ? 'w-36 h-12 md:w-48 md:h-16 flex-row' : 'w-12 h-36 md:w-16 md:h-48 flex-col'} 
+                               border-2 rounded shadow-md transition-all duration-500 bg-white flex relative border-slate-300 overflow-hidden
+                             `}>
+                                {Array.from({ length: mat.blocks }).map((_, idx) => {
+                                  const active = mat.isActive(idx);
+                                  return (
+                                    <div key={idx} className={`flex-1 flex flex-col items-center justify-center transition-all duration-300 border-slate-200
+                                      ${mat.shape === 'horizontal' && idx < mat.blocks-1 ? `border-r border-dashed` : ''} 
+                                      ${mat.shape === 'vertical' && idx < mat.blocks-1 ? `border-b border-dashed` : ''} 
+                                      ${active ? `${styles.bg} ${styles.border} ring-2 ring-inset ring-white/60 shadow-inner scale-[1.05] z-20` : 'bg-white grayscale opacity-20'}`}>
+                                       <span className={`font-serif text-[9px] md:text-xs font-black ${active ? styles.text : 'text-slate-400'}`}>
+                                         {mat.isTranspose ? <>K<sup className="not-italic">T</sup></> : mat.name}
+                                         {modelType === 'flash' && <sub>{idx+1}</sub>}
+                                       </span>
+                                       <span className={`text-[6px] md:text-[8px] font-mono font-black text-center px-1 ${active ? 'text-black/60' : 'text-slate-300'}`}>
+                                         {mat.labels[idx]}
+                                       </span>
+                                    </div>
+                                  )
+                                })}
+                             </div>
+                             {/* 底部统一标注 NxD 形状 */}
+                             <span className="text-[10px] text-slate-500 font-serif mt-2 font-bold italic">{mat.shape === 'horizontal' ? 'd×N' : 'N×d'}</span>
                            </div>
-                           <span className="text-[9px] text-slate-500 font-serif mt-1 italic">{mat.shape === 'horizontal' ? 'd×N' : 'N×d'}</span>
-                         </div>
-                      ))}
+                         )
+                      })}
                     </div>
 
-                    <div className="flex justify-center items-center gap-4 w-full mt-4 flex-1">
-                      <div className={`transition-all duration-500 flex flex-col items-center ${modelType === 'standard' && activeModule >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 scale-50 translate-y-4'}`}>
-                        <div className="w-16 h-16 md:w-20 md:h-20 bg-rose-100 border-2 border-dashed border-rose-400 rounded shadow-sm flex items-center justify-center relative overflow-hidden">
-                          {modelType === 'standard' && activeModule >= 2 && <div className="absolute top-0 right-0 w-0 h-0 border-t-[4rem] border-t-slate-800/40 border-l-[4rem] border-l-transparent z-0"></div>}
-                          <span className="font-serif font-bold text-rose-800 text-xl italic z-10">S</span>
+                    {/* S, P 矩阵 (仅 Standard) */}
+                    <div className="flex justify-center items-center gap-6 md:gap-10 w-full mt-12 md:mt-16 flex-1">
+                      <div className={`transition-all duration-500 flex flex-col items-center ${modelType === 'standard' && activeModule >= 2 ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 scale-50 translate-y-8 absolute'}`}>
+                        <div className="w-24 h-24 md:w-36 md:h-36 bg-rose-100 border-2 border-dashed border-rose-400 rounded-xl shadow-xl flex items-center justify-center relative overflow-hidden">
+                          {/* 修复：精准计算对角线掩码比例 */}
+                          {activeModule >= 2 && <div className="absolute top-0 right-0 w-0 h-0 border-t-[6rem] md:border-t-[9rem] border-t-slate-800/40 border-l-[6rem] md:border-l-[9rem] border-l-transparent z-0"></div>}
+                          <span className="font-serif font-black text-rose-800 text-2xl md:text-4xl italic z-10">S</span>
                         </div>
-                        <span className="text-[9px] text-rose-600 font-serif mt-1 font-bold italic">N×N 中间矩阵</span>
+                        <span className="text-[8px] md:text-[10px] text-rose-600 font-mono mt-2 font-bold uppercase">N×N Memory</span>
                       </div>
-                      <div className={`transition-all duration-500 flex flex-col items-center ${modelType === 'standard' && activeModule >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 scale-50 translate-y-4'}`}>
-                        <div className="w-16 h-16 md:w-20 md:h-20 bg-fuchsia-100 border-2 border-dashed border-fuchsia-400 rounded shadow-sm flex items-center justify-center relative overflow-hidden">
-                          <span className="font-serif font-bold text-fuchsia-800 text-xl italic z-10">P</span>
+                      <div className={`transition-all duration-500 flex flex-col items-center ${modelType === 'standard' && activeModule >= 3 ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 scale-50 translate-y-8 absolute'}`}>
+                        <div className="w-24 h-24 md:w-36 md:h-36 bg-fuchsia-100 border-2 border-dashed border-fuchsia-400 rounded-xl shadow-xl flex items-center justify-center">
+                          <span className="font-serif font-black text-fuchsia-800 text-2xl md:text-4xl italic">P</span>
                         </div>
-                        <span className="text-[9px] text-fuchsia-600 font-serif mt-1 font-bold italic">Softmax 结果</span>
+                        <span className="text-[8px] md:text-[10px] text-fuchsia-600 font-mono mt-2 font-bold uppercase">Softmax</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* 传输总线 */}
-                <div className="flex-[2] flex md:flex-col justify-center items-center gap-1 md:gap-2 text-slate-400 relative py-4 md:py-0">
-                   <div className="absolute w-full text-center z-20 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1">
-                     <div className="bg-slate-800 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap hidden md:block">
-                        {getIoText()}
+                {/* IO 箭头区 (完全避免遮挡) */}
+                <div className="flex flex-col justify-center items-center gap-4 relative z-50">
+                   <div className="w-full text-center flex flex-col items-center gap-2">
+                     <div className="bg-slate-900 text-white text-[9px] md:text-[11px] px-2 md:px-3 py-1.5 rounded-full shadow-xl whitespace-nowrap flex items-center gap-1.5 border border-slate-700">
+                        <Activity size={12} className="text-emerald-400 animate-pulse hidden md:block"/> {getIoText()}
                      </div>
-                     {activeModule > 1 && phase === 'running' && (
-                       <div className="bg-emerald-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded animate-bounce shadow-md">
+                     {activeModule > 1 && phase === 'running' && fs.deltaIo !== 0 && (
+                       <div className="bg-emerald-600 text-white text-[10px] md:text-[12px] font-black px-2 md:px-3 py-1 rounded-full animate-bounce shadow-xl border border-white whitespace-nowrap">
                          {modelType === 'standard' ? '+200MB!' : `+${fs.deltaIo}MB`}
                        </div>
                      )}
                    </div>
-                   <ArrowRight className={`hidden md:block transition-all duration-300 ${activeModule > 1 && fs.state !== 'skip' && fs.state !== 'write_o' && activeModule !== 4 ? 'text-indigo-500 scale-150' : ''}`} size={28}/>
-                   <ArrowRight className={`hidden md:block transition-all duration-300 rotate-180 ${modelType === 'standard' && (activeModule === 2 || activeModule === 3) ? 'text-rose-500 scale-150' : (modelType === 'flash' && fs.state === 'write_o' ? 'text-emerald-500 scale-150' : '')}`} size={28}/>
+                   <div className="flex flex-col gap-6 md:gap-10 relative mt-2">
+                    <ArrowRight className={`transition-all duration-300 ${activeModule > 1 && fs.state !== 'skip' && fs.state !== 'write_o' && activeModule !== 4 ? 'text-indigo-500 scale-[1.8] md:scale-[2.5] drop-shadow-md' : 'opacity-10 scale-100'}`} size={28}/>
+                    <ArrowRight className={`transition-all duration-300 rotate-180 ${modelType === 'standard' && (activeModule === 2 || activeModule === 3) ? 'text-rose-500 scale-[1.8] md:scale-[2.5] drop-shadow-md' : (modelType === 'flash' && fs.state === 'write_o' ? 'text-emerald-500 scale-[1.8] md:scale-[2.5] drop-shadow-md' : 'opacity-10 scale-100')}`} size={28}/>
+                   </div>
                 </div>
 
-                {/* SRAM (片上缓存) */}
-                <div className="flex-[4] bg-amber-50 rounded-xl border-2 border-amber-200 p-4 flex flex-col items-center relative shadow-inner">
-                  <div className="font-bold text-amber-800 flex items-center gap-1 bg-white px-3 py-1 rounded-full shadow-sm mb-4 border border-amber-200">
-                    <Cpu size={14}/> SRAM (计算核心)
+                {/* SRAM */}
+                <div className="bg-amber-50 rounded-2xl border-2 border-amber-300 p-3 md:p-5 flex flex-col items-center relative shadow-lg ring-1 ring-amber-100">
+                  <div className="font-bold text-amber-800 flex items-center gap-1 bg-white px-3 py-1 rounded-full shadow-sm mb-6 border border-amber-200 text-[10px] md:text-xs">
+                    <Cpu size={14} className="text-amber-500"/> SRAM (计算核心)
                   </div>
                   
-                  <div className="flex-1 w-full flex flex-col items-center justify-center gap-4">
+                  <div className="flex-1 w-full flex flex-col items-center justify-center gap-5">
                     {modelType === 'standard' ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="text-[10px] text-slate-500 font-bold tracking-widest">TRANSIENT ZONE</div>
-                        <div className={`p-4 rounded border-2 border-dashed transition-all duration-500 
-                          ${activeModule === 2 ? 'bg-indigo-100 border-indigo-400' : (activeModule === 3 ? 'bg-rose-100 border-rose-400' : (activeModule >= 4 ? 'bg-fuchsia-100 border-fuchsia-400' : 'bg-white border-slate-300'))}`}>
-                          <span className="font-serif font-bold text-lg italic">
-                            {activeModule <= 1 ? 'EMPTY' : (activeModule === 2 ? <>Q, K<sup className="not-italic">T</sup></> : (activeModule === 3 ? 'S' : 'P, V'))}
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="text-[10px] text-slate-400 font-black tracking-widest uppercase border-b border-slate-200 pb-1">Buffer</div>
+                        <div className={`p-8 md:p-12 rounded-3xl border-4 border-dashed transition-all duration-500 shadow-inner
+                          ${activeModule === 2 ? 'bg-indigo-100 border-indigo-400 scale-110' : (activeModule === 3 ? 'bg-rose-100 border-rose-400 scale-110' : (activeModule >= 4 ? 'bg-fuchsia-100 border-fuchsia-400 scale-110' : 'bg-white border-slate-200'))}`}>
+                          <span className="font-serif font-black text-2xl md:text-4xl italic tracking-tighter">
+                            {activeModule <= 1 ? 'IDLE' : (activeModule === 2 ? <>Q, K<sup className="not-italic text-lg">T</sup></> : (activeModule === 3 ? 'S' : 'P, V'))}
                           </span>
                         </div>
                       </div>
                     ) : (
-                      <div className="w-full flex flex-col gap-3">
-                        <div className="flex items-center justify-between bg-white p-2 rounded border border-indigo-200 shadow-sm transition-all">
-                          <span className="text-[10px] text-indigo-600 font-bold">Q-STATIC</span>
-                          <div className="flex flex-col items-center">
-                            <div className={`w-10 h-8 md:w-12 md:h-10 rounded flex items-center justify-center font-serif text-sm font-bold transition-all ${fs.i > 0 ? 'bg-indigo-100 text-indigo-800 border-2 border-indigo-400 scale-110 shadow' : 'bg-slate-50 text-slate-300 border border-slate-200'}`}>
+                      <div className="w-full flex flex-col gap-4 md:gap-6 px-1">
+                        {/* Q Tile (Br=64, d=64, 1:1 正方形) */}
+                        <div className="flex items-center justify-between bg-white p-2 md:p-3 rounded-xl border border-indigo-200 shadow-sm transition-all group">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] md:text-[11px] text-indigo-600 font-black uppercase">Q-Tile</span>
+                            <span className="text-[7px] md:text-[8px] font-mono text-slate-400">Row Block</span>
+                          </div>
+                          <div className="flex flex-col items-center relative">
+                            <div className={`w-12 h-12 md:w-16 md:h-16 rounded-lg flex items-center justify-center font-serif text-sm md:text-base font-black transition-all ${fs.i > 0 ? 'bg-indigo-100 text-indigo-900 border-2 border-indigo-500 scale-110 shadow-md ring-2 ring-indigo-500/20' : 'bg-slate-50 text-slate-300 border border-slate-200 opacity-30'}`}>
                               {fs.i > 0 ? <>Q<sub className="not-italic">{fs.i}</sub></> : '-'}
                             </div>
-                            <span className={`text-[7px] font-mono mt-0.5 ${fs.i > 0 ? 'text-indigo-500 font-bold' : 'text-transparent'}`}>Br×d</span>
+                            <span className={`text-[8px] md:text-[10px] font-mono mt-1 md:mt-1.5 ${fs.i > 0 ? 'text-indigo-600 font-bold' : 'text-transparent'}`}>{Br}×{d}</span>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between bg-white p-2 rounded border border-amber-200 shadow-sm relative transition-all">
-                          <span className="text-[10px] text-amber-600 font-bold">KV-ROTATING</span>
-                          {fs.state === 'skip' && <div className="absolute inset-0 bg-rose-500/80 text-white text-[9px] font-bold rounded flex items-center justify-center z-20 animate-pulse"><EyeOff size={10} className="mr-1"/> Causal Skip!</div>}
-                          <div className={`flex gap-2 items-end transition-all duration-300 ${fs.state === 'skip' ? 'opacity-20 blur-[1px]' : ''}`}>
+                        {/* KV Tiles (K 为 1:1.5 扁宽, V 为 1.5:1 高瘦) */}
+                        <div className="flex items-center justify-between bg-white p-2 md:p-3 rounded-xl border border-amber-200 shadow-sm relative transition-all">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] md:text-[11px] text-amber-600 font-black uppercase">KV-Tiles</span>
+                            <span className="text-[7px] md:text-[8px] font-mono text-slate-400">Col Block</span>
+                          </div>
+                          {fs.state === 'skip' && <div className="absolute inset-0 bg-rose-600/90 text-white text-[10px] font-black rounded-xl flex flex-col items-center justify-center z-20 ring-2 ring-white ring-inset shadow-lg uppercase"><EyeOff size={16} className="mb-0.5"/> Skip</div>}
+                          <div className={`flex gap-2 md:gap-4 items-end transition-all duration-300 ${fs.state === 'skip' ? 'opacity-20 blur-[1px]' : ''}`}>
                             <div className="flex flex-col items-center">
-                              <div className={`w-10 h-6 md:w-12 md:h-8 rounded flex items-center justify-center font-serif text-xs font-bold transition-all ${fs.j > 0 ? 'bg-amber-100 text-amber-800 border-2 border-amber-400 shadow' : 'bg-slate-50 text-slate-300 border border-slate-200'}`}>
-                                {fs.j > 0 ? <>K<sup className="not-italic text-[7px]">T</sup><sub className="not-italic text-[7px]">{fs.j}</sub></> : '-'}
+                              <div className={`w-[72px] h-12 md:w-24 md:h-16 rounded-lg flex items-center justify-center font-serif text-xs md:text-sm font-black transition-all ${fs.j > 0 ? 'bg-amber-100 text-amber-900 border-2 border-amber-500 scale-105 shadow-md' : 'bg-slate-50 text-slate-300 border border-slate-200 opacity-30'}`}>
+                                {fs.j > 0 ? <>K<sup className="not-italic text-[8px]">T</sup><sub className="not-italic text-[8px]">{fs.j}</sub></> : '-'}
                               </div>
-                              <span className={`text-[7px] font-mono mt-0.5 ${fs.j > 0 ? 'text-amber-600' : 'text-transparent'}`}>d×Bc</span>
+                              <span className={`text-[8px] md:text-[10px] font-mono mt-1 md:mt-1.5 ${fs.j > 0 ? 'text-amber-600 font-bold' : 'text-transparent'}`}>{d}×{Bc}</span>
                             </div>
                             <div className="flex flex-col items-center">
-                              <div className={`w-8 h-8 md:w-10 md:h-10 rounded flex items-center justify-center font-serif text-xs font-bold transition-all ${fs.j > 0 ? 'bg-blue-100 text-blue-800 border-2 border-blue-400 shadow' : 'bg-slate-50 text-slate-300 border border-slate-200'}`}>
+                              <div className={`w-12 h-[72px] md:w-16 md:h-24 rounded-lg flex items-center justify-center font-serif text-xs md:text-sm font-black transition-all ${fs.j > 0 ? 'bg-blue-100 text-blue-900 border-2 border-blue-500 scale-105 shadow-md' : 'bg-slate-50 text-slate-300 border border-slate-200 opacity-30'}`}>
                                 {fs.j > 0 ? <>V<sub className="not-italic">{fs.j}</sub></> : '-'}
                               </div>
-                              <span className={`text-[7px] font-mono mt-0.5 ${fs.j > 0 ? 'text-blue-500' : 'text-transparent'}`}>Bc×d</span>
+                              <span className={`text-[8px] md:text-[10px] font-mono mt-1 md:mt-1.5 ${fs.j > 0 ? 'text-blue-500 font-bold' : 'text-transparent'}`}>{Bc}×{d}</span>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between bg-emerald-50 p-2 rounded border border-emerald-200 shadow-inner">
-                          <span className="text-[10px] text-emerald-700 font-bold uppercase tracking-tighter">On-Chip Stats</span>
-                          <div className="flex flex-col items-end">
-                            <div className={`flex items-center gap-2 text-xs font-serif italic font-bold transition-colors ${fs.i > 0 ? 'text-emerald-700' : 'text-slate-300'}`}>
-                              <span>O, m, l</span>
-                              {fs.state === 'compute' && <RefreshCw size={12} className="animate-spin-slow"/>}
+                        {/* O-Accum 物理块展示 (Br=64, d=64, 1:1 正方形) */}
+                        <div className="flex items-center justify-between bg-white p-2 md:p-3 rounded-xl border border-emerald-200 shadow-sm transition-all group">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] md:text-[11px] text-emerald-600 font-black uppercase">O-Tile</span>
+                            <span className="text-[7px] md:text-[8px] font-mono text-slate-400">Accumulator</span>
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className={`text-[6px] md:text-[7px] font-mono px-1 rounded-sm border transition-colors ${fs.i > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-slate-50 border-slate-200 text-slate-400 opacity-30'}`}>m,l: Br×1</span>
                             </div>
-                            <span className={`text-[7px] font-mono ${fs.i > 0 ? 'text-emerald-600 font-bold' : 'text-transparent'}`}>O: Br×d</span>
+                          </div>
+                          <div className="flex flex-col items-center relative">
+                            <div className={`w-12 h-12 md:w-16 md:h-16 rounded-lg flex items-center justify-center font-serif text-sm md:text-base font-black transition-all ${fs.i > 0 ? 'bg-emerald-100 text-emerald-900 border-2 border-emerald-500 scale-110 shadow-md ring-2 ring-emerald-500/20' : 'bg-slate-50 text-slate-300 border border-slate-200 opacity-30'}`}>
+                              {fs.i > 0 ? <>O<sub className="not-italic">{fs.i}</sub></> : '-'}
+                            </div>
+                            {/* 内部计算时的旋转更新动画 */}
+                            {fs.state === 'compute' && <div className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow-sm border border-emerald-200"><RefreshCw size={12} className="animate-spin-slow text-emerald-500"/></div>}
+                            <span className={`text-[8px] md:text-[10px] font-mono mt-1 md:mt-1.5 ${fs.i > 0 ? 'text-emerald-600 font-bold' : 'text-transparent'}`}>{Br}×{d}</span>
                           </div>
                         </div>
                       </div>
@@ -358,124 +401,128 @@ const App = () => {
               </div>
             </div>
 
-            {/* 并排布局：流水线与代码 */}
+            {/* 下方面板：微观流水线与 Python 代码并排 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
               
-              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 h-full flex flex-col min-w-0">
-                 <h2 className="text-lg font-semibold mb-6 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Layers className="text-indigo-500" size={20} /> 微观计算流水线
+              {/* 微观流水线 */}
+              <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-200 flex flex-col min-w-0">
+                 <h2 className="text-base md:text-lg font-semibold mb-4 md:mb-6 flex items-center justify-between shrink-0 border-b pb-2 border-slate-100">
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Layers size={20} className="text-indigo-500" /> 微观计算流水线
                   </div>
-                  <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-wider ${modelType === 'flash' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'}`}>
-                    {modelType === 'flash' ? 'Tiling (分块)' : 'Standard (标准)'}
-                  </span>
                 </h2>
 
-                <div className="relative p-2 md:p-4 border-2 border-dashed border-indigo-200 rounded-xl bg-indigo-50/30 flex-1 overflow-x-auto">
-                  <div className="relative z-10 flex flex-col gap-3">
-                    
+                <div className="relative p-3 md:p-4 border-2 border-dashed border-indigo-200 rounded-xl bg-indigo-50/30 flex-1">
+                  <div className="relative z-10 flex flex-col gap-3 md:gap-4">
                     {modelType === 'standard' ? (
                       <>
-                        <div className={`p-3 rounded border transition-all duration-300 shadow-sm ${activeModule === 1 ? 'bg-slate-800 border-slate-900 text-white scale-105 shadow-lg' : 'bg-slate-100/50 border-slate-200 text-slate-500'}`}>
-                          <div className="font-semibold text-sm text-center mb-2 flex items-center justify-center gap-2"><Wrench size={16}/> Setup 初始化</div>
-                          <div className={`text-center font-mono p-2 rounded border text-xs ${activeModule === 1 ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-400'}`}>
-                            分配 2 个 <span className={`${activeModule === 1 ? 'text-rose-400 font-black' : ''}`}>N×N</span> 显存矩阵
-                          </div>
+                        <div className={`p-4 rounded-xl border-2 transition-all duration-300 ${activeModule === 1 ? 'bg-slate-800 border-slate-900 text-white scale-105 shadow-xl' : 'bg-slate-50 border-slate-200 text-slate-400 opacity-70'}`}>
+                          <div className="font-bold text-xs uppercase mb-2 flex items-center gap-2"><Wrench size={14}/> 显存初始化</div>
+                          <div className="font-mono text-[11px] opacity-80">allocate_hbm(N×N) // 分配庞大空间</div>
                         </div>
-                        <div className={`p-3 rounded border transition-all duration-300 shadow-sm ${activeModule === 2 ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200 scale-105' : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}>
-                          <div className={`font-semibold text-sm text-center mb-2 ${activeModule === 2 ? 'text-blue-900' : ''}`}>1. 计算注意力分数 & 因果掩码</div>
-                          <div className="text-center font-serif bg-white p-2 rounded border border-blue-100 text-sm">
-                            <span className="italic">S</span> = <span className="italic">QK</span><sup className="not-italic">T</sup>
-                            <div className={`text-[10px] font-sans mt-1 font-bold ${activeModule === 2 ? 'text-rose-500' : 'text-slate-400'}`}>
-                              UpperTri &larr; -&infin; (屏蔽未来)
-                            </div>
-                          </div>
+                        <div className={`p-4 rounded-xl border-2 transition-all duration-300 ${activeModule === 2 ? 'bg-blue-100 border-blue-400 text-blue-900 scale-105 shadow-md' : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}>
+                          <div className="font-bold text-xs uppercase mb-2">1. 计算 Attention Scores</div>
+                          <div className="font-serif italic font-black text-center text-sm md:text-base">S = QK<sup>T</sup> + Mask</div>
                         </div>
-                        <div className={`p-3 rounded border transition-all duration-300 shadow-sm ${activeModule === 3 ? 'bg-fuchsia-50 border-fuchsia-400 ring-2 ring-fuchsia-200 scale-105' : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}>
-                          <div className={`font-semibold text-sm text-center mb-2 ${activeModule === 3 ? 'text-fuchsia-900' : ''}`}>2. 计算 Softmax 概率矩阵</div>
-                          <div className="text-center font-serif bg-white p-2 rounded border border-fuchsia-100 text-sm">
-                            <span className="italic">P</span> = Softmax(<span className="italic">S</span>)
-                          </div>
+                        <div className={`p-4 rounded-xl border-2 transition-all duration-300 ${activeModule === 3 ? 'bg-fuchsia-100 border-fuchsia-400 text-fuchsia-900 scale-105 shadow-md' : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}>
+                          <div className="font-bold text-xs uppercase mb-2">2. 全局 Softmax</div>
+                          <div className="font-serif italic font-black text-center text-sm md:text-base">P = Softmax(S)</div>
                         </div>
-                        <div className={`p-3 rounded border transition-all duration-300 shadow-sm ${activeModule >= 4 ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-200 scale-105' : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}>
-                          <div className={`font-semibold text-sm text-center mb-2 ${activeModule >= 4 ? 'text-purple-900' : ''}`}>3. 计算输出 O 矩阵</div>
-                          <div className="text-center font-serif bg-white p-2 rounded border border-purple-100 text-sm">
-                            <span className="italic">O</span> = <span className="italic">PV</span>
-                          </div>
+                        <div className={`p-4 rounded-xl border-2 transition-all duration-300 ${activeModule >= 4 ? 'bg-purple-100 border-purple-400 text-purple-900 scale-105 shadow-md' : 'bg-white border-slate-200 text-slate-400 opacity-60'}`}>
+                          <div className="font-bold text-xs uppercase mb-2">3. 输出聚合</div>
+                          <div className="font-serif italic font-black text-center text-sm md:text-base">O = PV</div>
                         </div>
                       </>
                     ) : (
-                      <div className="w-full flex flex-col gap-2">
-                        {/* 硬件感知 Setup */}
-                        <div className={`p-3 rounded-xl border-2 transition-all duration-300 shadow-sm ${activeModule === 1 ? 'bg-slate-800 border-slate-900 text-white scale-105 z-10 shadow-lg' : 'bg-slate-100/50 border-slate-200 text-slate-500'}`}>
-                          <div className="font-semibold text-sm text-center mb-2 flex items-center justify-center gap-2 tracking-widest uppercase font-mono"><Wrench size={16}/> Hardware-Aware Setup</div>
-                          <div className={`text-center font-serif p-2 rounded border text-[11px] flex flex-col gap-1.5 ${activeModule === 1 ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-400'}`}>
-                            <div className="flex justify-between px-2"><span>K/V 列块大小:</span> <span className="font-bold text-amber-400"><span className="italic">B</span><sub className="not-italic">c</sub> = &lceil; <span className="italic">M</span> / 4<span className="italic">d</span> &rceil;</span></div>
-                            <div className="flex justify-between px-2 border-t border-slate-800 pt-1"><span>Q/O 行块大小:</span> <span className="font-bold text-indigo-400"><span className="italic">B</span><sub className="not-italic">r</sub> = min(<span className="italic">B</span><sub className="not-italic">c</sub>, <span className="italic">d</span>)</span></div>
+                      <div className="w-full flex flex-col gap-3">
+                        {/* Setup (恢复计算公式) */}
+                        <div className={`p-3 rounded-xl border-2 transition-all duration-300 shadow-sm ${activeModule === 1 ? 'bg-slate-800 border-slate-900 text-white scale-[1.02] shadow-xl' : 'bg-white/60 border-slate-200 text-slate-500'}`}>
+                          <div className="font-bold text-[11px] mb-1 flex items-center gap-2"><Wrench size={14}/> 硬件感知解耦计算</div>
+                          <div className="flex flex-col gap-1 text-[10px] md:text-[11px] font-mono border-t border-slate-700 pt-1.5 mt-1">
+                            <div className="flex justify-between">
+                              <span className={`${activeModule === 1 ? 'text-amber-400' : ''}`}>Bc = ceil(M / (4*d))</span>
+                              <span className="font-bold">= {Bc}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className={`${activeModule === 1 ? 'text-indigo-400' : ''}`}>Br = min(Bc, d)</span>
+                              <span className="font-bold">= {Br}</span>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="border-2 border-rose-300 rounded-xl p-2 md:p-3 bg-rose-50/30 relative mt-2">
-                           <div className="absolute -top-3 left-4 bg-white px-2 text-xs font-bold text-rose-600 border border-rose-200 rounded shadow-sm flex items-center gap-1">Parallel Outer Loop (Q)</div>
-                           <div className="font-serif text-[11px] text-rose-800 mb-2 mt-1 flex gap-1.5">
-                             {[1, 2, 3].map(i_idx => (
-                               <span key={i_idx} className={`px-2 py-0.5 rounded border transition-all duration-300 ${fs.i === i_idx ? 'bg-rose-200 border-rose-400 font-bold scale-105 shadow-sm' : 'bg-white/50 border-rose-100 opacity-50'}`}>
-                                 <span className="italic">i</span>={i_idx}
+                        {/* Outer Loop */}
+                        <div className="border-2 border-rose-300 rounded-2xl p-3 md:p-4 bg-rose-50/50 relative shadow-inner">
+                           <div className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-black text-rose-600 border border-rose-200 rounded-full">Outer Loop (Q块)</div>
+                           <div className="font-mono text-[11px] text-rose-800 mb-3 mt-1 flex gap-2">
+                             {[1, 2, 3].map(idx => {
+                               const isActive = fs.i === idx;
+                               const ranges = ['0:64', '64:128', '128:192'];
+                               return (
+                               <span key={idx} className={`px-2 py-1 rounded-lg border-2 transition-all duration-300 ${isActive ? 'bg-rose-600 text-white font-bold scale-105 shadow-md border-rose-700' : 'bg-white border-rose-200 opacity-50'}`}>
+                                 Q[{ranges[idx-1]}]
                                </span>
-                             ))}
+                             )})}
                            </div>
 
-                           <div className={`border-2 border-amber-400 rounded-lg p-2 md:p-3 bg-amber-50/50 relative mt-4 transition-all duration-500 ${(fs.j > 0) ? 'opacity-100 shadow-md ring-2 ring-amber-200' : 'opacity-40 border-dashed'}`}>
-                              <div className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-bold text-amber-700 border border-amber-200 rounded shadow-sm">Inner Serial Loop (KV)</div>
-                              <div className="font-serif text-[11px] text-amber-800 mb-2 mt-1 flex gap-2 relative">
-                               {[1, 2].map(j_idx => (
-                                 <span key={j_idx} className={`px-2 py-0.5 rounded border transition-all duration-300 relative ${fs.j === j_idx ? 'bg-amber-200 border-amber-500 font-bold scale-105 shadow-sm' : 'bg-white/50 border-amber-100 opacity-50'}`}>
-                                   <span className="italic">j</span>={j_idx}
-                                   {fs.j === j_idx && fs.mask === 'skip' && <div className="absolute -top-6 left-0 bg-rose-500 text-white text-[8px] px-1.5 rounded-full font-sans font-bold shadow animate-bounce">CAUSAL SKIP</div>}
+                           {/* Inner Loop */}
+                           <div className={`border-2 border-amber-400 rounded-xl p-3 md:p-4 bg-amber-50/80 relative mt-4 transition-all duration-500 ${(fs.j > 0) ? 'opacity-100 shadow-md ring-4 ring-amber-500/10' : 'opacity-40 border-dashed blur-[0.5px]'}`}>
+                              <div className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-bold text-amber-700 border border-amber-200 rounded-full">Inner Loop (KV块)</div>
+                              <div className="font-mono text-[11px] text-amber-800 mb-3 mt-1 flex gap-2 md:gap-3 relative">
+                               {[1, 2].map(idx => {
+                                 const isActive = fs.j === idx;
+                                 const ranges = ['0:96', '96:192'];
+                                 return (
+                                 <span key={idx} className={`px-2 py-1 rounded-lg border-2 transition-all duration-300 relative ${isActive ? 'bg-amber-600 text-white font-bold scale-105 shadow-md border-amber-700' : 'bg-white border-amber-200 opacity-50'}`}>
+                                   KV[{ranges[idx-1]}]
+                                   {isActive && fs.mask === 'skip' && <div className="absolute -top-8 left-0 bg-rose-600 text-white text-[9px] px-2 py-1 rounded-full font-sans font-black shadow-xl animate-bounce border border-white whitespace-nowrap z-20">🚫 SKIP</div>}
                                  </span>
-                               ))}
+                               )})}
                               </div>
 
+                              {/* 真实索引验证面板 */}
                               {fs.j > 0 && (
-                                <div className={`text-[10px] font-bold px-2 py-1.5 rounded mb-2 border flex items-center gap-2 shadow-sm
-                                  ${fs.mask === 'skip' ? 'bg-rose-100 text-rose-700 border-rose-300 animate-pulse' : 
-                                    (fs.mask === 'partial' ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300')}`}>
-                                  {fs.mask === 'skip' ? <><EyeOff size={12}/> 未来块: K 完全在 Q 之后</> : 
-                                   (fs.mask === 'partial' ? <><Info size={12}/> 局部掩码: Q, K 对角线重叠</> : 
-                                   <><CheckCircle2 size={12}/> 全量计算: K 完全属于过去</>)}
+                                <div className={`text-[10px] md:text-[11px] font-bold px-3 py-2 rounded-lg mb-3 border flex flex-col gap-1 shadow-sm transition-all duration-500
+                                  ${fs.mask === 'skip' ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse' : 
+                                    (fs.mask === 'partial' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300')}`}>
+                                  <div className="flex items-center gap-1.5 font-mono text-[9px] opacity-70">
+                                    <span>Q:[{fs.rangeQ}]</span> vs <span>K:[{fs.rangeK}]</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {fs.mask === 'skip' ? <><EyeOff size={14}/> K完全在未来 → 物理拦截</> : 
+                                     (fs.mask === 'partial' ? <><Info size={14}/> 索引有交集 → 应用局部掩码</> : 
+                                     <><CheckCircle2 size={14}/> K完全在过去 → 全量计算</>)}
+                                  </div>
                                 </div>
                               )}
 
-                              <div className={`bg-white border border-slate-200 rounded p-2 flex flex-col gap-1 font-serif text-[10px] xl:text-[11px] mt-2 transition-all duration-300 ${fs.state === 'skip' ? 'opacity-30 blur-[0.5px]' : 'opacity-100'}`}>
-                                <div className="text-slate-400 text-[8px] font-sans font-bold uppercase border-b border-slate-100 pb-0.5 mb-1">On-Chip Update (SRAM)</div>
-                                <div className="flex items-center justify-between">
-                                  <span>1. <span className="italic">S</span><sub className="not-italic">ij</sub> = <span className="italic">Q</span><sub className="not-italic">i</sub><span className="italic">K</span><sub className="not-italic">j</sub><sup className="not-italic">T</sup></span>
-                                  {fs.mask === 'partial' && <span className="text-[8px] text-amber-600 font-bold bg-amber-50 px-1 rounded border border-amber-200">+ MASK</span>}
+                              <div className={`bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5 font-serif text-[11px] md:text-[12px] mt-2 transition-all duration-300 shadow-sm ${fs.state === 'skip' ? 'opacity-20 blur-[1px]' : 'opacity-100'}`}>
+                                <div className="flex items-center justify-between font-bold text-slate-800 italic">
+                                  <span>S<sub className="not-italic">ij</sub> = Q<sub className="not-italic">i</sub>K<sub className="not-italic">j</sub><sup>T</sup></span>
+                                  {fs.mask === 'partial' && <span className="text-[8px] font-sans text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-md border border-amber-200 font-bold">+ MASK</span>}
                                 </div>
-                                <div className="flex items-center justify-between text-emerald-700">
-                                  <span>2. <span className="italic">m</span><sup className="not-italic">new</sup> = max(<span className="italic">m</span>, max(<span className="italic">S</span><sub className="not-italic">ij</sub>))</span>
-                                  <span className="text-[7px] font-sans opacity-60">数值稳定</span>
+                                {/* 修复：补全漏掉的 m_new 跟踪逻辑，明确其防溢出作用 */}
+                                <div className="flex items-center justify-between text-emerald-700 font-bold">
+                                  <span>m<sup className="not-italic">new</sup> = max(m, max(S<sub className="not-italic">ij</sub>))</span>
+                                  <span className="text-[8px] font-sans opacity-60 bg-emerald-50 px-1 rounded uppercase tracking-tighter border border-emerald-100">Safe Exp</span>
                                 </div>
-                                <div className="flex justify-between text-emerald-700">
-                                  <span>3. <span className="italic">l</span><sup className="not-italic">new</sup> = exp(<span className="italic">m-m</span><sup className="not-italic">new</sup>)&middot;<span className="italic">l</span> + &sum;exp(<span className="italic">S<sub className="not-italic">ij</sub>-m</span><sup className="not-italic">new</sup>)</span>
+                                <div className="flex justify-between text-emerald-700 font-bold border-b pb-1.5 border-emerald-50">
+                                  <span>l<sup className="not-italic">new</sup> = exp(m-m<sup>new</sup>)&middot;l + &sum;exp(S<sub className="not-italic">ij</sub>-m<sup>new</sup>)</span>
                                 </div>
-                                <div className="flex flex-col text-indigo-700 mt-1 bg-indigo-50/50 p-1.5 rounded gap-1 border border-indigo-100">
-                                  <div className="flex justify-between items-center">
-                                    <span>4a. <span className="italic">O</span><sub className="not-italic">i</sub> &larr; <span className="italic">O</span><sub className="not-italic">i</sub> &middot; exp(<span className="italic">m-m</span><sup className="not-italic">new</sup>)</span>
-                                    <span className="text-[7px] italic opacity-60">历史纠正</span>
+                                <div className="flex flex-col text-indigo-700 mt-1 bg-indigo-50/60 p-2 rounded-lg gap-1 border border-indigo-100">
+                                  <div className="flex justify-between items-center italic">
+                                    <span className="font-bold">O<sub className="not-italic">i</sub> &larr; O<sub className="not-italic">i</sub> &middot; exp(m-m<sup>new</sup>)</span>
                                   </div>
-                                  <div className="flex justify-between items-center">
-                                    <span>4b. <span className="italic">O</span><sub className="not-italic">i</sub> &larr; <span className="italic">O</span><sub className="not-italic">i</sub> + exp(<span className="italic">S<sub className="not-italic">ij</sub>-m</span><sup className="not-italic">new</sup>)<span className="italic">V</span><sub className="not-italic">j</sub></span>
-                                    <span className="text-[7px] italic opacity-60">增量累加</span>
+                                  <div className="flex justify-between items-center italic">
+                                    <span className="font-bold">O<sub className="not-italic">i</sub> &larr; O<sub className="not-italic">i</sub> + exp(S<sub className="not-italic">ij</sub>-m<sup>new</sup>)V<sub className="not-italic">j</sub></span>
                                   </div>
                                 </div>
                               </div>
                            </div>
 
-                           <div className={`mt-3 flex flex-col items-center p-2 rounded border transition-all duration-500 ${fs.state === 'write_o' ? 'bg-emerald-600 border-emerald-700 shadow-lg scale-[1.02] text-white' : 'bg-slate-50 border-slate-200 text-slate-400 opacity-60'}`}>
-                             <div className="text-center text-[9px] font-bold mb-1 uppercase tracking-widest font-mono">Normalize & Write-Back</div>
-                             <div className={`font-serif text-[11px] md:text-[13px] font-bold px-4 py-1 rounded-full border transition-all ${fs.state === 'write_o' ? 'bg-white text-emerald-900 border-emerald-200 animate-pulse' : 'bg-slate-100 border-slate-200'}`}>
-                               <span className="italic">O</span><sub className="not-italic">{fs.i || 'i'}</sub> = (1 / <span className="italic">l</span>) &middot; <span className="italic">O</span><sub className="not-italic">{fs.i || 'i'}</sub>
+                           <div className={`mt-4 flex flex-col items-center p-3 rounded-xl border-2 transition-all duration-500 shadow-md ${fs.state === 'write_o' ? 'bg-emerald-600 border-emerald-700 scale-[1.02] text-white' : 'bg-slate-100 border-slate-200 text-slate-400 opacity-50'}`}>
+                             <div className="text-center text-[9px] font-bold mb-1 font-mono">Normalize & Write-Back</div>
+                             <div className={`font-serif text-[13px] font-black px-6 py-1 rounded-full border-2 transition-all ${fs.state === 'write_o' ? 'bg-white text-emerald-900' : 'bg-slate-200 border-slate-300'}`}>
+                               O<sub className="not-italic">{fs.i || 'i'}</sub> = (1 / l) &middot; O<sub className="not-italic">{fs.i || 'i'}</sub>
                              </div>
                            </div>
                         </div>
@@ -485,67 +532,70 @@ const App = () => {
                 </div>
               </div>
 
-              {/* 底层代码 */}
-              <div className="bg-slate-900 rounded-2xl p-6 shadow-lg border border-slate-800 text-slate-300 h-full flex flex-col min-w-0">
-                 <h2 className="text-lg font-semibold mb-4 flex items-center justify-between text-white shrink-0">
+              {/* Python 代码板 */}
+              <div className="bg-slate-900 rounded-2xl p-5 md:p-6 shadow-lg border border-slate-800 text-slate-300 h-full flex flex-col min-w-0">
+                 <h2 className="text-base md:text-lg font-semibold mb-4 text-white border-b border-slate-700 pb-2 flex items-center justify-between">
                    <div className="flex items-center gap-2">
-                     <Code className="text-emerald-400" size={20} /> 底层代码 <span className="text-[10px] text-slate-500 font-mono tracking-wider">CUDA_KERNEL.CU</span>
+                     <Code className="text-emerald-400" size={20} /> 底层代码实现
                    </div>
+                   <span className="text-[10px] text-slate-400 font-mono border border-slate-700 px-2 py-0.5 rounded bg-slate-800">Python</span>
                 </h2>
-                <div className="font-mono text-[10px] md:text-xs xl:text-[13px] overflow-x-auto bg-[#0d1117] p-4 rounded-lg border border-slate-800 flex-1 leading-relaxed">
+                <div className="font-mono text-[10px] md:text-xs xl:text-[13px] overflow-x-auto bg-[#080c12] p-4 md:p-5 rounded-xl border border-slate-800 flex-1 leading-relaxed shadow-inner">
                   {modelType === 'standard' ? (
                     <div className="whitespace-pre block">
                       <div><span className="text-emerald-400">def</span> <span className="text-blue-400">standard_attention</span>(Q, K, V):</div>
                       <br/>
-                      <div className={activeModule === 1 ? "bg-slate-800 text-slate-200 px-1 -mx-1 rounded border-l-2 border-slate-400 font-bold" : "text-slate-400"}>
-                        <div>  <span className="text-slate-500 font-normal"># Setup: 向显存申请 O(N²) 极大空间</span></div>
-                        <div>  S_buf = allocate_hbm(N, N)</div>
-                        <div>  P_buf = allocate_hbm(N, N)</div>
+                      <div className={activeModule === 1 ? "bg-slate-800 text-slate-100 px-2 -mx-2 rounded border-l-2 border-slate-500 font-bold" : "text-slate-500"}>
+                        <div>  <span className="text-slate-600"># 申请极大的 HBM 空间</span></div>
+                        <div>  S_buf = allocate(N, N) <span className="text-rose-500"># O(N²)</span></div>
+                        <div>  P_buf = allocate(N, N)</div>
                       </div>
                       <br/>
-                      <div className={activeModule === 2 ? "bg-blue-900/60 text-blue-200 px-1 -mx-1 rounded border-l-2 border-blue-400" : "text-slate-400"}>
-                        <div>  <span className="text-slate-500"># 1. 算 QKᵀ 并一次性写满 HBM 显存带宽</span></div>
+                      <div className={activeModule === 2 ? "bg-blue-900/60 text-blue-100 px-2 -mx-2 rounded border-l-2 border-blue-400" : "text-slate-500"}>
+                        <div>  <span className="text-slate-600"># 暴力计算并写入 HBM</span></div>
                         <div>  S_buf = Q @ K.T + Mask</div>
                       </div>
                       <br/>
-                      <div className={activeModule === 3 ? "bg-fuchsia-900/50 text-fuchsia-200 px-1 -mx-1 rounded border-l-2 border-fuchsia-400" : "text-slate-400"}>
-                        <div>  <span className="text-slate-500"># 2. 从 HBM 读 S, 计算 Softmax, 再写回 P</span></div>
+                      <div className={activeModule === 3 ? "bg-fuchsia-900/50 text-fuchsia-100 px-2 -mx-2 rounded border-l-2 border-fuchsia-400" : "text-slate-500"}>
+                        <div>  <span className="text-slate-600"># 从 HBM 读出并计算 Softmax</span></div>
                         <div>  P_buf = softmax(S_buf)</div>
                       </div>
                       <br/>
-                      <div className={activeModule >= 4 ? "bg-purple-900/60 text-purple-200 px-1 -mx-1 rounded border-l-2 border-purple-400" : "text-slate-400"}>
-                        <div>  <span className="text-slate-500"># 3. 最后一次搬运写回最终 O</span></div>
+                      <div className={activeModule >= 4 ? "bg-purple-900/60 text-purple-100 px-2 -mx-2 rounded border-l-2 border-purple-400" : "text-slate-500"}>
+                        <div>  <span className="text-slate-600"># 最后一次低效读写</span></div>
                         <div>  O = P_buf @ V</div>
                         <div>  <span className="text-emerald-400">return</span> O</div>
                       </div>
                     </div>
                   ) : (
                     <div className="whitespace-pre block">
-                      <div><span className="text-emerald-400">__global__</span> <span className="text-blue-400">flash_attn_kernel</span>(...):</div>
+                      <div><span className="text-emerald-400">def</span> <span className="text-blue-400">flash_attention</span>(Q, K, V):</div>
                       <br/>
-                      <div className={activeModule === 1 ? "bg-slate-800 text-slate-200 px-1 -mx-1 rounded border-l-2 border-slate-400 font-bold" : "text-slate-400"}>
-                        <div>  <span className="text-slate-500 font-normal">// 硬件感知 Setup: 计算切块大小时解耦 Q 与 KV</span></div>
-                        <div>  Bc = ceil(M / (4*d)); Br = min(Bc, d);</div>
+                      <div className={activeModule === 1 ? "bg-slate-800 text-slate-100 px-2 -mx-2 rounded border-l-2 border-slate-500 font-bold" : "text-slate-500"}>
+                        <div>  <span className="text-slate-600"># 硬件解耦切分</span></div>
+                        <div>  Bc = ceil(M / (4*d)); Br = min(Bc, d)</div>
                       </div>
                       <br/>
-                      <div className={fs.i > 0 ? "bg-rose-900/40 text-rose-200 px-1 -mx-1 rounded border-l-2 border-rose-400 font-bold" : "text-slate-400"}>
-                        <div>  <span className="text-emerald-400">for</span> i <span className="text-emerald-400">in</span> <span className="text-blue-300">range</span>(Q_blocks): </div>
-                        <div>      Qi = Q[i]; m, l = -inf, 0;</div>
+                      <div className={fs.i > 0 ? "bg-rose-900/40 text-rose-100 px-2 -mx-2 rounded border-l-2 border-rose-500 font-bold" : "text-slate-500"}>
+                        <div>  <span className="text-emerald-400">for</span> i <span className="text-emerald-400">in</span> <span className="text-blue-300">range</span>(N // Br): </div>
+                        <div>      Qi = Q[i]; m, l = -inf, 0</div>
                       </div>
-                      <div className={fs.j > 0 ? "bg-amber-900/40 text-amber-200 px-1 -mx-1 rounded border-l-2 border-amber-400 ml-4 mt-1" : "text-slate-400 ml-4 mt-1"}>
-                        <div>      <span className="text-emerald-400">for</span> j <span className="text-emerald-400">in</span> <span className="text-blue-300">range</span>(KV_blocks):</div>
-                        <div className={fs.state === 'skip' ? "bg-rose-600 text-white font-bold px-1 rounded inline-block" : ""}>          <span className="text-emerald-400">if</span> start(K[j]) &gt; end(Q[i]): <span className="text-emerald-400">continue</span></div>
+                      <div className={fs.j > 0 ? "bg-amber-900/40 text-amber-100 px-2 -mx-2 rounded border-l-2 border-amber-500 ml-4 mt-1" : "text-slate-500 ml-4 mt-1"}>
+                        <div>      <span className="text-emerald-400">for</span> j <span className="text-emerald-400">in</span> <span className="text-blue-300">range</span>(N // Bc):</div>
+                        <div className={fs.state === 'skip' ? "bg-rose-600 text-white font-bold px-1 rounded inline-block" : ""}>          <span className="text-emerald-400">if</span> start(K[j]) &gt;= end(Q[i]): <span className="text-emerald-400">continue</span></div>
                         <br/>
-                        <div>          Kj, Vj = K[j], V[j]; S_ij = Qi @ Kj.T;</div>
-                        <div className={fs.mask === 'partial' ? "bg-amber-600 text-white font-bold px-1 rounded inline-block" : ""}>          <span className="text-emerald-400">if</span> is_diagonal: S_ij += Mask_ij;</div>
+                        <div>          Kj, Vj = K[j], V[j]</div>
+                        <div>          S_ij = Qi @ Kj.T</div>
+                        <div className={fs.mask === 'partial' ? "bg-amber-600 text-white font-bold px-1 rounded inline-block" : ""}>          <span className="text-emerald-400">if</span> is_intersect(Q[i], K[j]): </div>
+                        <div className={fs.mask === 'partial' ? "bg-amber-600 text-white font-bold px-1 rounded inline-block" : ""}>              S_ij += Mask_ij</div>
                         <br/>
-                        <div>          m_new = max(m, max(S_ij));</div>
-                        <div>          l_new = exp(m-m_new)*l + sum(exp(S_ij-m_new));</div>
-                        <div className="text-indigo-300 font-bold">          O_i = O_i * exp(m-m_new) + exp(S_ij-m_new)@Vj;</div>
-                        <div>          m, l = m_new, l_new;</div>
+                        <div>          m_new = max(m, max(S_ij))</div>
+                        <div>          l_new = exp(m-m_new)*l + sum(exp(S_ij-m_new))</div>
+                        <div className="text-indigo-400 font-bold bg-indigo-500/10 px-1 rounded -ml-1">          O_i = O_i * exp(m-m_new) + exp(S_ij-m_new)@Vj</div>
+                        <div>          m, l = m_new, l_new</div>
                       </div>
-                      <div className={fs.state === 'write_o' ? "bg-emerald-900/60 text-emerald-200 px-1 -mx-1 rounded font-bold mt-1" : "text-slate-400 mt-1"}>
-                        <div>      O[i] = (1 / l) * O_i; <span className="text-slate-500 font-normal">// 仅在外层写回一次</span></div>
+                      <div className={fs.state === 'write_o' ? "bg-emerald-900/60 text-emerald-100 px-2 -mx-2 rounded border-l-2 border-emerald-500 font-bold mt-1" : "text-slate-500 mt-1"}>
+                        <div>      O[i] = (1 / l) * O_i <span className="text-slate-600"># 统一归一化写回</span></div>
                       </div>
                     </div>
                   )}
@@ -557,53 +607,61 @@ const App = () => {
 
           <div className="col-span-1 space-y-6">
             <div className="bg-indigo-900 text-indigo-50 rounded-2xl p-6 shadow-xl h-full flex flex-col border border-indigo-700">
-              <h3 className="text-lg font-bold mb-4 text-white border-b border-indigo-700 pb-2 flex items-center gap-2">
-                <Info size={18} className="text-indigo-300"/> 原理深度解析
+              <h3 className="text-lg font-bold mb-4 text-white border-b border-indigo-600 pb-2 flex items-center gap-2">
+                <Info size={18} className="text-indigo-300"/> 深度原理解析
               </h3>
               
-              <div className="space-y-4 text-sm leading-relaxed flex-1">
+              <div className="space-y-4 text-sm leading-relaxed flex-1 text-[13px]">
                 {activeModule === 0 && (
-                  <div className="text-center py-10 opacity-70">
-                    <Database size={48} className="mx-auto mb-4 text-indigo-400 opacity-20"/>
-                    <p>等待初始化...<br/>请选择模式并点击“开始执行”</p>
+                  <div className="text-center py-20 opacity-40">
+                    <Database size={64} className="mx-auto mb-4 animate-pulse"/>
+                    <p className="font-bold">算子待命中...</p>
                   </div>
                 )}
                 
                 {modelType === 'standard' && activeModule >= 1 && (
-                  <div className="animate-fade-in space-y-3">
-                    <h4 className="font-bold text-rose-300 text-base">内存墙：效率的杀手</h4>
-                    <p className="opacity-90 text-[13px]">标准 Attention 在每一步中间计算后都必须将全量 $N \times N$ 矩阵写回 HBM。当 $N=8K$ 时，中间显存占用将超过 <strong className="text-rose-400">256MB 每头</strong>。</p>
-                    <div className="bg-rose-950/50 p-3 rounded-lg border border-rose-800 text-xs text-rose-200 italic font-mono">
-                      // IO Traffic &prop; N*d + N<sup>2</sup>
+                  <div className="animate-fade-in space-y-4">
+                    <div className="p-4 bg-rose-950/40 rounded-xl border border-rose-800 shadow-sm">
+                      <h4 className="font-bold text-rose-300 text-base mb-1">显存墙的统治</h4>
+                      <p className="opacity-90 leading-snug">
+                        在 $N={N}$ 时，中间矩阵 S 有 ${(N*N).toLocaleString()} 个元素。如果模型参数增大到 N=8K，单头显存即达惊人的 256MB。频繁的读写导致 GPU 带宽成为绝对瓶颈。
+                      </p>
                     </div>
                   </div>
                 )}
 
                 {modelType === 'flash' && activeModule >= 1 && (
                   <div className="animate-fade-in space-y-4">
-                    <div className="p-3 bg-indigo-950/50 rounded-lg border border-indigo-700">
-                      <h4 className="font-bold text-emerald-300 text-sm mb-1 flex items-center gap-2"><Zap size={14}/> 核心 1：硬件感知解耦</h4>
-                      <p className="text-[12px] opacity-80">Flash 探测 SRAM 的物理大小 M。为了塞进计算核心，算法解耦计算出 <span className="font-serif italic">B<sub>c</sub></span> (KV块) 和 <span className="font-serif italic">B<sub>r</sub></span> (Q块)。</p>
-                    </div>
-
-                    <div className="p-3 bg-amber-950/50 rounded-lg border border-amber-800">
-                      <h4 className="font-bold text-amber-300 text-sm mb-1 flex items-center gap-2"><RefreshCw size={14}/> 核心 2：数值稳定性保护</h4>
-                      <p className="text-[12px] opacity-80">Online Softmax 实时追踪最大值 <span className="font-mono text-amber-400">m</span>。这不仅是为了分块，更重要是防止指数项发生 <strong className="text-white">浮点溢出</strong>。通过指数差值因子，算法完美修正了历史结果。</p>
-                    </div>
-
-                    <div className="p-3 bg-rose-950/50 rounded-lg border border-rose-800">
-                      <h4 className="font-bold text-rose-300 text-sm mb-1 flex items-center gap-2"><EyeOff size={14}/> 核心 3：掩码状态优化</h4>
-                      <p className="text-[12px] opacity-80">这是 Flash 的性能杀器。判断分块索引：<br/>
-                        1. <strong className="text-emerald-400">Past</strong>: 无掩码裸奔。<br/>
-                        2. <strong className="text-amber-400">Intersect</strong>: 局部对角线 Mask。<br/>
-                        3. <strong className="text-rose-400">Future</strong>: 整块跳过加载，大幅省电！
+                    <div className="p-3 bg-indigo-950/50 rounded-xl border border-indigo-700">
+                      <h4 className="font-bold text-emerald-300 text-sm mb-1 flex items-center gap-1.5"><Zap size={14}/> 1. 物理维度切分</h4>
+                      <p className="opacity-80 leading-snug">
+                        切块是在序列维度 $N$ 上进行的。由于引入了 $Br=64$ 和 $Bc=96$，内层循环每次只计算 $64 \times 96$ 的局部乘法，完美常驻在极快的 SRAM 中。
                       </p>
                     </div>
 
+                    <div className="p-3 bg-amber-950/50 rounded-xl border border-amber-800">
+                      <h4 className="font-bold text-amber-300 text-sm mb-1 flex items-center gap-1.5"><RefreshCw size={14}/> 2. 动态指数修正</h4>
+                      <p className="opacity-80 leading-snug">
+                        Softmax 分母 l 在计算中累积。引入 exp(m - m<sub className="not-italic">new</sub>) 因子，使得旧有结果能按比例正确“缩减”，从而保证了数学上的完全等价。
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-rose-950/50 rounded-xl border border-rose-800">
+                      <h4 className="font-bold text-rose-300 text-sm mb-1 flex items-center gap-1.5"><EyeOff size={14}/> 3. 因果掩码策略</h4>
+                      <p className="opacity-80 leading-snug font-mono bg-black/20 p-2 rounded mt-1">
+                        1. K 位于 Q 之前: 无需掩码<br/>
+                        2. K 与 Q 交叉: 局部掩码<br/>
+                        3. K 位于 Q 之后: 物理级跳过
+                      </p>
+                    </div>
+
+                    {/* 修复：将难看的弹跳横幅改为了优雅的悬浮淡入光效卡片 */}
                     {activeModule >= 13 && (
-                      <div className="mt-2 p-3 bg-emerald-600/20 border border-emerald-500 rounded-xl text-center">
-                        <Zap className="inline mr-2 text-amber-400" size={16}/>
-                        <span className="font-bold text-white text-[13px]">IO 复杂度从 $O(N^2)$ 降为 $O(N)$！</span>
+                      <div className="mt-6 p-4 bg-emerald-50/10 border border-emerald-500/50 rounded-2xl text-center relative overflow-hidden transition-all duration-700 opacity-100 translate-y-0 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/0 via-emerald-400/20 to-emerald-500/0 w-full animate-[shimmer_2s_infinite]"></div>
+                        <Zap size={22} className="inline mr-2 text-amber-300 drop-shadow-sm mb-1 relative z-10"/>
+                        <span className="font-black text-[14px] uppercase tracking-widest block text-emerald-300 relative z-10">Efficiency: O(N) IO Peak</span>
+                        <p className="text-[11px] text-emerald-500 mt-1 opacity-90 relative z-10">Memory Wall Successfully Shattered.</p>
                       </div>
                     )}
                   </div>
@@ -613,6 +671,12 @@ const App = () => {
           </div>
         </div>
       </div>
+      <style>{`
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 };
