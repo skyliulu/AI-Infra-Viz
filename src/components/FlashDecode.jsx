@@ -207,9 +207,9 @@ const App = () => {
           </ul>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch">
           
-          <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-200 flex flex-col min-w-0 overflow-hidden relative">
+          <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-200 flex flex-col min-w-0 overflow-hidden relative xl:col-span-7">
              <div className="flex items-center justify-between shrink-0 mb-4">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Cpu className="text-indigo-500" size={20} /> 数据流与计算图
@@ -237,7 +237,7 @@ const App = () => {
                   <HardDrive size={14} className="text-indigo-500"/> GPU HBM (主显存)
                 </div>
 
-                <div className="flex flex-col items-center gap-3 mt-2 min-w-[540px]">
+                <div className="flex flex-col items-center gap-3 mt-2 min-w-[480px]">
                   <div className="flex items-center gap-3 w-full">
                     <span className="text-xs font-bold text-slate-600 w-10 text-right">Query</span>
                     <div className="px-4 py-1.5 bg-blue-100 border-2 border-blue-400 text-blue-800 font-mono text-xs font-bold rounded shadow-sm w-24 text-center">
@@ -253,11 +253,11 @@ const App = () => {
                           const isBatch1 = step === 2 && i < 4;
                           const isBatch2 = step === 3 && i >= 4;
                           return (
-                            <div key={i} className={`flex-1 flex items-center justify-center font-mono text-[9px] md:text-xs font-bold transition-all duration-700 h-8
+                            <div key={i} className={`flex-1 flex items-center justify-center font-mono text-[9px] md:text-xs font-bold transition-all duration-700 h-8 whitespace-nowrap
                               ${step >= 1 ? 'bg-emerald-100 border-2 border-emerald-400 text-emerald-800 rounded' : 'bg-slate-200 border-y-2 border-slate-300 text-slate-500 first:rounded-l last:rounded-r first:border-l-2 last:border-r-2'}
                               ${(isBatch1 || isBatch2) ? 'ring-2 ring-amber-500 scale-105 z-10 shadow-md bg-amber-100 border-amber-400 text-amber-900' : ''}
                             `}>
-                              {step >= 1 ? <><i>{row.k}</i><sub>{i}</sub> <span className="font-normal text-[8px] opacity-70 ml-0.5">[b,d]</span></> : (i === 2 ? <span><i>{row.k}</i> Cache <sub>[N, d]</sub></span> : '')}
+                              {step >= 1 ? <span className="whitespace-nowrap"><i>{row.k}</i><sub>{i}</sub> <span className="font-normal text-[8px] opacity-70 ml-0.5 whitespace-nowrap">[b,d]</span></span> : (i === 2 ? <span className="whitespace-nowrap"><i>{row.k}</i> Cache <sub>[N, d]</sub></span> : '')}
                             </div>
                           )
                         })}
@@ -276,9 +276,9 @@ const App = () => {
                       {Array.from({length: NUM_KV_BLOCKS}).map((_, i) => {
                         const isWritten = (step >= 3 && i < 4) || (step >= 4 && i >= 4);
                         return (
-                          <div key={i} className={`flex-1 min-w-[60px] flex items-center justify-center py-1.5 text-[9px] font-mono rounded border transition-all duration-500
+                          <div key={i} className={`flex-1 min-w-[60px] flex items-center justify-center py-1.5 text-[9px] font-mono rounded border transition-all duration-500 whitespace-nowrap
                             ${!isWritten ? 'bg-slate-100 border-slate-200 text-transparent scale-90' : 
-                              (step === 4 || step === 5) ? 'bg-amber-100 border-amber-400 text-amber-900 shadow ring-1 ring-amber-400 animate-pulse' : 
+                              (step === 4 || step === 5) ? 'bg-indigo-100 border-amber-500 text-indigo-800 shadow-md ring-2 ring-amber-400 animate-pulse z-10' : 
                               'bg-indigo-100 border-indigo-300 text-indigo-800 shadow-sm'
                             }`}>
                             {algorithm === 'simple' ? <span><i>O<sub>{i}</sub></i>, <i>m<sub>{i}</sub></i>, <i>l<sub>{i}</sub></i></span> : <span><i>O<sub>{i}</sub></i>, <i>S<sub>{i}</sub></i></span>}
@@ -300,8 +300,8 @@ const App = () => {
                 </div>
               </div>
 
-              <div className={`flex justify-center min-w-[540px] h-10 relative transition-all duration-500 ${(step >= 2 && step <= 6) ? 'opacity-100' : 'opacity-0'}`}>
-                 <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className={`flex justify-center min-w-[480px] h-10 relative transition-all duration-500 ${(step >= 2 && step <= 6) ? 'opacity-100' : 'opacity-0'}`}>
+                 <div className="absolute inset-0 flex flex-col items-center justify-center whitespace-nowrap">
                     {step === 2 && <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1 mb-1"><ArrowDown size={14}/>[Kernel 1] 调度批次 1 加载进 SRAM...</span>}
                     {step === 3 && <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-1 mb-1"><ArrowUp size={14}/>[Kernel 1] 批次 2 加载，同时写回批次 1 的暂存结果...<ArrowDown size={14}/></span>}
                     {(step === 4 || step === 5) && <span className="text-[10px] font-bold text-pink-600 flex items-center gap-1 mb-1"><ArrowDown size={14}/>[Kernel 2] 指派 SM 3 进行最终归约加载...</span>}
@@ -319,13 +319,13 @@ const App = () => {
 
                 {step === 4 && (
                   <div className="absolute inset-x-0 -top-8 flex justify-center">
-                    <div className="bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-bold flex items-center gap-2 shadow-lg animate-bounce">
+                    <div className="bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-bold flex items-center gap-2 shadow-lg animate-bounce whitespace-nowrap">
                       <Combine size={12}/> Kernel 级同步屏障 (Barrier Sync) 已越过，开启归约。
                     </div>
                   </div>
                 )}
 
-                <div className={`grid gap-2 min-w-[540px] mt-4 transition-all duration-700 ${step >= 2 ? 'opacity-100' : 'opacity-30'}`} 
+                <div className={`grid gap-2 min-w-[480px] mt-4 transition-all duration-700 ${step >= 2 ? 'opacity-100' : 'opacity-30'}`} 
                      style={{ gridTemplateColumns: `repeat(${NUM_SMS}, minmax(0, 1fr))` }}>
                   {Array.from({length: NUM_SMS}).map((_, smIdx) => {
                     const isReductionWorker = (smIdx === 3 && step >= 4);
@@ -344,8 +344,8 @@ const App = () => {
                         ${isComputingLocal ? 'bg-white border-amber-300 ring-2 ring-amber-100' : 
                           isReductionWorker ? 'bg-white border-indigo-400 ring-2 ring-indigo-100 shadow-md z-10' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
                         
-                        <div className={`text-[10px] font-bold mb-1 border-b w-full text-center pb-1 ${isReductionWorker ? 'text-indigo-700 border-indigo-200' : 'text-slate-700 border-slate-200'}`}>
-                          SM {smIdx} {isReductionWorker && "(归约节点)"}
+                        <div className={`text-[10px] font-bold mb-1 border-b w-full text-center pb-1 whitespace-nowrap ${isReductionWorker ? 'text-indigo-700 border-indigo-200' : 'text-slate-700 border-slate-200'}`}>
+                          SM {smIdx} {isReductionWorker && "(归约)"}
                         </div>
                         
                         <div className="h-14 flex flex-col items-center justify-center mb-1 w-full transition-all duration-300">
@@ -367,7 +367,7 @@ const App = () => {
                             ) : (
                               <>
                                 <div className="flex flex-wrap gap-1 justify-center animate-fade-in">
-                                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 text-[8px] rounded border border-amber-400 font-mono shadow-sm">
+                                  <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 text-[8px] rounded border border-amber-500 ring-1 ring-amber-400 font-mono shadow-sm whitespace-nowrap">
                                     {algorithm === 'simple' ? <span><i>O<sub>0..5</sub></i>, <i>m<sub>0..5</sub></i>, <i>l<sub>0..5</sub></i></span> : <span><i>O<sub>0..5</sub></i>, <i>S<sub>0..5</sub></i></span>}
                                   </span>
                                 </div>
@@ -437,7 +437,7 @@ const App = () => {
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-2xl p-5 md:p-6 shadow-lg border border-slate-800 text-slate-300 h-full flex flex-col min-w-0">
+          <div className="bg-slate-900 rounded-2xl p-5 md:p-6 shadow-lg border border-slate-800 text-slate-300 h-full flex flex-col min-w-0 xl:col-span-5">
              <h2 className="text-lg font-semibold mb-4 flex items-center justify-between text-white shrink-0">
                <div className="flex items-center gap-2">
                  <Code className="text-emerald-400" size={20} /> 底层代码 (Python 伪代码)
