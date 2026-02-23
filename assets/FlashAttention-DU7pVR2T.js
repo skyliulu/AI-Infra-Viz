@@ -1,0 +1,1 @@
+import{j as e}from"./index-CRGa2-0x.js";function r(){return e.jsxs("div",{className:"rounded-2xl bg-gray-900 border border-indigo-800 p-8 text-center text-gray-400",children:[e.jsx("h2",{className:"text-2xl font-semibold text-indigo-300 mb-4",children:"Flash Attention"}),e.jsx("p",{children:"Paste your visualization code here."})]})}export{r as default};
