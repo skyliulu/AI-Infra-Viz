@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipForward, RotateCcw, Cpu, Database, Zap, AlignLeft, Code, ArrowDown, ArrowUp, SplitSquareHorizontal, Combine, Braces, Calculator, HardDrive, MemoryStick, Layers, FastForward, Info } from 'lucide-react';
+import { Play, Pause, SkipForward, RotateCcw, Cpu, Database, Zap, AlignLeft, Code, ArrowDown, ArrowUp, SplitSquareHorizontal, Combine, Braces, Calculator, HardDrive, MemoryStick, Info } from 'lucide-react';
 
 const NUM_KV_BLOCKS = 6; // 6个KV分块
 const NUM_SMS = 4;       // 4个物理SM计算单元
@@ -152,6 +152,16 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 lg:p-6 selection:bg-indigo-100">
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.4s ease-out forwards;
+        }
+      `}</style>
+      
       <div className="max-w-[90rem] mx-auto space-y-6">
         
         {/* 顶部控制栏 */}
@@ -255,19 +265,22 @@ const App = () => {
                     </div>
                   ))}
 
-                  <div className={`w-full mt-2 pt-3 border-t-2 border-dashed border-indigo-200 transition-all duration-500 ${(step >= 3) ? 'opacity-100' : 'opacity-0'}`}>
+                  <div className={`w-full transition-all duration-700 overflow-hidden ${(step >= 3 && step <= 5) ? 'max-h-40 opacity-100 mt-2 pt-3 border-t-2 border-dashed border-indigo-200' : 'max-h-0 opacity-0 mt-0 pt-0 border-none'}`}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold text-indigo-600 flex items-center gap-1">
                         <Database size={12}/> HBM Workspace (中间态暂存)
                       </span>
-                      {step >= 4 && step <= 5 && <span className="text-[10px] text-pink-600 font-bold animate-pulse">SM 3 正在回读数据并进行归约...</span>}
+                      {step >= 4 && step <= 5 && <span className="text-[10px] text-amber-600 font-bold animate-pulse">SM 3 正在回读数据并进行归约...</span>}
                     </div>
-                    <div className="flex flex-wrap justify-center gap-2 w-full">
+                    <div className="flex flex-wrap justify-center gap-2 w-full pb-1">
                       {Array.from({length: NUM_KV_BLOCKS}).map((_, i) => {
                         const isWritten = (step >= 3 && i < 4) || (step >= 4 && i >= 4);
                         return (
                           <div key={i} className={`flex-1 min-w-[60px] flex items-center justify-center py-1.5 text-[9px] font-mono rounded border transition-all duration-500
-                            ${isWritten ? 'bg-indigo-100 border-indigo-300 text-indigo-800 shadow-sm scale-100' : 'bg-slate-100 border-slate-200 text-transparent scale-90'}`}>
+                            ${!isWritten ? 'bg-slate-100 border-slate-200 text-transparent scale-90' : 
+                              (step === 4 || step === 5) ? 'bg-amber-100 border-amber-400 text-amber-900 shadow ring-1 ring-amber-400 animate-pulse' : 
+                              'bg-indigo-100 border-indigo-300 text-indigo-800 shadow-sm'
+                            }`}>
                             {algorithm === 'simple' ? <span><i>O<sub>{i}</sub></i>, <i>m<sub>{i}</sub></i>, <i>l<sub>{i}</sub></i></span> : <span><i>O<sub>{i}</sub></i>, <i>S<sub>{i}</sub></i></span>}
                           </div>
                         )
@@ -306,16 +319,16 @@ const App = () => {
 
                 {step === 4 && (
                   <div className="absolute inset-x-0 -top-8 flex justify-center">
-                    <div className="bg-pink-600 text-white px-4 py-1 rounded-full text-[10px] font-bold flex items-center gap-2 shadow-lg animate-bounce">
+                    <div className="bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-bold flex items-center gap-2 shadow-lg animate-bounce">
                       <Combine size={12}/> Kernel 级同步屏障 (Barrier Sync) 已越过，开启归约。
                     </div>
                   </div>
                 )}
 
-                <div className={`grid gap-2 min-w-[540px] mt-4 transition-all duration-500 ${step >= 2 ? 'opacity-100' : 'opacity-30'}`} 
+                <div className={`grid gap-2 min-w-[540px] mt-4 transition-all duration-700 ${step >= 2 ? 'opacity-100' : 'opacity-30'}`} 
                      style={{ gridTemplateColumns: `repeat(${NUM_SMS}, minmax(0, 1fr))` }}>
                   {Array.from({length: NUM_SMS}).map((_, smIdx) => {
-                    const isReductionWorker = (smIdx === 3 && (step === 4 || step === 5));
+                    const isReductionWorker = (smIdx === 3 && step >= 4);
                     
                     let currentBlock = null;
                     if (step === 2) currentBlock = SM_BATCHES[0][smIdx];
@@ -329,9 +342,9 @@ const App = () => {
                     return (
                       <div key={smIdx} className={`flex flex-col items-center p-2 rounded border shadow-sm transition-all duration-500 relative
                         ${isComputingLocal ? 'bg-white border-amber-300 ring-2 ring-amber-100' : 
-                          isReductionWorker ? 'bg-white border-pink-400 ring-4 ring-pink-100 scale-105 z-20' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
+                          isReductionWorker ? 'bg-white border-indigo-400 ring-2 ring-indigo-100 shadow-md z-10' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
                         
-                        <div className={`text-[10px] font-bold mb-1 border-b w-full text-center pb-1 ${isReductionWorker ? 'text-pink-700 border-pink-200' : 'text-slate-700 border-slate-200'}`}>
+                        <div className={`text-[10px] font-bold mb-1 border-b w-full text-center pb-1 ${isReductionWorker ? 'text-indigo-700 border-indigo-200' : 'text-slate-700 border-slate-200'}`}>
                           SM {smIdx} {isReductionWorker && "(归约节点)"}
                         </div>
                         
@@ -346,39 +359,52 @@ const App = () => {
                               <ArrowDown size={12} className="text-amber-400 mt-1 animate-pulse"/>
                             </>
                           ) : isReductionWorker ? (
-                            <>
-                              <div className="flex flex-wrap gap-1 justify-center animate-fade-in">
-                                <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 text-[8px] rounded border border-indigo-300">Workspace 状态集</span>
+                            step === 6 ? (
+                              <div className="flex flex-col items-center animate-fade-in text-emerald-600 font-bold gap-1 mt-1">
+                                <Zap size={14} />
+                                <span className="text-[10px]">归约与合并完成</span>
                               </div>
-                              <ArrowDown size={12} className="text-pink-400 mt-1 animate-pulse"/>
-                            </>
+                            ) : (
+                              <>
+                                <div className="flex flex-wrap gap-1 justify-center animate-fade-in">
+                                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 text-[8px] rounded border border-amber-400 font-mono shadow-sm">
+                                    {algorithm === 'simple' ? <span><i>O<sub>0..5</sub></i>, <i>m<sub>0..5</sub></i>, <i>l<sub>0..5</sub></i></span> : <span><i>O<sub>0..5</sub></i>, <i>S<sub>0..5</sub></i></span>}
+                                  </span>
+                                </div>
+                                <ArrowDown size={12} className="text-amber-500 mt-1 animate-pulse"/>
+                              </>
+                            )
                           ) : (
-                            <span className="text-[10px] text-slate-400 italic">{step > 3 ? '✓ 同步完成' : '空闲 / 待命'}</span>
+                            <span className="text-[10px] text-slate-400 italic text-center leading-tight">
+                              {step >= 4 ? '✓ 待命 (局部计算完成)' : '空闲 / 待命'}
+                            </span>
                           )}
                         </div>
 
-                        <div className={`p-1.5 md:p-2 rounded w-full text-left space-y-1.5 text-[8px] md:text-[9.5px] border transition-colors duration-500
+                        <div className={`p-1.5 md:p-2 rounded w-full text-left space-y-1.5 text-[8px] md:text-[9.5px] border transition-colors duration-500 flex flex-col justify-center
                           ${isComputingLocal ? 'bg-amber-50/50 border-amber-100' : 
-                            isReductionWorker ? 'bg-pink-50/50 border-pink-100' : 'bg-slate-50 border-slate-100'}`}>
+                            isReductionWorker ? 'bg-indigo-50/50 border-indigo-100' : 'bg-slate-50 border-slate-100'}`}>
                           
                           {isReductionWorker ? (
                             algorithm === 'simple' ? (
-                              <div className="space-y-1.5">
-                                <div className={step === 4 ? "text-pink-700 font-bold" : "text-slate-500"}><i>m<sub>g</sub></i> = max(<i>m<sub>0..5</sub></i>)</div>
-                                <div className={step === 5 ? "text-pink-700 font-bold" : "text-slate-500"}><i>w<sub>i</sub></i> = e<sup><i>m<sub>i</sub>-m<sub>g</sub></i></sup></div>
-                                <div className={step === 5 ? "text-pink-700 font-bold flex flex-col leading-none pt-1" : "text-slate-500 flex flex-col leading-none"}>
+                              <div className="space-y-1">
+                                <div className={step === 4 ? "text-indigo-700 font-bold" : "text-slate-500"}><i>m<sub>g</sub></i> = max(<i>m<sub>0..5</sub></i>)</div>
+                                <div className={step === 5 ? "text-indigo-700 font-bold" : "text-slate-500"}><i>w<sub>i</sub></i> = e<sup><i>m<sub>i</sub>-m<sub>g</sub></i></sup></div>
+                                <div className={step >= 5 ? "text-indigo-700 font-bold flex flex-col pt-0.5" : "text-slate-500 flex flex-col pt-0.5"}>
                                   <span><i>O<sub>final</sub></i> = &Sigma; <i>O<sub>i</sub>w<sub>i</sub></i> / &Sigma; <i>w<sub>i</sub></i></span>
                                 </div>
                               </div>
                             ) : (
-                              <div className="space-y-1.5">
-                                <div className={step === 4 ? "text-pink-700 font-bold" : "text-slate-500"}><i>S<sub>new</sub></i> = <i>S<sub>max</sub></i> + ln(1+e<sup>&Delta;<i>S</i></sup>)</div>
-                                <div className={step === 5 ? "text-pink-700 font-bold" : "text-slate-500"}><i>w<sub>i</sub></i> = e<sup><i>S<sub>i</sub>-S<sub>g</sub></i></sup></div>
-                                <div className={step === 5 ? "text-pink-700 font-bold" : "text-slate-500"}><i>O<sub>final</sub></i> = &Sigma; (<i>O<sub>i</sub>w<sub>i</sub></i>)</div>
+                              <div className="space-y-1">
+                                <div className={step === 4 ? "text-indigo-700 font-bold leading-tight" : "text-slate-500 leading-tight"}><i>S<sub>new</sub></i> = <i>S<sub>max</sub></i> + ln(1+e<sup>&Delta;<i>S</i></sup>)</div>
+                                <div className={step === 5 ? "text-indigo-700 font-bold" : "text-slate-500"}><i>w<sub>i</sub></i> = e<sup><i>S<sub>i</sub>-S<sub>g</sub></i></sup></div>
+                                <div className={step >= 5 ? "text-indigo-700 font-bold flex flex-col pt-0.5" : "text-slate-500 flex flex-col pt-0.5"}>
+                                  <span><i>O<sub>final</sub></i> = &Sigma; (<i>O<sub>i</sub>w<sub>i</sub></i>)</span>
+                                </div>
                               </div>
                             )
                           ) : (
-                            <div className="space-y-1">
+                            <div className={`space-y-1 transition-opacity duration-500 ${step >= 4 ? 'opacity-40 grayscale' : 'opacity-100'}`}>
                               <div className="text-slate-500 border-b border-slate-200 pb-1 mb-1 leading-tight italic">
                                 <i>S<sub>{t}</sub></i> = (<i>Q K<sub>{t}</sub><sup>T</sup></i>) / &radic;<i>d</i>
                               </div>
@@ -395,7 +421,6 @@ const App = () => {
                                     <i>S<sub>new_{t}</sub></i> = <i>m<sub>{t}</sub></i> + ln(<i>l<sub>{t}</sub></i>)
                                   </div>
                                   <div className={isComputingLocal ? 'text-amber-700 font-bold bg-amber-100/50 rounded px-1' : 'text-slate-500'}>
-                                    {/* 修复 JSX 语法错误：修正花括号嵌套与标签闭合 */}
                                     <i>O<sub>{t}</sub></i> = (e<sup>..</sup> / <i>l<sub>{t}</sub></i>) <i>V<sub>{t}</sub></i>
                                   </div>
                                 </>
