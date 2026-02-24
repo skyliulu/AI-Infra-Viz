@@ -458,7 +458,7 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 lg:p-6 overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans py-6 px-4 sm:px-8 md:px-12 lg:px-16 xl:px-24 2xl:px-32 overflow-x-hidden">
       <div className="max-w-[110rem] mx-auto space-y-6">
         
         <div className="bg-white rounded-2xl p-5 md:p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
