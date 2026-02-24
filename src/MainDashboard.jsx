@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useState } from 'react';
-import { Github, Cpu, Zap, FastForward, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Github, Cpu, Zap, FastForward, Network, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -9,9 +9,11 @@ const cn = (...inputs) => twMerge(clsx(inputs));
 const LLMInference = lazy(() => import('./components/LLMInference.jsx'));
 const FlashAttention = lazy(() => import('./components/FlashAttention.jsx'));
 const FlashDecode = lazy(() => import('./components/FlashDecode.jsx'));
+const ParallelStrategies = lazy(() => import('./components/ParallelStrategies.jsx'));
 
 const TABS = [
   { id: 'llm', label: 'LLM Inference', icon: Cpu, component: LLMInference },
+  { id: 'parallel', label: 'Parallel Strategies', icon: Network, component: ParallelStrategies },
   { id: 'flash', label: 'Flash Attention', icon: Zap, component: FlashAttention },
   { id: 'flashdecode', label: 'Flash Decode', icon: FastForward, component: FlashDecode },
 ];
@@ -63,10 +65,10 @@ export default function MainDashboard() {
                 href="https://github.com/skyliulu/AI-Infra-Viz"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-slate-400 hover:text-white transition-colors p-1 rounded"
+                className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-700"
                 aria-label="GitHub repository"
               >
-                <Github size={16} />
+                <Github size={20} />
               </a>
             )}
             <button
@@ -121,10 +123,10 @@ export default function MainDashboard() {
               href="https://github.com/skyliulu/AI-Infra-Viz"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-slate-400 hover:text-white transition-colors p-1.5 rounded"
+              className="text-slate-300 hover:text-white transition-colors p-1.5 rounded hover:bg-slate-700"
               aria-label="GitHub repository"
             >
-              <Github size={16} />
+              <Github size={20} />
             </a>
           </div>
         )}
