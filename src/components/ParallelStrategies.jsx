@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Layers, Grid, Boxes, SplitSquareHorizontal, BrainCircuit, Cpu, Network, RotateCcw, Info, ArrowDown } from 'lucide-react';
+import { Layers, Grid, Boxes, SplitSquareHorizontal, BrainCircuit, Cpu, Network, RotateCcw, Info, ArrowDown, Pin } from 'lucide-react';
 
 const MAX_GPUS = 16;
 
@@ -30,6 +30,10 @@ const getColorClass = (color, type) => {
 const App = () => {
   const [degrees, setDegrees] = useState({ dp: 1, tp: 1, pp: 1, cp: 1, ep: 1, etp: 1 });
   const [hoveredGpu, setHoveredGpu] = useState(null);
+  const [pinnedGpu, setPinnedGpu] = useState(null);
+
+  // 核心状态：计算当前应该展示哪张卡的切片状态 (优先展示悬浮，其次是锁定)
+  const activeGpu = hoveredGpu !== null ? hoveredGpu : pinnedGpu;
 
   const totalGpus = useMemo(() => {
     return degrees.dp * degrees.pp * degrees.cp * Math.max(degrees.tp, degrees.ep * degrees.etp);
@@ -42,12 +46,16 @@ const App = () => {
 
   const handleSetDegree = (dim, val) => {
     const newDegrees = { ...degrees, [dim]: val };
-    if (checkConstraints(newDegrees)) setDegrees(newDegrees);
+    if (checkConstraints(newDegrees)) {
+      setDegrees(newDegrees);
+      setPinnedGpu(null); // 当修改拓扑时自动解除锁定
+    }
   };
 
   const reset = () => {
     setDegrees({ dp: 1, tp: 1, pp: 1, cp: 1, ep: 1, etp: 1 });
     setHoveredGpu(null);
+    setPinnedGpu(null);
   };
 
   const getGpuCoords = (g) => {
@@ -80,7 +88,8 @@ const App = () => {
     const inactiveColorClass = "bg-slate-100 border border-slate-200/60";
     const numChunks = sliceDir === 'rep' ? 1 : Math.max(1, degree);
     
-    const effectiveActive = (hoveredGpu === null) 
+    // 替换原本的 hoveredGpu 为 activeGpu
+    const effectiveActive = (activeGpu === null) 
         ? Array.from({length: numChunks}).map((_, i) => i) 
         : (isLayerActive ? [activeChunkIndex] : []);
 
@@ -112,7 +121,7 @@ const App = () => {
   // 2. 2D网格切分矩阵块
   const GridBlock = ({ title, dims, splitLabel, isLayerActive, activeColorClass, degreeX = 1, degreeY = 1, activeX = 0, activeY = 0, mW, mH }) => {
     const inactiveColorClass = "bg-slate-100 border border-slate-200/60";
-    const effectiveActive = (hoveredGpu === null) ? true : isLayerActive;
+    const effectiveActive = (activeGpu === null) ? true : isLayerActive;
     
     const dX = Math.max(1, degreeX);
     const dY = Math.max(1, degreeY);
@@ -136,7 +145,7 @@ const App = () => {
             {Array.from({ length: dX * dY }).map((_, i) => {
               const y = Math.floor(i / dX);
               const x = i % dX;
-              const isActive = effectiveActive && (hoveredGpu === null || (activeY === y && activeX === x));
+              const isActive = effectiveActive && (activeGpu === null || (activeY === y && activeX === x));
               return <div key={i} className={`rounded-[1px] transition-colors duration-300 ${isActive ? activeColorClass : inactiveColorClass}`} />
             })}
           </div>
@@ -151,7 +160,7 @@ const App = () => {
 
   // 3. 重构版 3D 三维张量切片引擎 (Light Mode 优化投影)
   const Tensor3DBlock = ({ title, dims, splitLabel, isLayerActive, activeColorClass, degreeX = 1, degreeY = 1, degreeZ = 1, activeX = 0, activeY = 0, activeZ = 0, mW, mH }) => {
-    const effectiveActive = (hoveredGpu === null) ? true : isLayerActive;
+    const effectiveActive = (activeGpu === null) ? true : isLayerActive;
 
     const dX = Math.max(1, degreeX);
     const dY = Math.max(1, degreeY);
@@ -168,15 +177,15 @@ const App = () => {
           <div className="relative" style={{ width: `${mW}px`, height: `${mH}px` }}>
             {Array.from({ length: dZ }).map((_, z) => {
               const actualZ = dZ - 1 - z; 
-              const isZActive = effectiveActive && (hoveredGpu === null || activeZ === actualZ);
+              const isZActive = effectiveActive && (activeGpu === null || activeZ === actualZ);
               
               const offsetStep = 14; 
               const totalOffset = (dZ - 1) * offsetStep;
               const offsetX = (actualZ * offsetStep) - (totalOffset / 2);
               const offsetY = -(actualZ * offsetStep) + (totalOffset / 2);
 
-              const layerZIndex = (isZActive && hoveredGpu !== null) ? 50 : actualZ;
-              const layerStyleClass = (!isZActive && hoveredGpu !== null) 
+              const layerZIndex = (isZActive && activeGpu !== null) ? 50 : actualZ;
+              const layerStyleClass = (!isZActive && activeGpu !== null) 
                   ? 'opacity-30 grayscale pointer-events-none' // 白色背景下的幽灵态调整
                   : 'opacity-100 shadow-md shadow-slate-300'; 
 
@@ -196,7 +205,7 @@ const App = () => {
                     {Array.from({ length: dX * dY }).map((_, i) => {
                       const y = Math.floor(i / dX);
                       const x = i % dX;
-                      const isActive = isZActive && (hoveredGpu === null || (activeY === y && activeX === x));
+                      const isActive = isZActive && (activeGpu === null || (activeY === y && activeX === x));
                       
                       const blockClass = isActive 
                           ? activeColorClass 
@@ -224,7 +233,7 @@ const App = () => {
   };
 
   const renderLogicalView = () => {
-    const coords = hoveredGpu !== null ? getGpuCoords(hoveredGpu) : null;
+    const coords = activeGpu !== null ? getGpuCoords(activeGpu) : null;
     
     const isEmbeddingActive = coords ? coords.pp_idx === 0 : true;
     const isLmHeadActive = coords ? coords.pp_idx === degrees.pp - 1 : true;
@@ -430,20 +439,30 @@ const App = () => {
 
   const renderGpuCard = (g) => {
     const coords = getGpuCoords(g);
+    const isPinned = pinnedGpu === g;
+    const isHovered = hoveredGpu === g;
+    const isActiveCard = isPinned || isHovered;
+
     return (
       <div 
         key={g}
+        onClick={() => setPinnedGpu(isPinned ? null : g)}
         onMouseEnter={() => setHoveredGpu(g)}
         onMouseLeave={() => setHoveredGpu(null)}
         className={`bg-white rounded-xl p-3 border cursor-pointer transition-all duration-200 
-          ${hoveredGpu === g ? 'border-cyan-400 shadow-[0_8px_20px_rgba(6,182,212,0.15)] scale-105 z-10' : 'border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md'}`}
+          ${isActiveCard ? 'border-cyan-400 shadow-[0_8px_20px_rgba(6,182,212,0.15)] scale-105 z-10' : 'border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md'}
+          ${isPinned ? 'ring-2 ring-cyan-400 ring-offset-1' : ''}`}
       >
         <div className="flex justify-between items-center border-b border-slate-100 pb-1.5 mb-2">
           <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
-            <Cpu size={12} className={hoveredGpu === g ? 'text-cyan-500' : 'text-slate-400'} /> 
+            <Cpu size={12} className={isActiveCard ? 'text-cyan-500' : 'text-slate-400'} /> 
             GPU {g}
           </span>
-          {hoveredGpu === g && <span className="text-[9px] text-cyan-500 font-semibold animate-pulse">Hovering</span>}
+          <div className="flex items-center gap-1">
+            {isPinned && <Pin size={10} className="text-cyan-600 fill-cyan-100" />}
+            {isHovered && !isPinned && <span className="text-[9px] text-cyan-500 font-semibold animate-pulse">Hover</span>}
+            {isPinned && <span className="text-[9px] text-cyan-600 font-semibold">已锁定</span>}
+          </div>
         </div>
         <div className="flex flex-col gap-1.5">
           {renderMiniTrack('dp', 'DP', 'blue', coords)}
@@ -525,8 +544,8 @@ const App = () => {
           
           <div className="col-span-2 md:col-span-3 xl:col-span-6 flex items-center justify-between text-[11px] text-slate-500 mt-1 bg-white shadow-sm p-2.5 rounded-lg border border-slate-200">
             <div className="flex items-center gap-1.5">
-              <Info size={14} className="text-blue-500" />
-              <span><strong>集群复用提示:</strong> 基础层 TP 和 专家层并行 (EP × ETP) 通常复用同一个 GPU 通信域以节省跨机网络带宽。因此调度总卡数 = DP × PP × CP × max(TP, EP×ETP)。</span>
+              <Info size={14} className="text-blue-500 shrink-0" />
+              <span><strong>集群复用提示:</strong> 基础层 TP 和 专家层并行 (EP × ETP) 通常复用同一个 GPU 通信域以节省跨机网络带宽。因此调度总卡数 = DP × PP × CP × max(TP, EP×ETP)。<strong>点击右侧 GPU 卡片可将其固定锁定，方便对比观察。</strong></span>
             </div>
           </div>
         </div>
