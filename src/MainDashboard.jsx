@@ -13,7 +13,7 @@ const ParallelStrategies = lazy(() => import('./components/ParallelStrategies.js
 
 const TABS = [
   { id: 'llm', label: 'LLM Inference', icon: Cpu, component: LLMInference },
-  { id: 'parallel', label: 'Parallel Strategies', icon: Network, component: ParallelStrategies },
+  { id: 'parallel', label: 'Parallel Strategy', icon: Network, component: ParallelStrategies },
   { id: 'flash', label: 'Flash Attention', icon: Zap, component: FlashAttention },
   { id: 'flashdecode', label: 'Flash Decode', icon: FastForward, component: FlashDecode },
 ];
