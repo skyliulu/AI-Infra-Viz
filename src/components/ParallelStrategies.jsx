@@ -242,7 +242,8 @@ const App = () => {
 
     return (
       <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 flex flex-col gap-2 relative overflow-hidden h-full">
-        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between border-b border-slate-200 pb-3 mb-2 gap-2">
+        {/* 修复：移除 xl:flex-row 和 justify-between，始终保持 flex-col 上下排列 */}
+        <div className="flex flex-col items-start border-b border-slate-200 pb-3 mb-2 gap-2.5">
           <h3 className="text-base md:text-lg font-bold flex items-center gap-2 text-slate-800">
             <Network className="text-cyan-600" size={20} />
             LLM 数学架构与动态张量切片
