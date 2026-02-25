@@ -426,13 +426,25 @@ const App = () => {
     const degree = customDegree !== null ? customDegree : degrees[dim];
     const activeIdx = coords[`${dim}_idx`];
     const activeColor = getColorClass(color, 'bg');
+    const textColor = getColorClass(color, 'text');
+
     return (
-      <div key={dim} className="flex items-center gap-2 text-[10px]">
-        <span className={`w-[42px] font-bold ${getColorClass(color, 'text')} text-right`}>{label}</span>
-        <div className="flex gap-0.5 flex-1">
+      <div key={dim} className="flex items-center text-[10px]">
+        {/* Label */}
+        <span className={`w-[48px] font-bold ${textColor} text-right shrink-0 mr-1.5`}>{label}</span>
+        
+        {/* Progress Bar */}
+        <div className="flex gap-[1px] flex-1 h-1.5 mr-2">
           {Array.from({ length: Math.max(1, degree) }).map((_, i) => (
-            <div key={i} className={`h-1.5 flex-1 rounded-sm transition-colors duration-300 ${i === activeIdx ? activeColor : 'bg-slate-200'}`} />
+            <div key={i} className={`flex-1 rounded-[1px] transition-colors duration-300 ${i === activeIdx ? activeColor : 'bg-slate-100'}`} />
           ))}
+        </div>
+        
+        {/* Explicit Rank Number */}
+        <div className="w-6 shrink-0 flex justify-end">
+           <span className="font-mono text-[9px] text-slate-500 bg-slate-50 px-1.5 py-[1px] rounded border border-slate-200">
+             {activeIdx}
+           </span>
         </div>
       </div>
     );
