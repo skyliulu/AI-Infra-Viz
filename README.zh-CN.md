@@ -35,15 +35,11 @@
 
 ## 🖼️ 项目预览
 
-<video src="./media/engram.mp4" controls width="100%" preload="metadata">
-  当前环境不支持 video 标签，请使用下方链接查看。
-</video>
+![Engram 演示](./media/engram.gif)
 
 [直接打开视频](./media/engram.mp4)
 
-<video src="./media/parallel.mp4" controls width="100%" preload="metadata">
-  当前环境不支持 video 标签，请使用下方链接查看。
-</video>
+![并行策略演示](./media/parallel.gif)
 
 [直接打开视频](./media/parallel.mp4)
 

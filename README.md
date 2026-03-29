@@ -35,15 +35,11 @@ This project helps you **see and interact with these processes**, instead of jus
 
 ## 🖼️ Preview
 
-<video src="./media/engram.mp4" controls width="100%" preload="metadata">
-  Your browser does not support the video tag.
-</video>
+![Engram demo](./media/engram.gif)
 
 [Open video directly](./media/engram.mp4)
 
-<video src="./media/parallel.mp4" controls width="100%" preload="metadata">
-  Your browser does not support the video tag.
-</video>
+![Parallel strategy demo](./media/parallel.gif)
 
 [Open video directly](./media/parallel.mp4)
 
