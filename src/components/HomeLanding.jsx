@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, BrainCircuit, Cpu, Database, FastForward, Github, GitBranch, Globe, Network, Sparkles, Star, Zap } from 'lucide-react';
+import { ArrowRight, BrainCircuit, Cpu, Database, FastForward, Github, GitBranch, Globe, Network, Sparkles, Star, Zap, Activity } from 'lucide-react';
 
 const REPO_API = 'https://api.github.com/repos/skyliulu/LLM-Infra-Explorer';
 const REPO_URL = 'https://github.com/skyliulu/LLM-Infra-Explorer';
@@ -89,6 +89,16 @@ const featureCards = [
     },
     icon: GitBranch,
     iconClass: 'text-indigo-300',
+  },
+  {
+    id: 'linearattn',
+    title: { en: 'Linear Attention', zh: 'Linear Attention' },
+    description: {
+      en: 'From O(N²) to O(N): understand how the kernel trick and associativity reorder transforms Attention into a recurrent state machine.',
+      zh: '从 O(N²) 到 O(N)：理解核函数近似与结合律重排如何将 Attention 变为 O(d²) 固定状态的递归更新。',
+    },
+    icon: Activity,
+    iconClass: 'text-violet-300',
   },
   {
     id: 'dpattention',

@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useState } from 'react';
-import { Github, Cpu, Zap, FastForward, Network, Database, GitBranch, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Github, Cpu, Zap, FastForward, Network, Database, GitBranch, Activity, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -14,6 +14,7 @@ const FlashDecode = lazy(() => import('./components/FlashDecode.jsx'));
 const ParallelStrategies = lazy(() => import('./components/ParallelStrategies.jsx'));
 const Engram = lazy(() => import('./components/Engram.jsx'));
 const RadixCache = lazy(() => import('./components/RadixCache.jsx'));
+const LinearAttention = lazy(() => import('./components/LinearAttention.jsx'));
 
 const TABS = [
   { id: 'llm', label: 'LLM Inference', icon: Cpu, component: LLMInference },
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'engram', label: 'Engram', icon: Database, component: Engram },
   { id: 'radixcache', label: 'Radix Cache', icon: GitBranch, component: RadixCache },
   { id: 'dpattention', label: 'DP Attention', icon: Network, component: DpAttention },
+  { id: 'linearattn', label: 'Linear Attention', icon: Activity, component: LinearAttention },
 ];
 
 function LoadingFallback() {
