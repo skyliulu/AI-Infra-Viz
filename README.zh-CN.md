@@ -35,7 +35,17 @@
 
 ## 🖼️ 项目预览
 
-> *（在此添加截图 / GIF）*
+<video src="./media/engram.mp4" controls width="100%" preload="metadata">
+  当前环境不支持 video 标签，请使用下方链接查看。
+</video>
+
+[直接打开视频](./media/engram.mp4)
+
+<video src="./media/parallel.mp4" controls width="100%" preload="metadata">
+  当前环境不支持 video 标签，请使用下方链接查看。
+</video>
+
+[直接打开视频](./media/parallel.mp4)
 
 ---
 

@@ -35,7 +35,17 @@ This project helps you **see and interact with these processes**, instead of jus
 
 ## 🖼️ Preview
 
-> *(Add screenshots / GIFs here)*
+<video src="./media/engram.mp4" controls width="100%" preload="metadata">
+  Your browser does not support the video tag.
+</video>
+
+[Open video directly](./media/engram.mp4)
+
+<video src="./media/parallel.mp4" controls width="100%" preload="metadata">
+  Your browser does not support the video tag.
+</video>
+
+[Open video directly](./media/parallel.mp4)
 
 ---
 
