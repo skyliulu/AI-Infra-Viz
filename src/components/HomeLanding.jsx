@@ -90,6 +90,16 @@ const featureCards = [
     icon: GitBranch,
     iconClass: 'text-indigo-300',
   },
+  {
+    id: 'dpattention',
+    title: { en: 'DP Attention', zh: 'DP Attention' },
+    description: {
+      en: 'Understand hybrid DP/TP attention flow, KV cache sharding, and cross-rank communication trade-offs.',
+      zh: '理解 DP/TP 混合并行中的 Attention 流程、KV Cache 切分方式与跨卡通信权衡。',
+    },
+    icon: Network,
+    iconClass: 'text-sky-300',
+  },
 ];
 
 function formatStars(count) {

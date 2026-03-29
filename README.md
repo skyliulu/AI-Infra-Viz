@@ -30,6 +30,7 @@ This project helps you **see and interact with these processes**, instead of jus
 - 🚀 **Flash Decode** — KV Cache splitting across SM compute units, parallel two-step reduction, and memory-wall-breaking decode optimization
 - 🧬 **Engram (DeepSeek)** — n-gram conditional memory retrieval augmenting Transformer layers, with tensor flow visualization and hardware-level async prefetch timeline
 - 🌲 **Radix Cache** — SGLang's radix-tree-based global KV cache sharing, with lazy prefix splitting, LRU eviction, and physical memory block reuse visualization
+- 🔁 **DP Attention** — hybrid DP/TP attention flow, KV cache row-sharding strategy, and cross-rank communication trade-off visualization
 
 ---
 

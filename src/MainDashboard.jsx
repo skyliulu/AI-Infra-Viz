@@ -8,6 +8,7 @@ const cn = (...inputs) => twMerge(clsx(inputs));
 
 const HomeLanding = lazy(() => import('./components/HomeLanding.jsx'));
 const LLMInference = lazy(() => import('./components/LLMInference.jsx'));
+const DpAttention = lazy(() => import('./components/DpAttention.jsx'));
 const FlashAttention = lazy(() => import('./components/FlashAttention.jsx'));
 const FlashDecode = lazy(() => import('./components/FlashDecode.jsx'));
 const ParallelStrategies = lazy(() => import('./components/ParallelStrategies.jsx'));
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'flashdecode', label: 'Flash Decode', icon: FastForward, component: FlashDecode },
   { id: 'engram', label: 'Engram', icon: Database, component: Engram },
   { id: 'radixcache', label: 'Radix Cache', icon: GitBranch, component: RadixCache },
+  { id: 'dpattention', label: 'DP Attention', icon: Network, component: DpAttention },
 ];
 
 function LoadingFallback() {
