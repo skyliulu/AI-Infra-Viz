@@ -347,3 +347,51 @@ Then manually verify:
 4. Switching mode (modeA ↔ modeB) resets animation to step 0
 5. At mobile width (~375px) the top control bar does not overflow (`flex-wrap` handles it)
 6. No `console.error` or React key warnings in browser devtools
+
+---
+
+## Step 5 — Run the visual rendering check
+
+After the dev server is running (`npm run dev`), run the automated visual check against the new module:
+
+```bash
+# Check only the new module (fast, ~10-15 s)
+node scripts/visual-check.js --module <your-module-id>
+
+# Or via npm script
+npm run check:visual:module <your-module-id>
+```
+
+The script uses a headless Chromium browser (Playwright) and verifies:
+
+| Check | What it validates |
+|---|---|
+| **No console errors** | Zero JS errors / React warnings at every step |
+| **No horizontal overflow** | `body.scrollWidth <= body.clientWidth` at desktop *and* mobile (390px) |
+| **Structural elements** | Control bar, pseudocode panel (`bg-[#0d1117]`), animation canvas all present |
+| **Step counter advances** | Clicking Next N times reaches step N/MAX |
+| **Reset works** | After reaching MAX, Reset returns counter to `[0/MAX]` |
+| **Mode B steps** | If the module has a second mode, all its steps are also checked |
+| **Language toggle** | Globe button label changes after click |
+| **Mobile layout** | Viewport set to 390×844 — still no overflow |
+
+Screenshots are saved to `screenshots/<module>-step-<n>.png` for visual inspection.
+
+### Before the check runs
+
+1. Confirm your module's entry is in `MODULE_STEPS` inside `scripts/visual-check.js`:
+   ```js
+   yourmodule: { default: N },           // single mode
+   yourmodule: { default: N, modeB: M }, // two modes
+   ```
+2. Make sure the dev server is running on port 5173 (default). Pass `--port <n>` if different.
+
+### Fixing failures
+
+| Failure message | Likely cause |
+|---|---|
+| `horizontal overflow detected` | A flex/grid child has a fixed width wider than the viewport; add `min-w-0` or `overflow-hidden` |
+| `pseudocode panel … not found` | Missing `bg-[#0d1117]` class on the pseudocode `<div>` |
+| `reached step X, got step Y` | `MAX_STEPS` constant or `handleNextStep` logic is wrong |
+| `language toggle did not change label` | The Globe button text is hardcoded instead of using `t('langToggle')` |
+| `console error` | Check the browser devtools error; usually a missing import or undefined key in `i18n` |

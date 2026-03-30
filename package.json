@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:visual": "node scripts/visual-check.js",
+    "check:visual:module": "node scripts/visual-check.js --module"
   },
   "dependencies": {
     "clsx": "^2.1.1",
