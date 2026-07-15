@@ -4,7 +4,7 @@ import { ArrowRight, Boxes, Database, Merge, Repeat2, ScanLine, Search, Zap } fr
 import { MathFormula } from './MathFormula';
 
 const FORMULAS = {
-  softmaxMemory: String.raw`2Nd_k`,
+  softmaxCurrentMemory: String.raw`2n_td_k`,
   linearMemory: String.raw`d_kd_v+d_k`,
   softmaxScores: String.raw`N^2`,
   linearState: String.raw`S_t=S_{t-1}+\phi(k_t)v_t^\top`,
@@ -45,31 +45,41 @@ const toneClasses = {
     fill: 'bg-amber-500',
     ring: 'ring-amber-200',
   },
+  cyan: {
+    text: 'text-cyan-800',
+    border: 'border-cyan-400',
+    soft: 'bg-cyan-50',
+    cell: 'border-cyan-400 bg-cyan-200 text-cyan-950',
+    fill: 'bg-cyan-700',
+    ring: 'ring-cyan-200',
+  },
 };
 
-function MatrixGlyph({ matrix, dk, dv, tone = 'indigo', active = false, dimensions = false, label, compact = false }) {
+function MatrixGlyph({ matrix, dk, dv, tone = 'indigo', active = false, dimensions = false, label, compact = false, layoutId, placeholder = false }) {
   const colors = toneClasses[tone];
   const cells = matrix.slice(0, 4).flatMap((row) => row.slice(0, 4));
   return (
-    <div className="min-w-0">
+    <div className="w-fit max-w-full">
       {label && <div className={`mb-1.5 text-center text-[10px] font-bold ${colors.text}`}><MathFormula>{label}</MathFormula></div>}
-      <div className={dimensions ? 'grid grid-cols-[24px_1fr] items-center gap-1' : ''}>
+      <div className={dimensions ? 'grid grid-cols-[20px_auto] items-center gap-1' : ''}>
         {dimensions && <div className="-rotate-90 whitespace-nowrap text-center text-[9px] text-slate-500"><MathFormula>{String.raw`d_k=${dk}`}</MathFormula></div>}
-        <div>
+        <div className="w-fit">
           {dimensions && <div className="mb-1 text-center text-[9px] text-slate-500"><MathFormula>{String.raw`d_v=${dv}`}</MathFormula></div>}
           <motion.div
-            animate={active ? { scale: [1, 1.035, 1] } : { scale: 1 }}
-            className={`grid grid-cols-4 gap-1 rounded-lg border p-1.5 transition ${colors.border} ${colors.soft} ${active ? `ring-4 ${colors.ring}` : ''}`}
+            layoutId={layoutId}
+            animate={active ? { scale: [1, 1.025, 1] } : { scale: 1 }}
+            transition={{ duration: 0.26 }}
+            className={`grid ${compact ? 'w-[112px]' : 'w-[128px]'} max-w-full grid-cols-4 gap-0.5 rounded-md border p-1 transition ${placeholder ? 'border-dashed border-slate-300 bg-slate-50' : `${colors.border} ${colors.soft}`} ${active ? `ring-2 ${colors.ring}` : ''}`}
           >
             {cells.map((value, index) => {
               const intensity = Math.min(1, 0.28 + Math.abs(value) / 2.6);
               return (
                 <motion.div
                   key={index}
-                  animate={{ opacity: intensity }}
-                  className={`flex ${compact ? 'h-5' : 'h-7'} items-center justify-center rounded border font-mono text-[8px] font-bold ${colors.cell}`}
+                  animate={{ opacity: placeholder ? 0.32 : intensity }}
+                  className={`flex aspect-square min-w-0 items-center justify-center rounded-[3px] border font-mono text-[10px] font-bold leading-none ${placeholder ? 'border-dashed border-slate-300 bg-white text-transparent' : colors.cell}`}
                 >
-                  {Number(value).toFixed(1)}
+                  {placeholder ? '' : Number(value).toFixed(1)}
                 </motion.div>
               );
             })}
@@ -80,15 +90,16 @@ function MatrixGlyph({ matrix, dk, dv, tone = 'indigo', active = false, dimensio
   );
 }
 
-function SoftmaxGrowthLane({ contextLength, dk, dv, state, step, t }) {
+function SoftmaxGrowthLane({ contextLength, dk, dv, state, step, activeMode, t }) {
   const filled = Math.min(DEMO_TOKENS, state.tokenIndex + 1);
-  const reading = step === 1 || step === 2;
+  const isActive = activeMode === 'exact';
+  const reading = isActive && (step === 0 || step === 1 || step === 2);
   return (
-    <div className="grid gap-4 border-b border-slate-200 px-3 py-4 lg:grid-cols-[150px_minmax(0,1fr)] lg:items-center" data-architecture-lane="softmax-decode">
+    <div className={`grid gap-4 border-b border-slate-200 px-3 py-4 transition lg:grid-cols-[150px_minmax(0,1fr)] lg:items-center ${isActive ? 'bg-rose-50/45' : 'bg-white'}`} data-architecture-lane="softmax-decode" data-lane-active={isActive}>
       <div className="flex items-center gap-2">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-700"><Database size={17} /></div>
         <div>
-          <div className="text-sm font-bold text-slate-950">Softmax</div>
+          <div className="text-sm font-bold text-slate-950">{t('softmax')}</div>
           <div className="text-[10px] font-bold text-rose-700"><MathFormula>{String.raw`t=${filled}`}</MathFormula></div>
         </div>
       </div>
@@ -132,14 +143,62 @@ function SoftmaxGrowthLane({ contextLength, dk, dv, state, step, t }) {
   );
 }
 
-function RecurrentStateLane({ targetMode, dk, dv, state, step, gateStrength, setGateStrength, t }) {
-  const tone = targetMode === 'gla' ? 'amber' : 'indigo';
+function CompressionFunnel({ targetMode, state, stateReady, isActive, t }) {
+  const tone = targetMode === 'gla' ? 'cyan' : 'indigo';
   const colors = toneClasses[tone];
+  const tokens = Array.from({ length: state.tokenIndex + 1 }, (_, index) => index);
+  const visualState = stateReady ? state.state : state.previousState;
+  const cells = visualState.slice(0, 4).flatMap((row) => row.slice(0, 4));
+  return (
+    <div className={`mb-4 grid items-center gap-3 rounded-xl border px-3 py-3 sm:grid-cols-[minmax(190px,1fr)_28px_138px] ${colors.border} ${colors.soft}`} role="img" aria-label={t(targetMode === 'gla' ? 'glaCompressedLead' : 'linearCompressedLead')} data-compression-count={tokens.length}>
+      <div className="min-w-0">
+        <div className={`mb-2 text-[9px] font-bold uppercase tracking-[0.12em] ${colors.text}`}>{t('tokensEnter')}</div>
+        <div className="flex min-h-8 items-center gap-1 overflow-hidden">
+          {tokens.map((index) => {
+            const current = index === state.tokenIndex;
+            return (
+              <motion.div
+                key={`${targetMode}-history-token-${index}`}
+                initial={current ? { x: -14, opacity: 0 } : false}
+                animate={current && isActive && stateReady ? { x: [0, 16, 28], scale: [1, 0.92, 0.72], opacity: [1, 1, 0.25] } : { x: 0, scale: 1, opacity: current ? 1 : 0.58 }}
+                transition={{ duration: 0.38 }}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-white font-mono text-[9px] font-bold ${current ? `${colors.border} ${colors.text} ring-2 ${colors.ring}` : 'border-slate-200 text-slate-500'}`}
+              >
+                <MathFormula>{String.raw`t_{${index + 1}}`}</MathFormula>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      <motion.div animate={isActive && stateReady ? { scale: [1, 1.18, 1] } : { scale: 1 }} className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-white ${colors.text}`}>
+        <Merge size={16} />
+      </motion.div>
+
+      <div className="flex items-center gap-2">
+        <motion.div animate={isActive && stateReady ? { scale: [1, 1.05, 1] } : { scale: 1 }} transition={{ duration: 0.38 }} className={`relative grid h-[68px] w-[68px] shrink-0 grid-cols-4 gap-0.5 rounded-lg border p-1.5 ${colors.border} bg-white shadow-sm`}>
+          {cells.map((value, index) => <motion.div key={index} animate={{ opacity: Math.min(1, 0.32 + Math.abs(value) / 2.4) }} className={`rounded-[2px] ${colors.fill}`} />)}
+          <div className={`absolute -right-2 -top-2 rounded-md border bg-white px-1.5 py-0.5 text-[9px] font-bold ${colors.border} ${colors.text}`}><MathFormula>{String.raw`S_t`}</MathFormula></div>
+        </motion.div>
+        <div className="min-w-0">
+          <div className={`text-[9px] font-bold uppercase tracking-[0.1em] ${colors.text}`}>{t('fixedShape')}</div>
+          <div className="mt-1 whitespace-nowrap text-[9px] text-slate-500"><MathFormula>{String.raw`${state.dk}\times ${state.dv}`}</MathFormula></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurrentStateLane({ targetMode, activeMode, dk, dv, state, step, gateStrength, setGateStrength, t }) {
+  const tone = targetMode === 'gla' ? 'cyan' : 'indigo';
+  const colors = toneClasses[tone];
+  const isActive = activeMode === targetMode;
+  const stateReady = step >= 2;
   const oldTerm = targetMode === 'gla' && step >= 1 ? state.decayedState : state.previousState;
-  const displayedState = step >= 2 ? state.state : oldTerm;
+  const oldLabel = targetMode === 'gla' && step >= 1 ? String.raw`\operatorname{Diag}(\alpha_t)S_{t-1}` : String.raw`S_{t-1}`;
   const formula = targetMode === 'gla' ? FORMULAS.glaState : FORMULAS.linearState;
   return (
-    <div className="grid gap-4 px-3 py-4 lg:grid-cols-[150px_minmax(0,1fr)] lg:items-center" data-architecture-lane={`${targetMode}-decode`}>
+    <div className={`grid gap-4 px-3 py-4 transition lg:grid-cols-[150px_minmax(0,1fr)] lg:items-center ${isActive ? targetMode === 'gla' ? 'bg-cyan-50/55' : 'bg-indigo-50/45' : 'bg-white'}`} data-architecture-lane={`${targetMode}-decode`} data-lane-active={isActive}>
       <div className="flex items-center gap-2">
         <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${colors.soft} ${colors.text}`}>{targetMode === 'gla' ? <Zap size={17} /> : <Repeat2 size={17} />}</div>
         <div>
@@ -149,23 +208,29 @@ function RecurrentStateLane({ targetMode, dk, dv, state, step, gateStrength, set
       </div>
 
       <div>
-        <div className="grid items-center gap-2 sm:grid-cols-[minmax(105px,1fr)_22px_minmax(105px,1fr)_28px_minmax(125px,1.15fr)]">
-          <MatrixGlyph matrix={oldTerm} dk={dk} dv={dv} tone={tone} compact active={step === 0 || (targetMode === 'gla' && step === 1)} label={targetMode === 'gla' ? String.raw`\operatorname{Diag}(\alpha_t)S_{t-1}` : String.raw`S_{t-1}`} />
+        <CompressionFunnel targetMode={targetMode} state={state} stateReady={stateReady} isActive={isActive} t={t} />
+        <div className="grid items-center justify-center gap-2 sm:grid-cols-[112px_18px_112px_24px_148px] sm:justify-start">
+          <MatrixGlyph matrix={oldTerm} dk={dk} dv={dv} tone={tone} compact active={isActive && !stateReady} layoutId={isActive && !stateReady ? `recurrent-state-${targetMode}` : undefined} label={oldLabel} />
           <div className={`text-center text-xl font-light ${colors.text}`}>+</div>
-          <motion.div key={`update-${state.tokenIndex}`} initial={{ x: -14, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
-            <MatrixGlyph matrix={state.update} dk={dk} dv={dv} tone={tone} compact active={step === 1} label={String.raw`\phi(k_t)v_t^\top`} />
+          <motion.div
+            key={`update-${state.tokenIndex}`}
+            initial={{ x: -18, opacity: 0 }}
+            animate={isActive && stateReady ? { x: [0, 22, 0], scale: [1, 0.9, 1], opacity: [1, 0.55, 1] } : { x: 0, scale: 1, opacity: 1 }}
+            transition={{ duration: 0.34 }}
+          >
+            <MatrixGlyph matrix={state.update} dk={dk} dv={dv} tone={tone} compact active={isActive && (step === 1 || step === 2)} label={String.raw`\phi(k_t)v_t^\top`} />
           </motion.div>
           <ArrowRight className={`mx-auto ${colors.text}`} size={20} />
-          <MatrixGlyph matrix={displayedState} dk={dk} dv={dv} tone={tone} active={step >= 2} dimensions label={String.raw`S_t`} />
+          <MatrixGlyph matrix={state.state} dk={dk} dv={dv} tone={tone} active={isActive && stateReady} dimensions placeholder={!stateReady} layoutId={isActive && stateReady ? `recurrent-state-${targetMode}` : undefined} label={String.raw`S_t`} />
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <div className={`flex items-center gap-1.5 text-[9px] font-bold ${colors.text}`}><Repeat2 size={12} /><MathFormula>{String.raw`S_t\rightarrow S_{t-1}\quad(t\!+\!1)`}</MathFormula></div>
+          <motion.div key={`recycle-${state.tokenIndex}-${stateReady}`} animate={isActive && stateReady ? { x: [0, 8, 0], opacity: [0.55, 1, 1] } : { x: 0, opacity: 0.65 }} className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[9px] font-bold ${colors.soft} ${colors.text}`}><Repeat2 size={12} /><MathFormula>{String.raw`S_t\rightarrow S_{t-1}\quad(t\!+\!1)`}</MathFormula></motion.div>
           <div className={`rounded-md px-2 py-1 text-[10px] ${colors.soft} ${colors.text}`}><MathFormula>{formula}</MathFormula></div>
         </div>
         {targetMode === 'gla' && (
-          <label className="mt-2 grid grid-cols-[90px_minmax(120px,240px)_40px] items-center gap-2 text-[9px] font-bold text-amber-800">
+          <label className="mt-2 grid grid-cols-[90px_minmax(120px,240px)_40px] items-center gap-2 text-[9px] font-bold text-cyan-800">
             <span>{t('gateStrength')}</span>
-            <input type="range" min="0" max="0.9" step="0.05" value={gateStrength} onChange={(event) => setGateStrength(Number(event.target.value))} className="h-2 w-full cursor-pointer accent-amber-500" />
+            <input type="range" min="0" max="0.9" step="0.05" value={gateStrength} onChange={(event) => setGateStrength(Number(event.target.value))} className="h-2 w-full cursor-pointer accent-cyan-700" />
             <span className="font-mono">{Math.round(gateStrength * 100)}%</span>
           </label>
         )}
@@ -174,23 +239,29 @@ function RecurrentStateLane({ targetMode, dk, dv, state, step, gateStrength, set
   );
 }
 
-function MemoryScale({ contextMode, targetMode, contextLength, dk, dv, t }) {
-  const softValue = contextMode === 'decode' ? 2 * contextLength * dk : contextLength * contextLength;
+function MemoryScale({ contextMode, targetMode, contextLength, dk, dv, state, t }) {
+  const demoProgress = state ? (state.tokenIndex + 1) / DEMO_TOKENS : 1;
+  const currentTokens = contextMode === 'decode' ? Math.max(1, Math.round(contextLength * demoProgress)) : contextLength;
+  const softValue = contextMode === 'decode' ? 2 * currentTokens * dk : contextLength * contextLength;
+  const fullSoftValue = contextMode === 'decode' ? 2 * contextLength * dk : softValue;
   const targetValue = dk * dv + dk;
-  const maximum = Math.max(softValue, targetValue);
+  const maximum = Math.max(fullSoftValue, targetValue);
   const softWidth = Math.max(2.5, (softValue / maximum) * 100);
   const targetWidth = Math.max(2.5, (targetValue / maximum) * 100);
   const ratio = softValue / targetValue;
-  const tone = targetMode === 'gla' ? 'amber' : 'indigo';
+  const tone = targetMode === 'gla' ? 'cyan' : 'indigo';
   const rows = [
-    { key: 'softmax', label: 'Softmax', value: softValue, width: softWidth, tone: 'rose', formula: contextMode === 'decode' ? FORMULAS.softmaxMemory : FORMULAS.softmaxScores },
+    { key: 'softmax', label: t('softmax'), value: softValue, width: softWidth, tone: 'rose', formula: contextMode === 'decode' ? FORMULAS.softmaxCurrentMemory : FORMULAS.softmaxScores },
     { key: targetMode, label: t(targetMode), value: targetValue, width: targetWidth, tone, formula: FORMULAS.linearMemory },
   ];
   return (
     <div className="border-t border-slate-200 bg-slate-50/80 px-3 py-3" aria-label={t(contextMode === 'decode' ? 'persistentMemory' : 'logicalIntermediate')}>
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">{t(contextMode === 'decode' ? 'persistentMemory' : 'logicalIntermediate')} · {t('elements')}</span>
-        <span className="font-mono text-[10px] font-bold text-emerald-700">{ratio.toFixed(1)}×</span>
+        <div className="flex items-center gap-3">
+          {contextMode === 'decode' && <span className="font-mono text-[9px] text-slate-500"><MathFormula>{String.raw`n_t=\left\lceil\frac{t}{${DEMO_TOKENS}}N\right\rceil`}</MathFormula></span>}
+          <span className="font-mono text-[10px] font-bold text-emerald-700"><MathFormula>{String.raw`${ratio.toFixed(1)}\times`}</MathFormula></span>
+        </div>
       </div>
       <div className="space-y-2">
         {rows.map((row) => {
@@ -199,7 +270,7 @@ function MemoryScale({ contextMode, targetMode, contextLength, dk, dv, t }) {
             <div key={row.key} className="grid grid-cols-[74px_minmax(0,1fr)_128px] items-center gap-2 text-[9px]">
               <span className={`truncate font-bold ${colors.text}`}>{row.label}</span>
               <div className="h-4 overflow-hidden rounded bg-slate-200/70">
-                <motion.div data-memory-series={row.key} initial={false} animate={{ width: `${row.width}%` }} className={`h-full rounded ${colors.fill}`} />
+                <motion.div data-memory-series={row.key} data-memory-token={currentTokens} initial={false} animate={{ width: `${row.width}%` }} transition={{ duration: 0.28 }} className={`h-full rounded ${colors.fill}`} />
               </div>
               <div className="flex items-center justify-end gap-1 font-mono text-slate-600"><MathFormula>{row.formula}</MathFormula><span>= {compactNumber(row.value)}</span></div>
             </div>
@@ -211,7 +282,7 @@ function MemoryScale({ contextMode, targetMode, contextLength, dk, dv, t }) {
 }
 
 function AddressabilityStrip({ targetMode, gateStrength, t }) {
-  const tone = targetMode === 'gla' ? 'amber' : 'indigo';
+  const tone = targetMode === 'gla' ? 'cyan' : 'indigo';
   const colors = toneClasses[tone];
   return (
     <div className="grid items-center gap-3 border-t border-slate-200 px-3 py-3 md:grid-cols-[1fr_32px_1fr]" role="img" aria-label={t('compressionCostLead')}>
@@ -269,7 +340,7 @@ function PrefillStageLane({ label, items, tone, step, phase, t }) {
 }
 
 function PrefillBoard({ targetMode, contextLength, dk, dv, state, step, phase, t }) {
-  const tone = targetMode === 'gla' ? 'amber' : 'indigo';
+  const tone = targetMode === 'gla' ? 'cyan' : 'indigo';
   const targetStages = targetMode === 'gla'
     ? ['prefillGla0', 'prefillGla1', 'prefillGla2', 'prefillGla3']
     : ['prefillLinear0', 'prefillLinear1', 'prefillLinear2', 'prefillLinear3'];
@@ -278,7 +349,7 @@ function PrefillBoard({ targetMode, contextLength, dk, dv, state, step, phase, t
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-3 border-b border-slate-200 pb-4 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-4">
           <div>
-            <div className="text-sm font-bold text-slate-950">Softmax</div>
+            <div className="text-sm font-bold text-slate-950">{t('softmax')}</div>
             <div className="text-[10px] font-bold text-rose-700"><MathFormula>{String.raw`N\times N`}</MathFormula></div>
           </div>
           <div className="mx-auto grid w-full max-w-[250px] grid-cols-8 gap-1" role="img" aria-label={t('softmaxPrefillVisual')}>
@@ -307,22 +378,26 @@ function PrefillBoard({ targetMode, contextLength, dk, dv, state, step, phase, t
 
       <div className="space-y-2 border-t border-slate-200 bg-slate-50/80 p-3">
         <div className="mb-1 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500"><ScanLine size={12} />{t('stageProgress')}</div>
-        <PrefillStageLane label="Softmax" items={['prefillSoftmax0', 'prefillSoftmax1', 'prefillSoftmax2', 'prefillSoftmax3']} tone="rose" step={step} phase={phase} t={t} />
+        <PrefillStageLane label={t('softmax')} items={['prefillSoftmax0', 'prefillSoftmax1', 'prefillSoftmax2', 'prefillSoftmax3']} tone="rose" step={step} phase={phase} t={t} />
         <PrefillStageLane label={t(targetMode)} items={targetStages} tone={tone} step={step} phase={phase} t={t} />
       </div>
-      <MemoryScale contextMode="prefill" targetMode={targetMode} contextLength={contextLength} dk={dk} dv={dv} t={t} />
+      <MemoryScale contextMode="prefill" targetMode={targetMode} contextLength={contextLength} dk={dk} dv={dv} state={state} t={t} />
     </div>
   );
 }
 
-export function ArchitectureComparison({ contextMode, onSelectContext, targetMode, contextLength, dk, dv, state, step, phase, gateStrength, setGateStrength, t }) {
-  const sharedProps = { contextMode, targetMode, contextLength, dk, dv, state, step, phase, gateStrength, setGateStrength, t };
+export function ArchitectureComparison({ contextMode, onSelectContext, targetMode, activeMode, contextLength, dk, dv, state, step, phase, gateStrength, setGateStrength, t }) {
+  const sharedProps = { contextMode, targetMode, activeMode, contextLength, dk, dv, state, step, phase, gateStrength, setGateStrength, t };
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label={t('architectureTitle')}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Boxes size={15} className="text-indigo-600" />
-          <h2 className="text-base font-bold text-slate-950">{t('architectureShortTitle')}</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700"><Boxes size={16} /></div>
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">{t('designLevel')}</div>
+            <h2 className="mt-1 text-base font-bold text-slate-950">{t('architectureShortTitle')}</h2>
+            <p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-500">{t('architectureLead')}</p>
+          </div>
         </div>
         <div className="flex rounded-xl bg-slate-100 p-1" role="group" aria-label={t('executionContext')}>
           {['decode', 'prefill'].map((value) => <button key={value} type="button" onClick={() => onSelectContext(value)} aria-pressed={contextMode === value} className={`linear-focus rounded-lg px-4 py-2 text-[11px] font-bold transition ${contextMode === value ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{t(value)}</button>)}

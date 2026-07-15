@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 
 const valueTone = (value, tone) => {
+  if (tone === 'cyan') return 'border-cyan-300 bg-cyan-100 text-cyan-950';
   if (tone === 'amber') return 'border-amber-300 bg-amber-100 text-amber-950';
   if (tone === 'emerald') return 'border-emerald-300 bg-emerald-100 text-emerald-950';
   if (tone === 'rose') return 'border-rose-300 bg-rose-100 text-rose-950';
@@ -52,7 +53,7 @@ export function MatrixGrid({ matrix, label, tone = 'auto', pulseKey, faded = fal
 }
 
 export function FlowArrow({ pulseKey, tone = 'indigo', vertical = false }) {
-  const color = tone === 'amber' ? 'text-amber-500' : tone === 'emerald' ? 'text-emerald-500' : 'text-indigo-500';
+  const color = tone === 'cyan' ? 'text-cyan-700' : tone === 'amber' ? 'text-amber-500' : tone === 'emerald' ? 'text-emerald-500' : 'text-indigo-500';
   return (
     <div className={`flex items-center justify-center ${vertical ? 'py-1' : 'px-1'}`}>
       <motion.div
@@ -68,7 +69,7 @@ export function FlowArrow({ pulseKey, tone = 'indigo', vertical = false }) {
 }
 
 export function ContributionBar({ label, value, tone = 'indigo', pulseKey }) {
-  const bar = tone === 'emerald' ? 'bg-emerald-500' : tone === 'rose' ? 'bg-rose-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-indigo-500';
+  const bar = tone === 'cyan' ? 'bg-cyan-700' : tone === 'emerald' ? 'bg-emerald-500' : tone === 'rose' ? 'bg-rose-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-indigo-500';
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] font-semibold text-slate-600">
@@ -82,7 +83,7 @@ export function ContributionBar({ label, value, tone = 'indigo', pulseKey }) {
 }
 
 export function StageHeader({ eyebrow, title, lead, tone = 'indigo' }) {
-  const badge = tone === 'rose' ? 'bg-rose-50 text-rose-700' : tone === 'amber' ? 'bg-amber-50 text-amber-800' : tone === 'emerald' ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700';
+  const badge = tone === 'cyan' ? 'bg-cyan-50 text-cyan-800' : tone === 'rose' ? 'bg-rose-50 text-rose-700' : tone === 'amber' ? 'bg-amber-50 text-amber-800' : tone === 'emerald' ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700';
   return (
     <div>
       <div className={`mb-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${badge}`}>{eyebrow}</div>

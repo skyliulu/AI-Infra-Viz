@@ -18,10 +18,10 @@ const modeTone = {
     text: 'text-indigo-700',
   },
   gla: {
-    active: 'border-amber-300 bg-amber-50 shadow-[0_0_22px_rgba(245,158,11,.15)]',
-    badge: 'bg-amber-500 text-white',
-    bar: 'bg-amber-500',
-    text: 'text-amber-700',
+    active: 'border-cyan-400 bg-cyan-50 shadow-[0_0_22px_rgba(14,116,144,.16)]',
+    badge: 'bg-cyan-700 text-white',
+    bar: 'bg-cyan-700',
+    text: 'text-cyan-800',
   },
 };
 
@@ -47,8 +47,10 @@ const canvasFormulas = {
 };
 
 function SmallVector({ values, label, tone = 'indigo', active = false }) {
-  const palette = tone === 'amber'
-    ? 'border-amber-200 bg-amber-100 text-amber-950'
+  const palette = tone === 'cyan'
+    ? 'border-cyan-300 bg-cyan-100 text-cyan-950'
+    : tone === 'amber'
+      ? 'border-amber-200 bg-amber-100 text-amber-950'
     : tone === 'emerald'
       ? 'border-emerald-200 bg-emerald-100 text-emerald-950'
       : tone === 'rose'
@@ -74,8 +76,10 @@ function SmallVector({ values, label, tone = 'indigo', active = false }) {
 }
 
 function SmallMatrix({ matrix, label, tone = 'indigo', active = false, retention }) {
-  const palette = tone === 'amber'
-    ? 'border-amber-200 bg-amber-100 text-amber-950'
+  const palette = tone === 'cyan'
+    ? 'border-cyan-300 bg-cyan-100 text-cyan-950'
+    : tone === 'amber'
+      ? 'border-amber-200 bg-amber-100 text-amber-950'
     : tone === 'emerald'
       ? 'border-emerald-200 bg-emerald-100 text-emerald-950'
       : tone === 'rose'
@@ -139,7 +143,7 @@ function StageNode({ mode, index, step, phase, state, label, formula, onSelect, 
 }
 
 function StageConnector({ reached, mode }) {
-  const color = reached ? mode === 'gla' ? 'text-amber-500' : mode === 'exact' ? 'text-rose-500' : 'text-indigo-500' : 'text-slate-300';
+  const color = reached ? mode === 'gla' ? 'text-cyan-700' : mode === 'exact' ? 'text-rose-500' : 'text-indigo-500' : 'text-slate-300';
   return (
     <div className={`flex items-center justify-center ${color}`} aria-hidden="true">
       <motion.div animate={reached ? { x: [0, 3, 0] } : { x: 0 }} transition={reached ? { duration: 0.45 } : { duration: 0 }}>
@@ -200,28 +204,28 @@ function LinearStages({ state, activeIndex }) {
 
 function GlaStages({ state, activeIndex, t }) {
   return [
-    (active) => <div className="space-y-3"><SmallVector values={state.phiKey} label={<MathFormula>{String.raw`\phi(k_t)`}</MathFormula>} tone="emerald" active={active} /><SmallVector values={state.retention} label={<MathFormula>{String.raw`\alpha_t`}</MathFormula>} tone="amber" active={active} /></div>,
-    (active) => <div className="space-y-3"><SmallMatrix matrix={state.previousState} label={<MathFormula>{String.raw`S_{t-1}`}</MathFormula>} active={active} /><SmallMatrix matrix={state.decayedState} label={<MathFormula>{String.raw`\operatorname{Diag}(\alpha_t)S_{t-1}`}</MathFormula>} tone="amber" active={active} retention={state.retention} /></div>,
-    (active) => <div className="space-y-3"><SmallMatrix matrix={state.update} label={<MathFormula>{String.raw`\Delta S_t`}</MathFormula>} tone="amber" active={active} /><SmallMatrix matrix={state.state} label={<MathFormula>{String.raw`S_t`}</MathFormula>} tone="emerald" active={active} /></div>,
+    (active) => <div className="space-y-3"><SmallVector values={state.phiKey} label={<MathFormula>{String.raw`\phi(k_t)`}</MathFormula>} tone="emerald" active={active} /><SmallVector values={state.retention} label={<MathFormula>{String.raw`\alpha_t`}</MathFormula>} tone="cyan" active={active} /></div>,
+    (active) => <div className="space-y-3"><SmallMatrix matrix={state.previousState} label={<MathFormula>{String.raw`S_{t-1}`}</MathFormula>} active={active} /><SmallMatrix matrix={state.decayedState} label={<MathFormula>{String.raw`\operatorname{Diag}(\alpha_t)S_{t-1}`}</MathFormula>} tone="cyan" active={active} retention={state.retention} /></div>,
+    (active) => <div className="space-y-3"><SmallMatrix matrix={state.update} label={<MathFormula>{String.raw`\Delta S_t`}</MathFormula>} tone="cyan" active={active} /><SmallMatrix matrix={state.state} label={<MathFormula>{String.raw`S_t`}</MathFormula>} tone="emerald" active={active} /></div>,
     (active) => <div className="space-y-3"><SmallVector values={state.plainOutput} label={t('plainOutput')} tone="rose" active={active} /><SmallVector values={state.linearOutput} label={t('gatedOutput')} tone="emerald" active={active} /></div>,
   ][activeIndex];
 }
 
 function GlaRelation({ gateStrength, setGateStrength, t }) {
   return (
-    <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3 lg:grid-cols-[1fr_230px] lg:items-center">
+    <div className="grid gap-3 rounded-xl border border-cyan-300 bg-cyan-50/70 p-3 lg:grid-cols-[1fr_230px] lg:items-center">
       <div>
-        <div className="flex items-center gap-2 text-[11px] font-bold text-amber-950"><GitCompareArrows size={15} />{t('glaRelationTitle')}</div>
-        <p className="mt-1 text-[10px] leading-4 text-amber-900/75">{t('glaRelationLead')}</p>
+        <div className="flex items-center gap-2 text-[11px] font-bold text-cyan-950"><GitCompareArrows size={15} />{t('glaRelationTitle')}</div>
+        <p className="mt-1 text-[10px] leading-4 text-cyan-950/75">{t('glaRelationLead')}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
           <span className="rounded-lg bg-white px-2 py-1 text-indigo-700"><MathFormula>{FORMULAS.state}</MathFormula></span>
-          <ArrowRight size={14} className="text-amber-500" />
-          <span className="rounded-lg bg-white px-2 py-1 text-amber-800"><MathFormula>{FORMULAS.gatedState}</MathFormula></span>
+          <ArrowRight size={14} className="text-cyan-700" />
+          <span className="rounded-lg bg-white px-2 py-1 text-cyan-800"><MathFormula>{FORMULAS.gatedState}</MathFormula></span>
         </div>
       </div>
       <label className="block rounded-lg bg-white p-2.5 text-[10px] font-bold text-slate-600">
-        <span className="mb-2 flex items-center justify-between"><span>{t('gateStrength')}</span><span className="font-mono text-amber-700">{Math.round(gateStrength * 100)}%</span></span>
-        <input type="range" min="0" max="0.9" step="0.05" value={gateStrength} onChange={(event) => setGateStrength(Number(event.target.value))} className="h-2 w-full cursor-pointer accent-amber-500" />
+        <span className="mb-2 flex items-center justify-between"><span>{t('gateStrength')}</span><span className="font-mono text-cyan-800">{Math.round(gateStrength * 100)}%</span></span>
+        <input type="range" min="0" max="0.9" step="0.05" value={gateStrength} onChange={(event) => setGateStrength(Number(event.target.value))} className="h-2 w-full cursor-pointer accent-cyan-700" />
       </label>
     </div>
   );
@@ -277,8 +281,8 @@ export function StageCanvas({ mode, step, state, t, gateStrength, setGateStrengt
 export function ModeMetric({ mode, state, t }) {
   const config = mode === 'exact'
     ? { icon: Layers3, label: t('scoreStorage'), value: `${state.scoreCells.toLocaleString()} · ${state.exactScoreBytes < 1024 ? `${state.exactScoreBytes} B` : `${(state.exactScoreBytes / 1024).toFixed(1)} KB`}`, detail: t('exactMetric'), tone: 'rose' }
-    : { icon: mode === 'gla' ? Zap : Cpu, label: t('recurrentStorage'), value: `${state.dk}×${state.dv} + ${state.dk}`, detail: t(mode === 'gla' ? 'glaMetric' : 'linearMetric'), tone: mode === 'gla' ? 'amber' : 'indigo' };
+    : { icon: mode === 'gla' ? Zap : Cpu, label: t('recurrentStorage'), value: `${state.dk}×${state.dv} + ${state.dk}`, detail: t(mode === 'gla' ? 'glaMetric' : 'linearMetric'), tone: mode === 'gla' ? 'cyan' : 'indigo' };
   const Icon = config.icon;
-  const tone = config.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' : config.tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-indigo-200 bg-indigo-50 text-indigo-900';
+  const tone = config.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' : config.tone === 'cyan' ? 'border-cyan-300 bg-cyan-50 text-cyan-950' : 'border-indigo-200 bg-indigo-50 text-indigo-900';
   return <div className={`rounded-xl border px-3 py-2.5 ${tone}`}><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.1em]"><Icon size={13} />{config.label}</div><div className="mt-1 font-mono text-sm font-bold">{config.value}</div><div className="mt-1 text-[10px] leading-4 opacity-80">{config.detail}</div></div>;
 }

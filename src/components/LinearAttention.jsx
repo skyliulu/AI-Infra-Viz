@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Gauge, Globe, Pause, Play, RotateCcw, Sigma, SkipForward } from 'lucide-react';
+import { Gauge, Globe, Pause, Play, RotateCcw, Sigma, SkipForward, Workflow } from 'lucide-react';
 import { getInitialLang, i18n } from './linear-attention/content';
-import { getAttentionState, MODES, TRACKS } from './linear-attention/model';
+import { getAttentionState, TRACKS } from './linear-attention/model';
 import { ArchitectureComparison } from './linear-attention/ArchitectureComparison';
 import { Inspector } from './linear-attention/Inspector';
 import { StageCanvas } from './linear-attention/StageCanvas';
@@ -140,8 +140,8 @@ function LinearAttention() {
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm"><Sigma size={20} /></div>
               <div className="min-w-0">
-                <h1 className="truncate text-xl font-bold tracking-tight text-slate-950">{t('title')}</h1>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{t('subtitle')}</p>
+                <h1 className="truncate text-xl font-bold tracking-tight text-slate-950 md:text-2xl">{t('title')}</h1>
+                <p className="mt-1 text-xs leading-5 text-slate-500 md:text-sm">{t('subtitle')}</p>
               </div>
             </div>
 
@@ -153,7 +153,7 @@ function LinearAttention() {
                     type="button"
                     onClick={() => selectTargetMode(value)}
                     aria-pressed={targetMode === value}
-                    className={`linear-focus rounded-lg px-4 py-2 text-[11px] font-bold transition ${targetMode === value ? value === 'gla' ? 'bg-amber-500 text-white shadow-sm' : 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`linear-focus rounded-lg px-4 py-2 text-[11px] font-bold transition ${targetMode === value ? value === 'gla' ? 'bg-cyan-700 text-white shadow-sm' : 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
                     {t('softmaxVs')} {t(value)}
                   </button>
@@ -192,10 +192,38 @@ function LinearAttention() {
           </div>
         </section>
 
+        {contextMode === 'decode' && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-shared-timeline>
+            <div className="grid gap-4 xl:grid-cols-[minmax(300px,1fr)_minmax(340px,1.2fr)] xl:items-end">
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                    <motion.span key={`${detailMode}-${tokenIndex}`} initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className={`h-2.5 w-2.5 rounded-full ${detailMode === 'gla' ? 'bg-cyan-700' : detailMode === 'exact' ? 'bg-rose-500' : 'bg-indigo-600'} shadow-[0_0_12px_currentColor]`} />
+                    {t('currentToken')}
+                  </div>
+                  <div className="font-mono text-xs font-bold text-indigo-700">{t('tokenPrefix')}{tokenIndex + 1} / {DEMO_N}</div>
+                </div>
+                <input type="range" min="0" max={DEMO_N - 1} step="1" value={tokenIndex} aria-label={t('currentToken')} onChange={(event) => selectToken(Number(event.target.value))} className="h-2 w-full cursor-pointer accent-indigo-600" />
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-bold text-slate-500">
+                  <span>{t(detailTrack[step])}</span>
+                  <span className="font-mono">{step + 1} / {detailTrack.length}</span>
+                </div>
+                <div className="grid grid-cols-8 gap-1">
+                  {Array.from({ length: DEMO_N }, (_, index) => <button key={index} type="button" onClick={() => selectToken(index)} className={`linear-focus rounded-md px-1 py-1.5 font-mono text-[9px] font-bold transition ${tokenIndex === index ? detailMode === 'gla' ? 'bg-cyan-700 text-white' : detailMode === 'exact' ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white' : index < tokenIndex ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{t('tokenPrefix')}{index + 1}</button>)}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         <ArchitectureComparison
           contextMode={contextMode}
           onSelectContext={selectContextMode}
           targetMode={targetMode}
+          activeMode={detailMode}
           contextLength={contextLength}
           dk={dk}
           dv={dv}
@@ -209,32 +237,30 @@ function LinearAttention() {
 
         {contextMode === 'decode' && (
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <div className="text-sm font-bold text-slate-950">{t('implementationDetailTitle')}</div>
-                <p className="mt-1 text-[11px] leading-5 text-slate-500">{t('implementationDetailLead')}</p>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700"><Workflow size={16} /></div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">{t('executionLevel')}</div>
+                  <h2 className="mt-1 text-base font-bold text-slate-950">{t('implementationDetailTitle')}</h2>
+                  <p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-500">{t('implementationDetailLead')}</p>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex rounded-xl bg-slate-100 p-1" role="group" aria-label={t('detailAlgorithm')}>
-                  {MODES.map((value) => <button key={value} type="button" onClick={() => selectDetailMode(value)} aria-pressed={detailMode === value} className={`linear-focus rounded-lg px-3 py-1.5 text-[10px] font-bold transition ${detailMode === value ? value === 'gla' ? 'bg-amber-500 text-white shadow-sm' : value === 'exact' ? 'bg-rose-500 text-white shadow-sm' : 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{t(value)}</button>)}
+                  {['exact', targetMode].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => selectDetailMode(value)}
+                      aria-pressed={detailMode === value}
+                      className={`linear-focus rounded-lg px-4 py-2 text-[10px] font-bold transition ${detailMode === value ? value === 'gla' ? 'bg-cyan-700 text-white shadow-sm' : value === 'exact' ? 'bg-rose-500 text-white shadow-sm' : 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {t(value)}
+                    </button>
+                  ))}
                 </div>
-                <div className="text-[10px] font-semibold text-slate-500">{t('demoSequence')}</div>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(340px,1fr)_minmax(320px,1.3fr)] xl:items-end">
-              <div>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-                    <motion.span key={`${detailMode}-${tokenIndex}`} initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className={`h-2.5 w-2.5 rounded-full ${detailMode === 'gla' ? 'bg-amber-500' : detailMode === 'exact' ? 'bg-rose-500' : 'bg-indigo-600'} shadow-[0_0_12px_currentColor]`} />
-                    {t('currentToken')}
-                  </div>
-                  <div className="font-mono text-xs font-bold text-indigo-700">{t('tokenPrefix')}{tokenIndex + 1} / {DEMO_N}</div>
-                </div>
-                <input type="range" min="0" max={DEMO_N - 1} step="1" value={tokenIndex} aria-label={t('currentToken')} onChange={(event) => selectToken(Number(event.target.value))} className="h-2 w-full cursor-pointer accent-indigo-600" />
-              </div>
-              <div className="grid grid-cols-8 gap-1">
-                {Array.from({ length: DEMO_N }, (_, index) => <button key={index} type="button" onClick={() => selectToken(index)} className={`linear-focus rounded-md px-1 py-1.5 font-mono text-[9px] font-bold transition ${tokenIndex === index ? detailMode === 'gla' ? 'bg-amber-500 text-white' : detailMode === 'exact' ? 'bg-rose-500 text-white' : 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>{t('tokenPrefix')}{index + 1}</button>)}
+                <div className="text-[10px] font-semibold text-slate-500">· {t('demoSequence')}</div>
               </div>
             </div>
 
