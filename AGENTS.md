@@ -49,21 +49,17 @@ Each file is a self-contained, interactive visualization:
 
 ### Visualization component conventions
 
-Every visualization component (`src/components/*.jsx`) follows a strict set of shared patterns. Read these before touching any component.
+Every visualization component (`src/components/*.jsx`) follows the durable project conventions below. Page structure and stage count remain concept-dependent; do not force a module into a layout that misrepresents the underlying algorithm.
 
 **Theme:** Components use light mode internally (`bg-slate-50 text-slate-800`, cards as `bg-white border border-slate-200`), contrasting with the dark shell. This "entering a workbench" feel is intentional.
 
-**Top control bar structure (fixed, every component):**
-1. Title + subtitle (left)
-2. Mode toggle pill — e.g. Standard vs Flash, Dense vs MoE (`bg-slate-100 p-1 rounded-lg`)
-3. Playback controls: `RotateCcw` reset · `Play/Pause` · `SkipForward` step
-4. Language toggle: `Globe` icon + EN/中文 buttons
+**Top control bar structure (default):** Keep title + subtitle, primary comparison mode, reset/play/step controls, and language switching together when they affect the whole module. Place controls that affect only one lower canvas beside that canvas instead of in the global header.
 
 **i18n pattern:** All text goes through `t(key)`. Every component has a top-level `i18n = { zh: {...}, en: {...} }` object where `zh` and `en` keys are identical. Language is initialized via `getInitialLang()` (`navigator.language` check). Never hardcode display strings in JSX.
 
 **Mathematical notation:** All mathematical expressions must be authored as LaTeX and rendered through the shared KaTeX-backed math component (`MathFormula`). Do not imitate formulas with plain strings, Unicode subscripts/superscripts, or `font-mono`. Keep language-dependent prose in i18n, but keep language-independent LaTeX source outside the translation dictionaries. Complex equations must be paired with a variable explanation or a visualization that makes their role clear.
 
-**State machine (identical across all components):**
+**State machine base:**
 ```js
 const [phase, setPhase] = useState('idle');   // 'idle' | 'running' | 'done'
 const [step, setStep] = useState(0);
@@ -82,23 +78,31 @@ useEffect(() => {
 
 **Step snapshot pattern:** Use a pure `getXxxState(step)` function that maps step number → all derived render data. Rendering is always a pure `state → UI` mapping with no side effects.
 
-**Multi-panel layout:** Left = main animation canvas · Center = pseudocode (`bg-[#0d1117]`, active block highlighted with colored left border + translucent bg) · Right = principle analysis panel (white card, `Info` icon, narrative "why" text per step).
+**Canonical interaction state:** Token/chunk position, active stage, mode, execution context, dimensions, and algorithm parameters must drive all canvases, metrics, formulas, code highlights, and explanatory copy. Do not create independent timelines for architectural and detailed views.
+
+**Layout:** Choose the smallest layout that makes the teaching relationship clear. A canvas, pseudocode panel, and principle inspector may be arranged in columns, rows, or layered sections. Do not require a fixed three-panel layout. When execution order is the learning object, show the full pipeline in one canvas and distinguish `active`, `passed`, and `pending` stages.
 
 **Color semantics:**
-- Active/highlighted: `indigo` / `amber` / `emerald`
+- Give algorithms persistent identity colors only when comparison benefits from them
+- Separate algorithm identity from transient active/write/warning/done colors
 - Alert/bottleneck: `rose` with `ring` glow (`shadow-[0_0_15px_rgba(244,63,94,0.5)]`)
 - Optimal/done: `emerald` / `green`
 - Inactive: `bg-slate-100 border-slate-200`
 - Pseudocode bg: `bg-[#0d1117]`
+- Verify contrast for selected buttons, pale backgrounds, formulas, matrix cells, lines, and sliders; never rely on hue alone
 
 **Visualization principles:**
-- Every module offers a Before/After mode toggle to make the tradeoff visceral
-- Show "pain point" (alert state) before showing the solution
-- Display both logical layer (algorithm/math) and physical layer (GPU/HBM/SRAM)
-- Matrix/tensor slices: active chunk highlighted, inactive chunks `bg-slate-100`; dimension labels in `font-mono text-[8px]`
+- Start from one teaching question and make the design-level difference visible before implementation details
+- Use Before/After only when a real baseline/solution comparison exists
+- Show logical and physical layers only when both materially explain the concept
+- Give different algorithms their real stage maps; never align fake stages for UI symmetry
+- Advance a token only after its actual pipeline completes; represent prefill/chunk/parallel work truthfully
+- Encode growth, fixed capacity, compression, recurrence, gating, movement, or parallelism through changing visual variables instead of prose
+- Keep matrices/tensors compact, readable, and dimension-labeled; do not stretch tiny values into oversized boxes
 - Metrics (IO traffic, hit rate, memory blocks) are computed dynamically from `step`, never stored in state
+- Engine pseudocode must expose runtime operations such as allocation, metadata, cache/state access, kernel dispatch, and write-back rather than translating formulas line by line
 
-**To add a new module**, use the `/new-module` skill.
+**To create, modify, extend, substantially refactor, or QA an interactive module**, use `$develop-interactive-module` from `.agents/skills/develop-interactive-module/SKILL.md`. Follow its interaction, visual grammar, content/math, and rendered QA references. Record final evidence in `design-qa.md`.
 
 ### Deployment
 
