@@ -39,10 +39,10 @@ const canvasFormulas = {
     String.raw`o_t=n_t/d_t`,
   ],
   gla: [
-    String.raw`\bar k_t,\ \alpha_t`,
-    String.raw`\widetilde S_{t-1}=\operatorname{Diag}(\alpha_t)S_{t-1}`,
-    String.raw`S_t=\widetilde S+\Delta S_t`,
-    String.raw`o_t=n_t/d_t`,
+    String.raw`G_t=\alpha_t^\top\beta_t`,
+    String.raw`\widetilde S_{t-1}=G_t\odot S_{t-1}`,
+    String.raw`S_t=\widetilde S_{t-1}+k_t^\top v_t`,
+    String.raw`o_t=q_tS_t`,
   ],
 };
 
@@ -89,16 +89,19 @@ function SmallMatrix({ matrix, label, tone = 'indigo', active = false, retention
     <div>
       <div className="mb-1.5 text-center text-[10px] font-bold text-slate-600">{label}</div>
       <div className="mx-auto grid w-full max-w-[142px] grid-cols-4 gap-1">
-        {matrix.slice(0, 4).flatMap((row, rowIndex) => row.slice(0, 4).map((value, columnIndex) => (
+        {matrix.slice(0, 4).flatMap((row, rowIndex) => row.slice(0, 4).map((value, columnIndex) => {
+          const retained = retention ? Array.isArray(retention[0]) ? retention[rowIndex][columnIndex] : retention[rowIndex] : 1;
+          return (
           <motion.div
             key={`${rowIndex}-${columnIndex}`}
-            animate={active ? { scale: [1, 1.05, 1], opacity: retention ? Math.max(0.22, retention[rowIndex]) : 1 } : { scale: 1, opacity: retention ? Math.max(0.22, retention[rowIndex]) : 1 }}
+            animate={active ? { scale: [1, 1.05, 1], opacity: Math.max(0.22, retained) } : { scale: 1, opacity: Math.max(0.22, retained) }}
             transition={active ? { delay: (rowIndex * 4 + columnIndex) * 0.012, duration: 0.28 } : { duration: 0 }}
             className={`flex h-7 items-center justify-center rounded border px-0.5 font-mono text-[9px] font-bold ${palette}`}
           >
             {Number(value).toFixed(1)}
           </motion.div>
-        )))}
+          );
+        }))}
       </div>
     </div>
   );
@@ -204,10 +207,10 @@ function LinearStages({ state, activeIndex }) {
 
 function GlaStages({ state, activeIndex, t }) {
   return [
-    (active) => <div className="space-y-3"><SmallVector values={state.phiKey} label={<MathFormula>{String.raw`\phi(k_t)`}</MathFormula>} tone="emerald" active={active} /><SmallVector values={state.retention} label={<MathFormula>{String.raw`\alpha_t`}</MathFormula>} tone="cyan" active={active} /></div>,
-    (active) => <div className="space-y-3"><SmallMatrix matrix={state.previousState} label={<MathFormula>{String.raw`S_{t-1}`}</MathFormula>} active={active} /><SmallMatrix matrix={state.decayedState} label={<MathFormula>{String.raw`\operatorname{Diag}(\alpha_t)S_{t-1}`}</MathFormula>} tone="cyan" active={active} retention={state.retention} /></div>,
-    (active) => <div className="space-y-3"><SmallMatrix matrix={state.update} label={<MathFormula>{String.raw`\Delta S_t`}</MathFormula>} tone="cyan" active={active} /><SmallMatrix matrix={state.state} label={<MathFormula>{String.raw`S_t`}</MathFormula>} tone="emerald" active={active} /></div>,
-    (active) => <div className="space-y-3"><SmallVector values={state.plainOutput} label={t('plainOutput')} tone="rose" active={active} /><SmallVector values={state.linearOutput} label={t('gatedOutput')} tone="emerald" active={active} /></div>,
+    (active) => <div className="space-y-3"><SmallVector values={state.key} label={<MathFormula>{String.raw`k_t`}</MathFormula>} tone="emerald" active={active} /><SmallVector values={state.retentionKey} label={<MathFormula>{String.raw`\alpha_t`}</MathFormula>} tone="cyan" active={active} /><SmallVector values={state.retentionValue} label={<MathFormula>{String.raw`\beta_t`}</MathFormula>} tone="amber" active={active} /></div>,
+    (active) => <div className="space-y-3"><SmallMatrix matrix={state.gateMatrix} label={<MathFormula>{String.raw`G_t=\alpha_t^\top\beta_t`}</MathFormula>} tone="amber" active={active} /><SmallMatrix matrix={state.decayedState} label={<MathFormula>{String.raw`G_t\odot S_{t-1}`}</MathFormula>} tone="cyan" active={active} retention={state.gateMatrix} /></div>,
+    (active) => <div className="space-y-3"><SmallMatrix matrix={state.update} label={<MathFormula>{String.raw`k_t^\top v_t`}</MathFormula>} tone="cyan" active={active} /><SmallMatrix matrix={state.state} label={<MathFormula>{String.raw`S_t`}</MathFormula>} tone="emerald" active={active} /></div>,
+    (active) => <div className="space-y-3"><SmallVector values={state.query} label={<MathFormula>{String.raw`q_t`}</MathFormula>} tone="cyan" active={active} /><SmallVector values={state.plainOutput} label={t('plainOutput')} tone="rose" active={active} /><SmallVector values={state.linearOutput} label={t('gatedOutput')} tone="emerald" active={active} /></div>,
   ][activeIndex];
 }
 
@@ -218,7 +221,7 @@ function GlaRelation({ gateStrength, setGateStrength, t }) {
         <div className="flex items-center gap-2 text-[11px] font-bold text-cyan-950"><GitCompareArrows size={15} />{t('glaRelationTitle')}</div>
         <p className="mt-1 text-[10px] leading-4 text-cyan-950/75">{t('glaRelationLead')}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
-          <span className="rounded-lg bg-white px-2 py-1 text-indigo-700"><MathFormula>{FORMULAS.state}</MathFormula></span>
+          <span className="rounded-lg bg-white px-2 py-1 text-indigo-700"><MathFormula>{FORMULAS.glaMapGate}</MathFormula></span>
           <ArrowRight size={14} className="text-cyan-700" />
           <span className="rounded-lg bg-white px-2 py-1 text-cyan-800"><MathFormula>{FORMULAS.gatedState}</MathFormula></span>
         </div>
@@ -281,7 +284,7 @@ export function StageCanvas({ mode, step, state, t, gateStrength, setGateStrengt
 export function ModeMetric({ mode, state, t }) {
   const config = mode === 'exact'
     ? { icon: Layers3, label: t('scoreStorage'), value: `${state.scoreCells.toLocaleString()} · ${state.exactScoreBytes < 1024 ? `${state.exactScoreBytes} B` : `${(state.exactScoreBytes / 1024).toFixed(1)} KB`}`, detail: t('exactMetric'), tone: 'rose' }
-    : { icon: mode === 'gla' ? Zap : Cpu, label: t('recurrentStorage'), value: `${state.dk}×${state.dv} + ${state.dk}`, detail: t(mode === 'gla' ? 'glaMetric' : 'linearMetric'), tone: mode === 'gla' ? 'cyan' : 'indigo' };
+    : { icon: mode === 'gla' ? Zap : Cpu, label: t('recurrentStorage'), value: mode === 'gla' ? `${state.dk}×${state.dv}` : `${state.dk}×${state.dv} + ${state.dk}`, detail: t(mode === 'gla' ? 'glaMetric' : 'linearMetric'), tone: mode === 'gla' ? 'cyan' : 'indigo' };
   const Icon = config.icon;
   const tone = config.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' : config.tone === 'cyan' ? 'border-cyan-300 bg-cyan-50 text-cyan-950' : 'border-indigo-200 bg-indigo-50 text-indigo-900';
   return <div className={`rounded-xl border px-3 py-2.5 ${tone}`}><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.1em]"><Icon size={13} />{config.label}</div><div className="mt-1 font-mono text-sm font-bold">{config.value}</div><div className="mt-1 text-[10px] leading-4 opacity-80">{config.detail}</div></div>;

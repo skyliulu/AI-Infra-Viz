@@ -19,12 +19,12 @@ export const FORMULAS = {
   state: String.raw`S_t=S_{t-1}+\phi(k_t)v_t^\top`,
   normalizer: String.raw`z_t=z_{t-1}+\phi(k_t)`,
   linearOutput: String.raw`o_t=\frac{\phi(q_t)^\top S_t}{\phi(q_t)^\top z_t+\varepsilon}`,
-  gate: String.raw`\alpha_t=\sigma(W_\alpha x_t+b_\alpha)`,
-  glaMapGate: String.raw`\bar k_t=\phi(k_t),\quad \alpha_t=\sigma(W_\alpha x_t+b_\alpha)`,
-  glaDecay: String.raw`\widetilde S_{t-1}=\operatorname{Diag}(\alpha_t)S_{t-1}`,
-  glaWrite: String.raw`S_t=\widetilde S_{t-1}+\phi(k_t)v_t^\top`,
-  gatedState: String.raw`S_t=\operatorname{Diag}(\alpha_t)S_{t-1}+\phi(k_t)v_t^\top`,
-  gatedNormalizer: String.raw`z_t=\alpha_t\odot z_{t-1}+\phi(k_t)`,
+  gate: String.raw`G_t=\alpha_t^\top\beta_t,\quad \alpha_t,\beta_t\in(0,1)`,
+  glaMapGate: String.raw`\alpha_t=\sigma(W_\alpha x_t),\quad\beta_t=\sigma(W_\beta x_t),\quad G_t=\alpha_t^\top\beta_t`,
+  glaDecay: String.raw`\widetilde S_{t-1}=G_t\odot S_{t-1}`,
+  glaWrite: String.raw`S_t=\widetilde S_{t-1}+k_t^\top v_t`,
+  gatedState: String.raw`S_t=(\alpha_t^\top\beta_t)\odot S_{t-1}+k_t^\top v_t`,
+  glaOutput: String.raw`o_t=q_tS_t`,
 };
 
 const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, value));
@@ -46,7 +46,7 @@ const zeroMatrix = (rows = 4, columns = 4) => Array.from({ length: rows }, () =>
 
 const addMatrix = (left, right) => left.map((row, rowIndex) => row.map((value, columnIndex) => round(value + right[rowIndex][columnIndex])));
 
-const scaleRows = (matrix, scale) => matrix.map((row, rowIndex) => row.map((value) => round(value * scale[rowIndex])));
+const multiplyMatrix = (left, right) => left.map((row, rowIndex) => row.map((value, columnIndex) => round(value * right[rowIndex][columnIndex])));
 
 const softmax = (values) => {
   const max = Math.max(...values);
@@ -59,29 +59,27 @@ const weightedSum = (weights, values) => values[0].map((_, dim) => round(values.
 
 const matrixRead = (query, matrix) => matrix[0].map((_, column) => round(matrix.reduce((sum, row, rowIndex) => sum + query[rowIndex] * row[column], 0)));
 
-const accumulate = (endIndex, gated, gateStrength) => {
+const retentionVector = (index, gateStrength, salt) => Array.from({ length: 4 }, (_, dim) => round(clamp(
+  1 - gateStrength * (0.28 + 0.58 * ((Math.sin((index + 1) * (dim + 2) + salt) + 1) / 2)),
+  0.08,
+  0.995,
+)));
+
+const accumulateKernelLinear = (endIndex) => {
   let state = zeroMatrix();
   let normalizer = Array(4).fill(0);
   let previousState = zeroMatrix();
   let previousNormalizer = Array(4).fill(0);
-  let decayedState = zeroMatrix();
-  let decayedNormalizer = Array(4).fill(0);
   let update = zeroMatrix();
-  let retention = Array(4).fill(1);
 
   for (let index = 0; index <= endIndex; index += 1) {
     const key = featureMap(vectorFor(index, 2));
     const value = vectorFor(index, 3);
-    retention = key.map((_, dim) => gated
-      ? round(clamp(1 - gateStrength * (0.42 + 0.42 * ((Math.sin((index + 1) * (dim + 2)) + 1) / 2)), 0.08, 0.98))
-      : 1);
     previousState = state;
     previousNormalizer = normalizer;
     update = outer(key, value);
-    decayedState = scaleRows(previousState, retention);
-    decayedNormalizer = previousNormalizer.map((entry, dim) => round(entry * retention[dim]));
-    state = addMatrix(decayedState, update);
-    normalizer = decayedNormalizer.map((entry, dim) => round(entry + key[dim]));
+    state = addMatrix(previousState, update);
+    normalizer = previousNormalizer.map((entry, dim) => round(entry + key[dim]));
   }
 
   return {
@@ -89,10 +87,49 @@ const accumulate = (endIndex, gated, gateStrength) => {
     normalizer,
     previousState,
     previousNormalizer,
-    decayedState,
-    decayedNormalizer,
+    decayedState: previousState,
+    decayedNormalizer: previousNormalizer,
     update,
-    retention,
+    retention: Array(4).fill(1),
+    retentionKey: Array(4).fill(1),
+    retentionValue: Array(4).fill(1),
+    gateMatrix: Array.from({ length: 4 }, () => Array(4).fill(1)),
+  };
+};
+
+const accumulateGla = (endIndex, gated, gateStrength) => {
+  let state = zeroMatrix();
+  let previousState = zeroMatrix();
+  let decayedState = zeroMatrix();
+  let update = zeroMatrix();
+  let retentionKey = Array(4).fill(1);
+  let retentionValue = Array(4).fill(1);
+  let gateMatrix = Array.from({ length: 4 }, () => Array(4).fill(1));
+
+  for (let index = 0; index <= endIndex; index += 1) {
+    const key = vectorFor(index, 2);
+    const value = vectorFor(index, 3);
+    retentionKey = gated ? retentionVector(index, gateStrength, 0.35) : Array(4).fill(1);
+    retentionValue = gated ? retentionVector(index, gateStrength, 1.55) : Array(4).fill(1);
+    gateMatrix = outer(retentionKey, retentionValue);
+    previousState = state;
+    decayedState = multiplyMatrix(previousState, gateMatrix);
+    update = outer(key, value);
+    state = addMatrix(decayedState, update);
+  }
+
+  return {
+    state,
+    normalizer: null,
+    previousState,
+    previousNormalizer: null,
+    decayedState,
+    decayedNormalizer: null,
+    update,
+    retention: retentionKey,
+    retentionKey,
+    retentionValue,
+    gateMatrix,
   };
 };
 
@@ -107,14 +144,16 @@ export const getAttentionState = ({ mode, step, tokenIndex, n, dk, dv, gateStren
   const scores = prefixKeys.map((entry) => round(dot(query, entry) / 2));
   const weights = softmax(scores);
   const exactOutput = weightedSum(weights, prefixValues);
-  const recurrent = accumulate(tokenIndex, mode === 'gla', gateStrength);
-  const plainRecurrent = accumulate(tokenIndex, false, gateStrength);
-  const numerator = matrixRead(phiQuery, recurrent.state);
-  const denominator = Math.max(0.001, dot(phiQuery, recurrent.normalizer));
-  const linearOutput = numerator.map((entry) => round(entry / denominator));
-  const plainNumerator = matrixRead(phiQuery, plainRecurrent.state);
-  const plainDenominator = Math.max(0.001, dot(phiQuery, plainRecurrent.normalizer));
-  const plainOutput = plainNumerator.map((entry) => round(entry / plainDenominator));
+  const isGla = mode === 'gla';
+  const recurrent = isGla ? accumulateGla(tokenIndex, true, gateStrength) : accumulateKernelLinear(tokenIndex);
+  const plainRecurrent = isGla ? accumulateGla(tokenIndex, false, gateStrength) : accumulateKernelLinear(tokenIndex);
+  const readQuery = isGla ? query : phiQuery;
+  const numerator = matrixRead(readQuery, recurrent.state);
+  const denominator = isGla ? 1 : Math.max(0.001, dot(phiQuery, recurrent.normalizer));
+  const linearOutput = isGla ? numerator : numerator.map((entry) => round(entry / denominator));
+  const plainNumerator = matrixRead(readQuery, plainRecurrent.state);
+  const plainDenominator = isGla ? 1 : Math.max(0.001, dot(phiQuery, plainRecurrent.normalizer));
+  const plainOutput = isGla ? plainNumerator : plainNumerator.map((entry) => round(entry / plainDenominator));
   const sampledN = Math.min(n, 8);
   const currentSampleRow = Math.min(sampledN - 1, Math.round((tokenIndex / Math.max(1, n - 1)) * (sampledN - 1)));
 
@@ -143,7 +182,7 @@ export const getAttentionState = ({ mode, step, tokenIndex, n, dk, dv, gateStren
     currentSampleRow,
     scoreCells: n * n,
     exactScoreBytes: n * n * 2,
-    recurrentBytes: (dk * dv + dk) * 2,
+    recurrentBytes: (isGla ? dk * dv : dk * dv + dk) * 2,
     ...recurrent,
   };
 };

@@ -4,11 +4,12 @@ import { ArrowRight, Boxes, Database, Merge, Repeat2, ScanLine, Search, Zap } fr
 import { MathFormula } from './MathFormula';
 
 const FORMULAS = {
-  softmaxCurrentMemory: String.raw`2n_td_k`,
+  softmaxCurrentMemory: String.raw`n_t(d_k+d_v)`,
   linearMemory: String.raw`d_kd_v+d_k`,
+  glaMemory: String.raw`d_kd_v`,
   softmaxScores: String.raw`N^2`,
   linearState: String.raw`S_t=S_{t-1}+\phi(k_t)v_t^\top`,
-  glaState: String.raw`S_t=\operatorname{Diag}(\alpha_t)S_{t-1}+\phi(k_t)v_t^\top`,
+  glaState: String.raw`S_t=G_t\odot S_{t-1}+k_t^\top v_t`,
 };
 
 const DEMO_TOKENS = 8;
@@ -195,7 +196,7 @@ function RecurrentStateLane({ targetMode, activeMode, dk, dv, state, step, gateS
   const isActive = activeMode === targetMode;
   const stateReady = step >= 2;
   const oldTerm = targetMode === 'gla' && step >= 1 ? state.decayedState : state.previousState;
-  const oldLabel = targetMode === 'gla' && step >= 1 ? String.raw`\operatorname{Diag}(\alpha_t)S_{t-1}` : String.raw`S_{t-1}`;
+  const oldLabel = targetMode === 'gla' && step >= 1 ? String.raw`G_t\odot S_{t-1}` : String.raw`S_{t-1}`;
   const formula = targetMode === 'gla' ? FORMULAS.glaState : FORMULAS.linearState;
   return (
     <div className={`grid gap-4 px-3 py-4 transition lg:grid-cols-[150px_minmax(0,1fr)] lg:items-center ${isActive ? targetMode === 'gla' ? 'bg-cyan-50/55' : 'bg-indigo-50/45' : 'bg-white'}`} data-architecture-lane={`${targetMode}-decode`} data-lane-active={isActive}>
@@ -218,7 +219,7 @@ function RecurrentStateLane({ targetMode, activeMode, dk, dv, state, step, gateS
             animate={isActive && stateReady ? { x: [0, 22, 0], scale: [1, 0.9, 1], opacity: [1, 0.55, 1] } : { x: 0, scale: 1, opacity: 1 }}
             transition={{ duration: 0.34 }}
           >
-            <MatrixGlyph matrix={state.update} dk={dk} dv={dv} tone={tone} compact active={isActive && (step === 1 || step === 2)} label={String.raw`\phi(k_t)v_t^\top`} />
+            <MatrixGlyph matrix={state.update} dk={dk} dv={dv} tone={tone} compact active={isActive && (step === 1 || step === 2)} label={targetMode === 'gla' ? String.raw`k_t^\top v_t` : String.raw`\phi(k_t)v_t^\top`} />
           </motion.div>
           <ArrowRight className={`mx-auto ${colors.text}`} size={20} />
           <MatrixGlyph matrix={state.state} dk={dk} dv={dv} tone={tone} active={isActive && stateReady} dimensions placeholder={!stateReady} layoutId={isActive && stateReady ? `recurrent-state-${targetMode}` : undefined} label={String.raw`S_t`} />
@@ -242,9 +243,9 @@ function RecurrentStateLane({ targetMode, activeMode, dk, dv, state, step, gateS
 function MemoryScale({ contextMode, targetMode, contextLength, dk, dv, state, t }) {
   const demoProgress = state ? (state.tokenIndex + 1) / DEMO_TOKENS : 1;
   const currentTokens = contextMode === 'decode' ? Math.max(1, Math.round(contextLength * demoProgress)) : contextLength;
-  const softValue = contextMode === 'decode' ? 2 * currentTokens * dk : contextLength * contextLength;
-  const fullSoftValue = contextMode === 'decode' ? 2 * contextLength * dk : softValue;
-  const targetValue = dk * dv + dk;
+  const softValue = contextMode === 'decode' ? currentTokens * (dk + dv) : contextLength * contextLength;
+  const fullSoftValue = contextMode === 'decode' ? contextLength * (dk + dv) : softValue;
+  const targetValue = targetMode === 'gla' ? dk * dv : dk * dv + dk;
   const maximum = Math.max(fullSoftValue, targetValue);
   const softWidth = Math.max(2.5, (softValue / maximum) * 100);
   const targetWidth = Math.max(2.5, (targetValue / maximum) * 100);
@@ -252,7 +253,7 @@ function MemoryScale({ contextMode, targetMode, contextLength, dk, dv, state, t 
   const tone = targetMode === 'gla' ? 'cyan' : 'indigo';
   const rows = [
     { key: 'softmax', label: t('softmax'), value: softValue, width: softWidth, tone: 'rose', formula: contextMode === 'decode' ? FORMULAS.softmaxCurrentMemory : FORMULAS.softmaxScores },
-    { key: targetMode, label: t(targetMode), value: targetValue, width: targetWidth, tone, formula: FORMULAS.linearMemory },
+    { key: targetMode, label: t(targetMode), value: targetValue, width: targetWidth, tone, formula: targetMode === 'gla' ? FORMULAS.glaMemory : FORMULAS.linearMemory },
   ];
   return (
     <div className="border-t border-slate-200 bg-slate-50/80 px-3 py-3" aria-label={t(contextMode === 'decode' ? 'persistentMemory' : 'logicalIntermediate')}>
