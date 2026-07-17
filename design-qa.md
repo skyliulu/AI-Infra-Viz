@@ -96,6 +96,14 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 浏览器证据：真实服务中复测 `TP2` 纯 TP（Expert 按 TP 切分、本地虚线路由、每个 Expert 显示分片归约）、`TP2×EP2`（完整 Expert 分布、Router 到 Expert 的双向 All-to-All）、`TP2×PP2×EP2` 锁定 GPU3（只强化 Expert 1/3 路径），以及 32 卡渲染。桌面和 `768×1024` 完成视觉检查；`390×844` 量测为 viewport/scrollWidth `390/390`，四个 Expert 卡均满足 `clientWidth=scrollWidth=64`，没有页面级或组件级横向溢出。中英文通信标签均未压住 Expert 卡，控制台无 warning/error。
 - 工程证据：模块 convention checker 为 8/8，保留 1 条 Unicode 数学外观 warning；组合回归为 553/1458 个合法拓扑、11010 张 GPU 卡通过；`git diff --check` 通过；`npm run build` 通过（Vite 5.4.21，1889 modules transformed）。
 
+### 2026-07-17 — ParallelStrategies 剩余推理并行模式设计简报
+
+- 教学问题：相同 GPU mesh 为什么会在不同模型组件、Prefill/Decode 阶段和 MoE 传输方案中采用不同的并行组，而不能继续把所有方案当作互相独立相乘的“第七、第八维”？
+- 技术轴拆分：Wide-EP 是组件级执行模板（Attention/稠密层与 Sparse FFN 使用不同并行组）；P/D 分离是服务池拓扑（独立 Prefill/Decode 实例与 KV 传输）；Helix 是 Decode 内的 rank 复用（Attention 做 KV 并行，FFN 做 TP 或 TP×EP）；DWDP 是 MoE 数据移动方向变化（DP 执行器按需异步拉取远端 Expert 权重，而不是对 Token 做同步 collective）。
+- 第一批范围：先在现有顶部 degree、左侧模型切片、右侧 GPU 卡片结构内加入 Wide-EP 与对称 1:1 P/D 教学池；不增加新的乘法 degree。Wide-EP 让 Attention/稠密组件与 Expert 卡可见地使用不同 rank 角色；P/D 模式把相同并行模板复制到两个独立池，并显示 KV 从 Prefill 池传到 Decode 池。
+- 后续范围：Helix 将沿用同一组 GPU 卡，在 Attention 与 FFN 区域切换 rank 解释；DWDP 将保留 DP 执行器和 Expert 所有权，改画远端权重预取方向及无 layer-wise collective 的边界。两者在第一批完成并回归后继续推进。
+- 权威边界：Wide-EP/P-D 第一批以 SGLang 公开的大规模 EP 部署为依据；P/D 卡数采用对称 1:1 教学简化，并明确真实部署可使用不同 P:D 容量比和不同并行配置。
+
 ## P1：优先修复
 
 ### 1. FlashAttention：错误宣称 O(N) IO 与“指数级扩展上下文”
@@ -185,3 +193,62 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 2. 统一 `MathFormula`、i18n、canonical state 与动态指标单位。
 3. 补全 runtime pseudocode 和技术边界说明。
 4. 最后进行全章桌面/平板/移动端、中文/英文、所有模式从 idle 到 done 的回归，并把本报告中的未验证项逐一勾销。
+
+### 2026-07-17 — ParallelStrategies：Wide-EP、P/D、Helix 与 DWDP 收尾 QA
+
+- 结构边界：保留上方六维 degree 控制、左侧模型/矩阵主画布、右侧 GPU 实例卡与锁卡联动。Wide-EP、Helix 作为组件执行模板，P/D 作为服务拓扑，DWDP 作为 MoE 组件内的数据移动方式；均未新增伪造的乘法并行维度。
+- Wide-EP / P-D：Wide-EP 将 Attention/KV 的请求副本解释为 `DP×EP`，Sparse FFN 仍用 EP/ETP；P/D 复制为独立 Prefill/Decode 池，并在原画布内显示 KV Cache RDMA/NIXL 传输。真实页面验证 2 卡 Wide-EP、4 卡对称 P/D、Decode `[B,1]` 及池间切换。
+- Helix：选择后进入 Decode-only、固定 CP=1/ETP=1，并把 EP 旋钮解释为 KVP 宽度。`TP2×KVP2` 生成 4 卡；每卡同时显示 Attention 的 `KVP×TP` 与 FFN 的 `EP×TP` 角色。画布验证 `KV Shard Attention → Partial O+LSE → All-to-All → exact Attention → Out Proj`，以及同 rank 池切换到 `TP×EP FFN`；GPU3 锁卡后 KVP1/TP1 与 EP1/TP1 联动正确。
+- DWDP：作为 MoE 区域内的 Token All-to-All / 权重拉取切换。选中后配置到 P/D Context、TP=1、ETP=1、EP≥2；Router 与 Expert 保持原位置，通信改画为 `Peer Expert 权重所有者 → cudaMemcpyAsync P2P → Ping/Pong Prefetch Buffer → 本地 DP Executor`。锁定 Rank/Owner0 时 Expert0/2 标为本地驻留、Expert1/3 标为 Peer 预取；切到 Decode 池会自动退回 Token All-to-All，避免把当前产品化边界误画成通用 Decode 路径。
+- 正确性边界：DWDP 文案明确限定当前 TensorRT-LLM 原型的 P/D Context Worker、组内 TP=1、CuteDSL+NVFP4 与 MNNVL/GB200 条件；不把论文中的收益写成普遍保证。Helix 明确为长 KV Decode 的 KVP/TP 与 FFN rank 复用，不额外增加卡数乘法项。
+- 响应式证据：桌面 `1440×900`、移动端 `390×844` 完成中英文渲染；Helix 与 DWDP 均无页面级横向溢出。DWDP 移动端通信路径 `clientWidth=scrollWidth=259`，四个 Expert 卡均为 `clientWidth=scrollWidth=60`。
+- 工程回归：`npm run check:parallel` 枚举 2916 个候选，721 个合法拓扑与 14884 张 GPU 卡通过；新增 Helix rank 复用与 DWDP 强制配置/Expert residency 不变量。模块 convention checker 8/8，通过且保留 1 条 Unicode 数学外观 warning；`git diff --check` 通过；`npm run build` 通过（Vite 5.4.21，1889 modules transformed）。
+
+### 2026-07-18 — ParallelStrategies：DP Attention 显式化与附加控件归组
+
+- DP Attention 不再只以 Wide-EP 隐含表达：组件模板改为 `DP Attention + Wide-EP`，Attention 组件直接显示 `DP Attention: DP×EP × TP`，右侧 GPU 卡显示独立 `DP ATTN Rank` 与 `MoE EP` 角色。该边界对应 SGLang 的组件级 DP Attention：不同 DP worker 独立处理请求/KV，再在 Sparse FFN 阶段使用 EP 通信。
+- 将组件模板、服务拓扑与 Runtime 设计（Token All-to-All / DWDP）放入同一控制卡；MoE 画布只保留当前 Runtime badge 与真实通信路径，不再重复一套按钮。
+- 真实页面验证：选择模板后 EP 自动扩到 2，生成 2 张 GPU 卡，Attention 标签为 `DP Attention: DP×EP(2) × TP(1)`，两卡分别显示 `DP ATTN Rank 0/1` 与 `MoE EP 0/1`。
+- 响应式验证：桌面 `1280px` 与移动端 `390×844` 的中英文控制卡均无横向溢出；移动端三个组名保留可见，控制卡 `clientWidth=scrollWidth=341`，页面 `innerWidth/scrollWidth=390/375`。
+
+### 2026-07-18 — ParallelStrategies：解除 DP Attention / EP 绑定并统一 Rank 控件
+
+- 纠正上一版把 `DP Attention + Wide-EP` 合成单一模板的过窄建模。DP Attention 现在是独立 Attention Runtime，可与 DP、TP、CP、EP 分别组合；开启它不增加新的 GPU 乘法项。Wide-EP 恢复为特定 Rank 复用模板：只有选择该模板时，EP Rank 才额外充当更宽的 DP Attention worker。
+- 组合证据：`DP2 + DP Attention + TP2 + EP1` 为 4 卡，Attention 标为 `DP(2)×TP(2) · EP 独立`；把 EP 单独改为 2 后为 8 卡，但同一 DP/TP 坐标上的 DP Attention 角色不变，只增加 `MoE EP 0/1` 所有权。选择 Wide-EP 后才显示 `DP×EP(4)×TP(2)` 的特定复用关系。
+- CP/SP 边界：按 Megatron 语义，CP 切分网络输入和全部激活的序列维，Attention 需要跨 CP Rank 交换 KV；SP 主要在 TP 组内切分 LayerNorm/Dropout 等激活，不能替代长上下文 Attention/KV 切分。该说明已附在 CP 画布事实卡内。
+- 控件顺序：Rank 映射、组件模板、Attention Runtime、服务拓扑、Runtime 设计全部归入统一选项卡；选项卡排在映射假设说明上方。Rank 映射不再单独嵌在说明行中。
+- 响应式证据：桌面 `1280×900` 与移动端 `390×844` 的中英文均无横向溢出；统一选项卡和映射假设卡在移动端均为 `clientWidth=scrollWidth=341`，页面 `innerWidth/scrollWidth=390/375`。
+
+### 2026-07-18 — ParallelStrategies：澄清 DP2×TP2 卡数与中宽度挤压
+
+- 卡数语义：顶部 DP 明确改为“外层模型/模型分片组副本”，TP 是每个副本内的层切分。因此 `DP1+TP2+DP Attention` 为 2 卡；`DP2+TP2+DP Attention` 为两套 TP2，共 4 卡。DP Attention 只改变现有 TP Rank 在 Attention 中的执行角色，不额外增加卡数或并行度乘法项。
+- 组件/GPU 证据：`DP1+TP2` 显示“1 个外层副本，每个复用 TP(2) Rank”，两张 GPU 卡分别为 `副本 DP0 · Attn Worker TP0/1`；切到 DP2 后显示两个外层副本并生成四张卡，角色为两个独立的 TP0/1 组。
+- 响应式修复：统一选项区改为纵向结构，所有按钮组占第一块可换行区域，解释文案固定在下方全宽行，不再与组件模板、Attention Runtime 等按钮争抢横向空间。
+- 中宽度回归：`1100px`、`900px`、`768px` 下按钮组与说明均无重叠，三者 `panel clientWidth=scrollWidth`，页面无横向溢出；说明行的 `top` 始终大于按钮组 `bottom`。`900px` 视觉检查中控件自然分成三行，右侧不再预留挤压空间。
+
+### 2026-07-18 — ParallelStrategies：DP Attention 执行差异、Attention 类型与主次布局
+
+- 可观察执行差异：标准 TP Attention 显示“同一请求的 Head/权重切分”；以 `TP2 + MLA` 为例，明确显示同一请求的压缩 KV 在两个 TP Rank 上复制。切换 DP Attention 后，同一位置改为 TP0/TP1 两条独立请求 Worker lane，每条 lane 在 Prefill 写入私有 KV、在 Decode 读取私有 KV，并显示 Attention 输出进入 MoE 前的 All-Gather 与 MoE 后重分发。
+- KV 所有权同步：DP Attention 同时驱动 Input Token 请求网格、Q/KV 投影、Out Projection、Worker lane 和 KV Cache。KV Cache 的轴从标准模式的 `DP 请求 × CP Token × TP KV Head` 改为 `外层 DP × TP Attention Worker × CP Token`；Worker 之间不复制同一请求 KV。
+- Attention 类型：增加 MHA/GQA/MLA 局部控件。MHA 显示 Q16/KV16 与按 Head TP 切分；GQA 显示 Q16/KV4，并注明 TP 超过 KV Head 数后的共享 KV 复制；MLA 显示 Q16/C_KV4 与压缩潜变量缓存。文案明确 DP Attention 最初针对 DeepSeek MLA，MHA/GQA 仅用于比较布局，实际支持取决于模型和后端。
+- 信息层级：桌面主画布/实例映射从 `5/7` 调整为 `7/5`，超宽屏为 `8/4`；GPU 映射保持两列紧凑卡片，并减少装饰性空槽。`1280px` 实测主画布/映射宽度为 `591/286`，`1100px` 为 `449/316`；`900px` 自动上下堆叠为 `613/613`，三种宽度均无页面级横向溢出。
+- 真实交互证据：浏览器验证标准 MLA TP2 为 `KV 复制 ×2`；DP Attention TP2 生成 2 个 Worker，Prefill/Decode 文案随阶段切换；MHA、GQA、MLA 三种结构摘要均随按钮更新。控制台无 error/warn。
+- 工程回归：`npm run check:parallel` 通过（721/2916 合法拓扑、14884 GPU 卡）；新增 MLA 标准 TP 复制、DP Attention 私有 KV/All-Gather、GQA KV Head 切分断言。模块 convention checker 8/8 通过，保留既有 Unicode 数学外观 warning；Vite 5.4.21 生产构建通过（1889 modules transformed）。
+
+### 2026-07-18 — ParallelStrategies：GPU 卡片高密度压缩
+
+- 保留 GPU 卡的六个并行坐标和锁定联动，不改变右侧选择语义；卡片内边距、标题、Rank 数字与分片轨道均改为紧凑尺寸，长标签宽度从 48px 压至 20px，锁定态取消放大以避免侵占相邻卡片。
+- DP Attention、Wide-EP、Helix 等双角色由横向两列改为纵向短行，避免三卡并排时每个角色只剩极窄文字列；P/D 池标签在卡片标题中缩写为 P/D，并保留完整 title。
+- 删除 GPU 网格下方不承载额外信息的两张大号“可用槽位”占位卡，改成一行轻量容量提示，让多卡状态把空间集中用于真实 GPU 卡。
+- 宽屏 `1920px`、`TP4 + DP Attention` 下，每卡宽 145px，一行稳定容纳 3 卡；4 卡为 `3+1`，8 卡为 `3+3+2`。8 卡全部 `clientWidth=scrollWidth`，六条 Rank 轨道均无内部溢出。
+- `1280px` 下 8 卡保持双列，每卡 126px；`390×844` 下双列每卡 155px，页面、GPU 网格、卡片和 Rank 轨道均无横向溢出。锁定 GPU7 后仍正确显示 `DP1/TP3`、`Attn Worker TP3` 与 `MoE EP0`，控制台无 error/warn。
+- 回归：并行拓扑检查通过（721/2916 合法拓扑、14884 GPU 卡）；模块 convention checker 8/8 通过，保留既有 Unicode 数学外观 warning；Vite 5.4.21 生产构建通过（1889 modules transformed）。
+
+### 2026-07-18 — ParallelStrategies：去除 GPU 重复角色与强化 MHA/GQA/MLA 视觉差异
+
+- GPU 卡不再在六个已有坐标下重复输出“副本 DP / TP / MoE EP”标签。普通卡只保留坐标；DP Attention 开启时仅增加一条 `DP Attention · Wn` 短条。Wide-EP 也只保留 Attention Worker，Helix 合并为一条 KVP↔FFN 复用提示。
+- GPU 网格改为 `auto-fit + minmax(96px, 1fr)`。`1920px + TP4` 下四张卡单行排布，每卡 107px；`390×844` 下每卡 100px，排布为 `3+1`。宽屏和移动端的网格、卡片、Rank 轨道与页面均无横向溢出。
+- Attention 投影不再复用同一个矩形：MHA 显示等宽 `W_Q/W_K/W_V`；GQA 显示 4:1:1 的宽 Q 与共享 K/V；MLA 显示 4:1:2 的 Q、`W_DKV` 压缩与 `W_UK/W_UV` 恢复路径。标准 TP 与 DP Attention 分别显示投影分片和 Worker 本地权重副本。
+- KV Cache 增加统一标尺的单 Token 相对容量，并同步改变主体几何：MHA 为 32 单位、`176×48`；GQA 为 8 单位、`112×32`；MLA 为 4 单位、`64×24`。在 DP Attention 下三者仍保持各自权重/KV 结构，但 KV 所有权切为 Worker 私有。
+- 真实页面验证 `TP4 + DP Attention`：MHA 三段等宽投影与 32 单位 KV；GQA 投影宽度约 `162/40/40` 与 8 单位 KV；MLA 投影宽度约 `139/35/69` 与 4 单位 KV。中英文均无投影、卡片、网格或页面溢出，控制台无 error/warn。
+- 回归：并行拓扑检查加入 MHA/GQA/MLA KV 相对容量断言并通过（721/2916 合法拓扑、14884 GPU 卡）；模块 convention checker 8/8 通过；Vite 生产构建通过（1889 modules transformed）。

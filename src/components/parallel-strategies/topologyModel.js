@@ -6,10 +6,16 @@ export const getIllustrativeGpuCount = (degrees, mappingModel = 'orthogonal') =>
   return degrees.dp * degrees.pp * cpFactor * degrees.tp * degrees.ep * degrees.etp;
 };
 
-export const isTopologyValid = (degrees, mappingModel = 'orthogonal') => {
+export const getDeploymentGpuCount = (degrees, mappingModel = 'orthogonal', servingMode = 'unified') => {
+  const poolMultiplier = servingMode === 'pdDisaggregated' ? 2 : 1;
+  return getIllustrativeGpuCount(degrees, mappingModel) * poolMultiplier;
+};
+
+export const isTopologyValid = (degrees, mappingModel = 'orthogonal', servingMode = 'unified') => {
   const dcpIsValid = mappingModel !== 'dcpReuse'
     || (degrees.tp >= degrees.cp && degrees.tp % degrees.cp === 0);
-  return dcpIsValid && getIllustrativeGpuCount(degrees, mappingModel) <= MAX_GPUS;
+  const pdMappingIsValid = !(servingMode === 'pdDisaggregated' && mappingModel === 'dcpReuse');
+  return dcpIsValid && pdMappingIsValid && getDeploymentGpuCount(degrees, mappingModel, servingMode) <= MAX_GPUS;
 };
 
 export const getGpuCoordinates = (gpuIndex, degrees, mappingModel = 'orthogonal') => {
@@ -24,6 +30,85 @@ export const getGpuCoordinates = (gpuIndex, degrees, mappingModel = 'orthogonal'
 
   return { tp_idx, ep_idx, etp_idx, cp_idx, dp_idx, pp_idx };
 };
+
+export const getDeploymentGpuCoordinates = (gpuIndex, degrees, mappingModel = 'orthogonal', servingMode = 'unified') => {
+  const poolSize = getIllustrativeGpuCount(degrees, mappingModel);
+  const localGpuIndex = servingMode === 'pdDisaggregated' ? gpuIndex % poolSize : gpuIndex;
+  const pool = servingMode === 'pdDisaggregated'
+    ? gpuIndex < poolSize ? 'prefill' : 'decode'
+    : 'unified';
+  return {
+    ...getGpuCoordinates(localGpuIndex, degrees, mappingModel),
+    pool,
+    localGpuIndex,
+  };
+};
+
+export const getComponentParallelState = (degrees, profile = 'standard', attentionMode = 'standard') => {
+  const wideEp = profile === 'wideEp';
+  const helix = profile === 'helix';
+  const dpAttention = attentionMode === 'dpAttention' || wideEp;
+  return {
+    attentionMode: helix ? 'helix' : dpAttention ? 'dpAttention' : 'standard',
+    attentionDp: wideEp ? degrees.dp * degrees.ep : degrees.dp,
+    attentionDpIndex: (coords) => wideEp
+      ? coords.dp_idx * degrees.ep + coords.ep_idx
+      : coords.dp_idx,
+    attentionTp: degrees.tp,
+    sparseEp: degrees.ep,
+    lmHeadDp: wideEp ? degrees.dp * degrees.ep : degrees.dp,
+    kvParallel: helix ? degrees.ep : 1,
+    ffnTp: degrees.tp,
+    ffnEp: degrees.ep,
+    rankReuseSize: helix ? degrees.tp * degrees.ep : 1,
+  };
+};
+
+export const getAttentionArchitectureState = (
+  degrees,
+  attentionType = 'mla',
+  attentionMode = 'standard',
+  contextMode = 'decode',
+) => {
+  const configs = {
+    mha: { queryHeads: 16, kvHeads: 16, latentWidth: null, kvFootprintUnits: 32 },
+    gqa: { queryHeads: 16, kvHeads: 4, latentWidth: null, kvFootprintUnits: 8 },
+    mla: { queryHeads: 16, kvHeads: 1, latentWidth: 4, kvFootprintUnits: 4 },
+  };
+  const config = configs[attentionType] || configs.mla;
+  const workerCount = Math.max(1, degrees.tp);
+  const isDpAttention = attentionMode === 'dpAttention';
+  const kvHeadShardDegree = attentionType === 'mla'
+    ? 1
+    : Math.min(workerCount, config.kvHeads);
+  const kvReplication = isDpAttention
+    ? 1
+    : Math.max(1, Math.ceil(workerCount / kvHeadShardDegree));
+
+  return {
+    ...config,
+    attentionType,
+    contextMode,
+    workerCount,
+    requestLaneCount: isDpAttention ? workerCount : 1,
+    kvHeadShardDegree,
+    kvReplication,
+    hasExclusiveRequestKv: isDpAttention,
+    needsTokenGatherBeforeMoe: isDpAttention && workerCount > 1,
+    tokensPerRequest: contextMode === 'prefill' ? 'S_new' : '1',
+  };
+};
+
+export const getDwdpDegrees = (degrees) => ({
+  ...degrees,
+  tp: 1,
+  ep: Math.max(2, degrees.ep),
+  etp: 1,
+});
+
+export const getDwdpExpertResidency = (expertIndex, coords, epDegree) => (
+  expertIndex % epDegree === coords.ep_idx ? 'local' : 'prefetched'
+);
 
 export const getMoeParallelState = (degrees) => {
   if (degrees.etp > 1) {
