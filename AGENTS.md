@@ -59,15 +59,15 @@ Every visualization component (`src/components/*.jsx`) follows the durable proje
 
 **Mathematical notation:** All mathematical expressions must be authored as LaTeX and rendered through the shared KaTeX-backed math component (`MathFormula`). Do not imitate formulas with plain strings, Unicode subscripts/superscripts, or `font-mono`. Keep language-dependent prose in i18n, but keep language-independent LaTeX source outside the translation dictionaries. Complex equations must be paired with a variable explanation or a visualization that makes their role clear.
 
-**State machine base:**
+**Timeline capability:** Use a playback state machine only when ordered execution is part of the learning object:
 ```js
 const [phase, setPhase] = useState('idle');   // 'idle' | 'running' | 'done'
 const [step, setStep] = useState(0);
 const [isPlaying, setIsPlaying] = useState(false);
-// Required: handleNextStep(), reset(), togglePlay()
+// Timeline modules require handleNextStep(), reset(), togglePlay().
 ```
 
-**Auto-play pattern:**
+**Timeline auto-play pattern:**
 ```js
 useEffect(() => {
   if (!isPlaying || isDone) return;
@@ -76,9 +76,9 @@ useEffect(() => {
 }, [isPlaying, step, ...deps]);
 ```
 
-**Step snapshot pattern:** Use a pure `getXxxState(step)` function that maps step number → all derived render data. Rendering is always a pure `state → UI` mapping with no side effects.
+**Canonical domain model:** Store only user-controlled and genuine lifecycle state. Normalize constrained inputs, then use a pure `getXxxState(...)`, `deriveXxxModel(...)`, or equivalent function to compute all render data. Rendering is always a pure `model → UI` mapping with no side effects.
 
-**Canonical interaction state:** Token/chunk position, active stage, mode, execution context, dimensions, and algorithm parameters must drive all canvases, metrics, formulas, code highlights, and explanatory copy. Do not create independent timelines for architectural and detailed views.
+**Interaction capabilities:** Declare only the capabilities a module needs: timeline, multiple modes, resource metrics, structural comparison, data movement, dense layout, and math. Timeline state such as token/chunk position and active stage is conditional; mode, execution context, dimensions, parameters, selection, and lifecycle state must still drive every dependent canvas, metric, formula, code highlight, and explanation from one model.
 
 **Layout:** Choose the smallest layout that makes the teaching relationship clear. A canvas, pseudocode panel, and principle inspector may be arranged in columns, rows, or layered sections. Do not require a fixed three-panel layout. When execution order is the learning object, show the full pipeline in one canvas and distinguish `active`, `passed`, and `pending` stages.
 
@@ -99,8 +99,8 @@ useEffect(() => {
 - Advance a token only after its actual pipeline completes; represent prefill/chunk/parallel work truthfully
 - Encode growth, fixed capacity, compression, recurrence, gating, movement, or parallelism through changing visual variables instead of prose
 - Keep matrices/tensors compact, readable, and dimension-labeled; do not stretch tiny values into oversized boxes
-- Metrics (IO traffic, hit rate, memory blocks) are computed dynamically from `step`, never stored in state
-- Engine pseudocode must expose runtime operations such as allocation, metadata, cache/state access, kernel dispatch, and write-back rather than translating formulas line by line
+- Metrics (IO traffic, hit rate, memory blocks) are computed dynamically from the canonical model, never stored as duplicate state
+- When engine pseudocode contributes to the teaching claim, it must expose runtime operations such as allocation, metadata, cache/state access, kernel dispatch, and write-back rather than translating formulas line by line
 
 **To create, modify, extend, substantially refactor, or QA an interactive module**, use `$develop-interactive-module` from `.agents/skills/develop-interactive-module/SKILL.md`. Follow its interaction, visual grammar, content/math, and rendered QA references. Record final evidence in `design-qa.md`.
 

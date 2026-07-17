@@ -1,60 +1,67 @@
 # Interaction Model
 
-## Canonical state
+## Match interaction to the learning object
 
-Use one source of truth for all views:
+Choose the smallest interaction grammar that exposes the concept:
+
+| Learning object | Suitable interaction |
+|---|---|
+| Ordered execution | play, pause, step, scrub, active/passed/pending stages |
+| Structure or ownership | select, inspect, lock, highlight relationships |
+| State lifecycle | allocate, grow, reuse, evict, commit, reset |
+| Algorithm comparison | switch modes on shared inputs and scales |
+| Parameter sensitivity | adjust a parameter and derive all consequences immediately |
+| Resource or data movement | show locations, direction, transfer, and ownership changes |
+
+Do not invent a timeline for a structural explorer or reduce a real dependency chain to disconnected configuration cards.
+
+## Use one canonical domain model
+
+Store only user-controlled input and genuine lifecycle state. Names may vary by module, but the dependency direction must remain explicit:
 
 ```js
-{
-  mode,
-  contextMode,     // training | prefill | decode, when relevant
-  phase,           // idle | running | done
-  tokenIndex,      // or chunkIndex for chunked execution
-  step,
-  isPlaying,
-  sequenceLength,
-  dimensions,
-  parameters,
-}
+const normalizedInput = normalizeInput(userInput);
+const snapshot = deriveModuleState(normalizedInput, lifecycleState);
 ```
 
-Store only user-controlled or lifecycle state. Compute matrices, counters, memory usage, active code lines, stage status, and explanatory copy through pure snapshot functions.
+The snapshot should contain every fact needed by the views: structure, dimensions, ownership, resource values, current operation, status, and capability boundaries. Compute matrices, counters, memory use, code highlights, and explanatory copy from this snapshot rather than storing duplicate state.
 
-## Model the real loop
+## Classify controls and dependencies
 
-- For autoregressive decode, run the real stages for token `t`, commit its state, then advance to token `t+1`.
-- For prefill, represent tile, chunk, or parallel work when that is what the kernel performs. Do not replay a decode loop and label it prefill.
-- Give each algorithm its own stage map. Align stages only when the underlying operations are genuinely comparable.
-- Distinguish logical intermediates from persistent state. A score matrix used inside a tiled kernel is not automatically persistent KV storage.
+For each control, record whether it is:
 
-## Pipeline status
+- an independent input;
+- a derived value that should not be edited directly;
+- a constrained input with a documented normalization rule;
+- mutually exclusive with another mode;
+- a presentation preference that must not change the technical model.
 
-When showing a complete pipeline, use three visibly different statuses:
+Changing an input must either preserve compatible progress or deterministically reset/remap it. Never silently couple independent controls, and never present a derived constraint as a universal technical law.
 
-- `active`: the only operation executing now;
-- `passed`: completed for the current token or chunk;
-- `pending`: not yet executed.
+## Keep modes structurally truthful
 
-Never accumulate active styling across completed stages. A completed stage may remain readable, but must not compete with the active stage.
+Give each mode its real state shape, dependency order, ownership, and resource consequences. Align stages or dimensions only when they are genuinely comparable. A mode switch that claims a mechanism change must update every affected canvas, metric, formula, code highlight, and explanation.
 
-## Synchronize multiple explanatory layers
+Distinguish logical intermediates from persistent state. Distinguish a replicated value from a partitioned value, and an unavailable or non-resident component from a component that does not exist.
 
-If the module has an architectural comparison and a detailed execution board, drive both from the same token and phase. Map the detailed stage to a meaningful architectural event instead of inventing a second timeline.
+## Add timeline state only when needed
 
-Changing mode, context, dimensions, or sequence length must reset or deterministically remap incompatible progress. Scrubbing a token must update storage, state contents, memory bars, formulas, code highlights, and narration together.
+For a `timeline` capability, include `phase`, `step`, `isPlaying`, and the relevant token, chunk, layer, or event position. Model the real loop:
 
-## Playback behavior
+- finish the current operation before advancing its enclosing token or chunk;
+- represent prefill, decode, training, tiling, and parallel work according to their real execution;
+- keep exactly one operation active and distinguish `active`, `passed`, `pending`, and `done`;
+- stop cleanly at `done` and keep reset, play/pause, step, and scrub consistent;
+- pause playback when the user manually inspects a stage.
 
-- Make token transitions fast enough that a full demonstration completes without patience becoming the lesson.
-- Allow longer delays only for a visually meaningful state transition.
-- Stop cleanly at `done`; do not wrap automatically unless looping is an explicit feature.
-- Make reset, play/pause, step, and scrubber behavior consistent.
-- Preserve manual inspection: clicking a stage pauses playback and shows that snapshot.
+## Validate large state spaces outside the UI
+
+When controls create many legal combinations, expose pure derivation functions and test invariants without rendering every case. Use browser tests for representative control paths, coupled transitions, and visual evidence rather than as the only correctness mechanism.
 
 ## Interaction acceptance questions
 
-1. What real operation does the current animation represent?
-2. Which state changed, and which views derive from it?
-3. Does the next step follow the algorithm's actual dependency order?
-4. Can a user explain what a control changed without searching elsewhere on the page?
-
+1. What learning object does the interaction expose?
+2. Which input changed, how was it normalized, and which views derive from it?
+3. Is every claimed mode difference visible in the affected layers?
+4. Does a timeline follow the real dependency order, if a timeline exists?
+5. Can the user explain what a control changed without searching elsewhere?

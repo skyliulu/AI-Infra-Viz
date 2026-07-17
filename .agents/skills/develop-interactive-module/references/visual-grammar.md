@@ -1,5 +1,17 @@
 # Visual Grammar
 
+## Map claims to evidence
+
+Create a compact claim-to-evidence matrix before implementation:
+
+| Claim | Trigger or state | Visible evidence | Boundary snapshot |
+|---|---|---|---|
+| A resource grows | increase the driving input | calibrated length, count, or occupied slots | empty and maximum |
+| Two modes differ structurally | switch mode with shared inputs | components, dimensions, or paths change | representative mode pair |
+| Ownership changes | select or advance state | persistent objects change owner or location | before and after transfer |
+
+Every important claim needs an observable consequence. If the consequence exists only in prose, the visual explanation is incomplete.
+
 ## Encode claims as visible changes
 
 | Technical claim | Preferred visual evidence |
@@ -15,6 +27,22 @@
 | Resource use differs | Use a shared scale and dynamically computed values |
 
 If an animation does not reveal a changing variable, dependency, bottleneck, or tradeoff, remove it.
+
+## Make mode differences observable
+
+For every mode switch, review the layers it claims to affect:
+
+- structure and component presence;
+- dimensions, capacity, or quantitative scale;
+- ownership, residency, or addressability;
+- data movement and direction;
+- execution stages and implementation evidence.
+
+Change all affected layers, not merely the label, color, or explanatory paragraph. Keep unaffected layers stable so the real difference remains legible.
+
+## Reuse semantic objects
+
+Add secondary explanations such as movement, ownership, warnings, or communication to the primary objects they describe. Draw paths between the existing source and destination components instead of duplicating a second disconnected row of nodes. Keep direction, endpoints, local versus remote scope, and current selection visible.
 
 ## Compose the canvas
 
@@ -33,6 +61,9 @@ Do not force every chapter into the same panel count. Choose the smallest layout
 - Reduce empty containers, large causal grids, and decorative cards that do not carry proportionate information.
 - Let a short panel fill its column vertically when adjacent panels are taller.
 - On narrow screens, preserve reading order and avoid page-level horizontal overflow.
+- Test component-level overflow as well as page overflow. Dense cards, labels, tracks, formulas, and code blocks must keep `clientWidth` and `scrollWidth` compatible with the intended scrolling behavior.
+- Check representative sparse and dense states. A layout that works for one item may fail at maximum count or with longer translated labels.
+- Preserve the main teaching region when space tightens; compress secondary controls and metadata before shrinking the core evidence below readability.
 
 ## Separate identity colors from action colors
 
@@ -57,6 +88,7 @@ Use the canvas for names, dimensions, small values, and short action labels. Mov
 - identical animation for algorithms with different execution;
 - progress bars without a shared quantitative scale;
 - token scrubbers whose changes are not visible elsewhere;
+- mode switches that alter text but not the claimed structure or resource;
+- secondary diagrams that duplicate the primary semantic objects;
 - animation that repeatedly traverses channels only to consume time;
 - color palettes with unreadable selected states.
-

@@ -1,62 +1,80 @@
 ---
 name: develop-interactive-module
-description: Develop interactive LLM infrastructure visualization modules throughout their lifecycle. Use when creating a chapter, modifying or extending an existing module, refactoring an unfinished visualization, correcting algorithm or animation behavior, improving layout and visual encoding, revising formulas or engine pseudocode, or performing rendered interaction QA.
+description: Develop interactive LLM infrastructure visualization modules throughout their lifecycle. Use when creating a chapter, modifying or extending an existing module, correcting technical or interaction behavior, improving visual encoding or responsive layout, revising formulas or implementation evidence, or performing rendered interaction QA.
 ---
 
 # Develop an Interactive Module
 
-Build the teaching model before building the interface. Treat animation as an executable explanation of a real algorithm or system, not as decoration.
+Build an explicit teaching model before building the interface. Choose interactions that fit the learning object; do not add animation, comparison, or architectural layers by default.
 
-## 1. Inspect the project and define the teaching claim
+## 1. Capture the existing contract
 
-Read `AGENTS.md`, neighboring modules, routing, shared math components, and the current QA template. For a refactor, play every existing mode before editing.
+Read `AGENTS.md`, neighboring modules, routing, shared components, and the current QA record. For an existing module, render every current mode and record:
 
-Write a short design brief containing:
+- the teaching question and accepted interaction structure;
+- the controls, canvases, inspectors, and cross-view interactions that must remain;
+- the behavior that may change in this iteration;
+- representative baseline states and responsive widths.
 
-- the one question the chapter answers;
-- the baseline and proposed design, when a comparison is meaningful;
-- the data structure or resource that changes;
-- the real execution pipeline for each mode;
-- the benefit, cost, and capability boundary;
-- the visual evidence that will make each claim observable.
+Classify the work as a repair, extension, or structural redesign. Default to the smallest change that satisfies the request. Do not replace the information architecture during a repair or extension unless the user authorizes that scope.
 
-Do not start implementation while the core difference still requires a paragraph of prose to become visible.
+## 2. Declare the teaching capabilities
 
-## 2. Verify technical truth
+State which capabilities the module actually needs:
 
-Use primary papers, official documentation, or real engine implementations when algorithm details, kernel dispatch, cache behavior, or runtime state are uncertain. Distinguish training, prefill, and decode. Do not force different algorithms into identical stages merely to simplify the UI.
+- `timeline`: ordered execution with play, pause, step, or scrub;
+- `multiple-modes`: modes whose mechanisms or consequences differ;
+- `resource-metrics`: quantitative capacity, traffic, latency, or utilization;
+- `structural-comparison`: representations or architectures compared on shared dimensions;
+- `data-movement`: ownership, transfer, routing, or communication paths;
+- `dense-layout`: matrices, cards, lanes, or other high-density responsive content;
+- `math`: mathematical notation that must use the shared renderer.
 
-Record the authoritative formulas, state shapes, data dependencies, and resource scaling before writing the animation. Mark any simplification explicitly.
+These capabilities select interaction and QA requirements; they are not a required feature list. A structural explorer does not need a global playback state, and a timeline should not be added merely to satisfy a convention.
 
-## 3. Design one canonical interaction model
+## 3. Verify claims and boundaries
 
-Read [interaction-model.md](references/interaction-model.md). Define one canonical state containing mode, execution context, phase, token or chunk position, active stage, dimensions, and algorithm parameters. Derive canvases, metrics, formulas, pseudocode highlights, and explanatory copy from this state.
+Use primary papers, official documentation, or real implementations when technical behavior is uncertain. Record a compact claim ledger with the claim, authoritative basis, assumptions, capability boundary, model consequence, and visible evidence.
 
-Show the complete pipeline in one canvas when the learning goal is sequential execution. Keep exactly one stage active; render completed, active, and pending as different states. Advance the token only after the current token's real pipeline completes.
+Verify formulas, shapes, data dependencies, ownership, resource scaling, and execution context before implementing the UI. Distinguish training, prefill, and decode when relevant. Label deliberate simplifications and version-specific behavior; never let a simplification reverse the real conclusion.
 
-## 4. Create the visual storyboard
+## 4. Build one canonical domain model
 
-Read [visual-grammar.md](references/visual-grammar.md). Map every important claim to a changing visual variable such as length, count, position, opacity, flow, reuse, or capacity. Prefer data movement and structural change over explanatory paragraphs.
+Read [interaction-model.md](references/interaction-model.md). Classify each control as independent input, derived value, constrained input, mutually exclusive mode, or presentation-only preference. Normalize inputs before deriving a pure snapshot.
 
-Keep controls close to the view they affect. Allocate space by information density. Avoid oversized containers around tiny labels or values.
+Store only user-controlled and lifecycle state. Derive every canvas, metric, formula, highlight, and explanation from the same model. Keep technical rules out of ad hoc JSX branches. Add module-level model regression when the legal state space is large or interactions have important invariants.
 
-## 5. Integrate content, math, and implementation evidence
+For `timeline`, model the real dependency order and keep exactly one operation active. For other capabilities, use the interaction grammar that best exposes structure, ownership, comparison, or parameter sensitivity.
 
-Read [content-and-math.md](references/content-and-math.md). Use shared KaTeX rendering for every mathematical expression and route all display prose through i18n. Pair complex formulas with variable meanings or a directly corresponding visualization.
+## 5. Design claim-to-evidence interactions
 
-Write engine-style pseudocode that exposes runtime concepts such as allocation, metadata, state lookup, kernel dispatch, chunking, cache writes, and final-state commits. Do not translate the displayed equation line by line and call it implementation pseudocode.
+Read [visual-grammar.md](references/visual-grammar.md). For each important claim, specify:
 
-For a complex module, prefer separating pure model/state derivation, translated content, visual primitives, canvases, and inspector panels. Keep rendering as a pure state-to-UI mapping.
+1. the user action or state that exposes it;
+2. the visual variable or relationship that changes;
+3. the expected early, representative, boundary, or final snapshot.
 
-## 6. Validate the finished experience
+A mode switch must visibly change every layer it claims to affect. Reuse the primary visual objects when adding movement, ownership, or annotations instead of creating a second disconnected explanation. Allocate space by information density and preserve the existing visual hierarchy unless the change contract permits otherwise.
 
-Read [qa-checklist.md](references/qa-checklist.md). Run:
+## 6. Implement the smallest coherent slice
+
+Read [content-and-math.md](references/content-and-math.md). Implement or correct the pure model first, then connect the existing views to it, then refine visual encoding and prose. Route display prose through i18n and mathematical notation through the shared KaTeX renderer.
+
+Keep rendering a pure model-to-UI mapping. Separate domain derivation, translated content, visual primitives, and panels when complexity justifies it. Avoid broad refactors that do not contribute to the accepted teaching claim or regression safety.
+
+## 7. Validate in layers
+
+Read [qa-checklist.md](references/qa-checklist.md). Run the common convention checks plus the declared capabilities:
 
 ```bash
-node .agents/skills/develop-interactive-module/scripts/check-module-conventions.mjs src/components/YourModule.jsx
+node .agents/skills/develop-interactive-module/scripts/check-module-conventions.mjs src/components/YourModule.jsx --capabilities timeline,math,multiple-modes
 npm run build
 ```
 
-Then inspect rendered desktop, tablet, and mobile states. Play every mode from start to finish, scrub the timeline, change every parameter, and verify that all dependent views remain synchronized. Update `design-qa.md` with evidence, unresolved limitations, and the final result.
+Use three complementary verification layers:
 
-Do not declare completion from source inspection alone.
+- pure-model tests for formulas, constraints, invariants, and large combination spaces;
+- browser interaction tests for key controls, coupled state, and representative paths;
+- rendered QA for visual evidence, responsive density, both languages, accessibility, and console output.
+
+Turn every confirmed defect into a reusable regression assertion, browser case, or checklist item. Update `design-qa.md` with the current result, evidence, unresolved limitations, and change-contract impact. Do not declare completion from source inspection or a successful build alone.
