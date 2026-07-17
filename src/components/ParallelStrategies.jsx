@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { Layers, Grid, Boxes, SplitSquareHorizontal, BrainCircuit, Cpu, Network, RotateCcw, Info, ArrowDown, Pin, Globe } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Layers, Grid, Boxes, SplitSquareHorizontal, BrainCircuit, Cpu, Network, RotateCcw, Info, ArrowDown, Pin, Globe, Play, Pause, SkipForward } from 'lucide-react';
+import { MathFormula } from './linear-attention/MathFormula';
 
 const MAX_GPUS = 16;
+const TOTAL_LAYERS = 32;
+const PIPELINE_MICROBATCHES = 4;
 
 const STRATEGIES = [
   { id: 'dp', icon: Boxes, color: 'blue' },
@@ -15,12 +18,12 @@ const STRATEGIES = [
 const i18n = {
   zh: {
     title: 'LLM 6D 并行策略交互式解析', subtitle: '拖动六大并行维度，实时观察切片结构与 GPU 资源映射', reset: '重置状态', langToggle: 'EN', empty: '可用槽位', expand: '调整上方并行策略以扩展集群使用量 (当前',
-    dpName:'数据并行(DP)', dpDesc:'复制模型，切分批次。最基础的并行方式，解决数据吞吐问题。',
-    tpName:'张量并行(TP)', tpDesc:'切分基础权重矩阵。通信密集，通常限于单机 NVLink 内部。',
-    ppName:'流水线并行(PP)', ppDesc:'按层切分模型。GPU接力计算，首层Embedding，末层LM Head。',
-    cpName:'上下文并行(CP)', cpDesc:'切分超长序列 (SeqLen)。解决单卡长序列显存爆炸(包含SP)。',
-    epName:'专家并行(EP)', epDesc:'MoE 特有。不同卡负责不同专家，与 TP 复用通信组。',
-    etpName:'专家张量并行(ETP)', etpDesc:'MoE 专属。切分专家内部权重，常与 EP 组合切分。',
+    dpName:'数据并行(DP)', dpDesc:'复制模型或模型分片组，把不同请求/批次分配给不同副本以扩展推理吞吐。',
+    tpName:'张量并行(TP)', tpDesc:'切分层内权重与 Attention Head；每层需要 All-Reduce 或 Reduce-Scatter 等集合通信。',
+    ppName:'流水线并行(PP)', ppDesc:'按模型深度切分层，相邻 Stage 通过 P2P 传递激活；Microbatch 用于填充流水线。',
+    cpName:'上下文并行(CP)', cpDesc:'沿上下文长度切分激活或 KV；Prefill 与 Decode 的切分及通信方式不同于 SP。',
+    epName:'专家并行(EP)', epDesc:'MoE Router 将 Top-K Token 通过 All-to-All 分发到持有目标专家的 Rank。',
+    etpName:'专家张量并行(ETP)', etpDesc:'切分单个专家内部权重；通常与 TP/EP 共享或重组 Rank Mesh，并非普遍独立维度。',
     fullCopy: '全量复制',
     logicalTitle: 'LLM 数学架构与动态张量切片',
     inputData: 'Input Tokens Data',
@@ -32,6 +35,22 @@ const i18n = {
     fullWeight: '完整权重',
     transLayers: 'L × Transformer Layers',
     ppSplit: '按层划分阶段: PP({pp})',
+    ppStageTip: 'PP Stage {stage}: Transformer 层 {start}-{end}',
+    ppSchedule: 'Microbatch 流水线',
+    ppIdle: '等待执行',
+    ppWarmup: '预热填充',
+    ppSteady: '稳态并行',
+    ppDrain: '排空阶段',
+    ppDone: '执行完成',
+    ppSlot: '时隙',
+    ppPlay: '播放 PP 流水线',
+    ppPause: '暂停 PP 流水线',
+    ppNext: 'PP 下一时隙',
+    ppReset: '重置 PP 流水线',
+    ppExecuting: '执行 MB{microbatch}',
+    ppReceive: 'S{stage} 接收 MB{microbatch} 激活',
+    ppFirstStage: 'S0 读取 MB{microbatch}',
+    ppUtilization: '理想 Stage 利用率',
     noPp: '未开启流水线并行',
     attnBlock: 'Attention Block',
     qkvFused: 'Q,K,V (Fused)',
@@ -39,6 +58,7 @@ const i18n = {
     outProj: 'Out Proj',
     kvCache: 'KV Cache & Activations',
     split3D: '3D切分: DP切B × CP切S × TP切H',
+    kvMhaAssumption: '基础视图按 MHA 且 KV Head 可被 TP 整除绘制；GQA/MLA 在 TP 过大时可能复制 KV，后续由 DCP/Helix 模式表达。',
     noSplit: '无切分',
     moeLayer: 'MoE Layer (以 4 专家架构为例)',
     router: 'Router',
@@ -52,22 +72,22 @@ const i18n = {
     wholeBlock: '整块',
     lmHead: 'LM Head',
     locked: '已锁定',
-    totalGpu: '总 GPU:',
-    pageDesc: '调整参数并悬浮在物理卡上，直观观测模型张量在分布式集群中的严格数学映射。',
-    clusterHintTitle: '集群复用提示:',
-    clusterHintDesc: '基础层 TP 和 专家层并行 (EP × ETP) 通常复用同一个 GPU 通信域以节省跨机网络带宽。因此调度总卡数 = DP × PP × CP × max(TP, EP×ETP)。',
+    totalGpu: '示意 GPU:',
+    pageDesc: '调整参数并悬浮在物理卡上，观察六维正交示意中的张量切片与 GPU 槽位映射。',
+    clusterHintTitle: '映射假设:',
+    clusterHintDesc: '为保持六个维度独立可调，本页采用不复用 rank 的正交示意，总槽位 = DP × PP × CP × TP × EP × ETP。真实运行时可能复用或重组 TP、EP、ETP 进程组，因此该数值不是通用 world size 恒等式。',
     clusterHintBold: '点击右侧 GPU 卡片可将其固定锁定，方便对比观察。',
-    physGpuMap: '物理 GPU 集群分片映射',
+    physGpuMap: 'GPU 集群分片映射（正交示意）',
     singleCard: '单卡计算 (无切分)'
   },
   en: {
     title: 'Interactive LLM 6D Parallel Strategies', subtitle: 'Tune six parallel dimensions and observe tensor sharding + GPU mapping', reset: 'Reset', langToggle: '中文', empty: 'Available Slot', expand: 'Adjust strategies above to scale cluster usage (current',
-    dpName:'Data Parallel (DP)', dpDesc:'Replicate model and shard batches to scale throughput.',
-    tpName:'Tensor Parallel (TP)', tpDesc:'Shard core weight matrices; communication heavy, usually intra-node NVLink.',
-    ppName:'Pipeline Parallel (PP)', ppDesc:'Partition by layers; GPUs execute in relay style.',
-    cpName:'Context Parallel (CP)', cpDesc:'Shard long sequence dimension to avoid single-GPU memory blowup.',
-    epName:'Expert Parallel (EP)', epDesc:'MoE specific: different GPUs host different experts.',
-    etpName:'Expert Tensor Parallel (ETP)', etpDesc:'MoE specific: shard expert internal weights, often combined with EP.',
+    dpName:'Data Parallel (DP)', dpDesc:'Replicate a model or model-shard group and route different requests or batches to different replicas.',
+    tpName:'Tensor Parallel (TP)', tpDesc:'Shard intra-layer weights and attention heads; each layer requires collectives such as All-Reduce or Reduce-Scatter.',
+    ppName:'Pipeline Parallel (PP)', ppDesc:'Partition model depth, pass activations between adjacent stages with P2P, and fill the pipeline with microbatches.',
+    cpName:'Context Parallel (CP)', cpDesc:'Shard activations or KV along context length; prefill and decode use different layouts and communication than SP.',
+    epName:'Expert Parallel (EP)', epDesc:'The MoE router dispatches Top-K tokens with All-to-All to ranks that host the selected experts.',
+    etpName:'Expert Tensor Parallel (ETP)', etpDesc:'Shard weights inside one expert; it usually shares or reorganizes a TP/EP rank mesh rather than being universally independent.',
     fullCopy: 'Full Replicate',
     logicalTitle: 'LLM Math Arch & Dynamic Tensor Sharding',
     inputData: 'Input Tokens Data',
@@ -79,6 +99,22 @@ const i18n = {
     fullWeight: 'Full Weight',
     transLayers: 'L × Transformer Layers',
     ppSplit: 'Layer Partition: PP({pp})',
+    ppStageTip: 'PP Stage {stage}: Transformer layers {start}-{end}',
+    ppSchedule: 'Microbatch Pipeline',
+    ppIdle: 'Ready',
+    ppWarmup: 'Pipeline Warmup',
+    ppSteady: 'Steady State',
+    ppDrain: 'Pipeline Drain',
+    ppDone: 'Completed',
+    ppSlot: 'Slot',
+    ppPlay: 'Play PP pipeline',
+    ppPause: 'Pause PP pipeline',
+    ppNext: 'Next PP slot',
+    ppReset: 'Reset PP pipeline',
+    ppExecuting: 'Running MB{microbatch}',
+    ppReceive: 'S{stage} receives MB{microbatch} activations',
+    ppFirstStage: 'S0 loads MB{microbatch}',
+    ppUtilization: 'Ideal stage utilization',
     noPp: 'No Pipeline Parallelism',
     attnBlock: 'Attention Block',
     qkvFused: 'Q,K,V (Fused)',
@@ -86,6 +122,7 @@ const i18n = {
     outProj: 'Out Proj',
     kvCache: 'KV Cache & Activations',
     split3D: '3D Shard: DP(B) × CP(S) × TP(H)',
+    kvMhaAssumption: 'The base view assumes MHA with KV heads divisible by TP. GQA/MLA may replicate KV when TP is too large; DCP/Helix modes will model that case.',
     noSplit: 'No Sharding',
     moeLayer: 'MoE Layer (4 Experts Example)',
     router: 'Router',
@@ -99,17 +136,67 @@ const i18n = {
     wholeBlock: 'Whole',
     lmHead: 'LM Head',
     locked: 'Pinned',
-    totalGpu: 'Total GPU:',
-    pageDesc: 'Tune parameters and hover over physical cards to visually observe the strict mathematical mapping of model tensors in a distributed cluster.',
-    clusterHintTitle: 'Cluster Multiplexing Hint:',
-    clusterHintDesc: 'Base layer TP and expert layer parallelisms (EP × ETP) usually multiplex the same GPU communication domain to save inter-node network bandwidth. Thus, total scheduled cards = DP × PP × CP × max(TP, EP×ETP). ',
+    totalGpu: 'Illustrative GPU:',
+    pageDesc: 'Tune parameters and hover over GPU cards to inspect tensor shards in an orthogonal six-dimensional teaching map.',
+    clusterHintTitle: 'Mapping assumption:',
+    clusterHintDesc: 'To keep all six dimensions independently adjustable, this page uses an orthogonal no-rank-reuse sandbox: slots = DP × PP × CP × TP × EP × ETP. Real runtimes may reuse or reorganize TP, EP, and ETP process groups, so this is not a universal world-size identity. ',
     clusterHintBold: 'Click a GPU card on the right to pin it for comparison.',
-    physGpuMap: 'Physical GPU Cluster Mapping',
+    physGpuMap: 'GPU Shard Mapping (Orthogonal Sandbox)',
     singleCard: 'Single GPU (No Sharding)'
   }
 };
 
 const getInitialLang = () => (typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().includes('zh') ? 'zh' : 'en');
+
+const getPipelineState = (ppDegree, phase, step) => {
+  const stageCount = Math.max(1, ppDegree);
+  const slotCount = PIPELINE_MICROBATCHES + stageCount - 1;
+  const currentSlot = Math.min(Math.max(step, 0), slotCount - 1);
+  const stages = Array.from({ length: stageCount }, (_, stage) => {
+    const startLayer = Math.floor((stage * TOTAL_LAYERS) / stageCount) + 1;
+    const endLayer = Math.floor(((stage + 1) * TOTAL_LAYERS) / stageCount);
+    const cells = Array.from({ length: slotCount }, (_, slot) => {
+      const microbatch = slot - stage;
+      const hasWork = microbatch >= 0 && microbatch < PIPELINE_MICROBATCHES;
+      const status = phase === 'idle'
+        ? 'pending'
+        : phase === 'done' || slot < currentSlot
+          ? 'passed'
+          : slot === currentSlot
+            ? 'active'
+            : 'pending';
+
+      return { slot, microbatch, hasWork, status };
+    });
+
+    return { stage, startLayer, endLayer, cells };
+  });
+  const activeJobs = phase === 'running'
+    ? stages
+        .map(({ stage, cells }) => ({ stage, cell: cells[currentSlot] }))
+        .filter(({ cell }) => cell.hasWork)
+        .map(({ stage, cell }) => ({ stage, microbatch: cell.microbatch }))
+    : [];
+  const schedulePhase = phase === 'idle'
+    ? 'idle'
+    : phase === 'done'
+      ? 'done'
+      : activeJobs.length === stageCount
+        ? 'steady'
+        : currentSlot < stageCount - 1
+          ? 'warmup'
+          : 'drain';
+
+  return {
+    stageCount,
+    slotCount,
+    currentSlot,
+    stages,
+    activeJobs,
+    schedulePhase,
+    utilization: PIPELINE_MICROBATCHES / slotCount,
+  };
+};
 
 // 重构为白昼模式 (Light Mode) 的颜色映射表
 const getColorClass = (color, type) => {
@@ -131,6 +218,9 @@ const App = () => {
   const [hoveredGpu, setHoveredGpu] = useState(null);
   const [pinnedGpu, setPinnedGpu] = useState(null);
   const [lang, setLang] = useState(getInitialLang());
+  const [phase, setPhase] = useState('idle');
+  const [step, setStep] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   
   // 支持插值的 t 函数
   const t = (k, vars = {}) => {
@@ -144,12 +234,17 @@ const App = () => {
   // 核心状态：计算当前应该展示哪张卡的切片状态 (优先展示悬浮，其次是锁定)
   const activeGpu = hoveredGpu !== null ? hoveredGpu : pinnedGpu;
 
+  const pipelineState = useMemo(
+    () => getPipelineState(degrees.pp, phase, step),
+    [degrees.pp, phase, step],
+  );
+
   const totalGpus = useMemo(() => {
-    return degrees.dp * degrees.pp * degrees.cp * Math.max(degrees.tp, degrees.ep * degrees.etp);
+    return degrees.dp * degrees.pp * degrees.cp * degrees.tp * degrees.ep * degrees.etp;
   }, [degrees]);
 
   const checkConstraints = (newDegrees) => {
-    const total = newDegrees.dp * newDegrees.pp * newDegrees.cp * Math.max(newDegrees.tp, newDegrees.ep * newDegrees.etp);
+    const total = newDegrees.dp * newDegrees.pp * newDegrees.cp * newDegrees.tp * newDegrees.ep * newDegrees.etp;
     return total <= MAX_GPUS;
   };
 
@@ -158,32 +253,75 @@ const App = () => {
     if (checkConstraints(newDegrees)) {
       setDegrees(newDegrees);
       setPinnedGpu(null); // 当修改拓扑时自动解除锁定
+      setPhase('idle');
+      setStep(0);
+      setIsPlaying(false);
     }
   };
+
+  const handleNextStep = () => {
+    if (phase === 'done') {
+      setStep(0);
+      setPhase('running');
+      return;
+    }
+    if (phase === 'idle') {
+      setStep(0);
+      setPhase('running');
+      return;
+    }
+    if (step >= pipelineState.slotCount - 1) {
+      setPhase('done');
+      setIsPlaying(false);
+      return;
+    }
+    setStep((current) => current + 1);
+  };
+
+  const togglePlay = () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      return;
+    }
+    if (phase === 'done') {
+      setStep(0);
+      setPhase('running');
+    } else if (phase === 'idle') {
+      setStep(0);
+      setPhase('running');
+    }
+    setIsPlaying(true);
+  };
+
+  const resetPipeline = () => {
+    setPhase('idle');
+    setStep(0);
+    setIsPlaying(false);
+  };
+
+  useEffect(() => {
+    if (!isPlaying || phase === 'done') return undefined;
+    const timer = setTimeout(handleNextStep, 900);
+    return () => clearTimeout(timer);
+  }, [isPlaying, phase, step, degrees.pp]);
 
   const reset = () => {
     setDegrees({ dp: 1, tp: 1, pp: 1, cp: 1, ep: 1, etp: 1 });
     setHoveredGpu(null);
     setPinnedGpu(null);
+    resetPipeline();
   };
 
   const getGpuCoords = (g) => {
     let rem = g;
-    const tp_ep_group = Math.max(degrees.tp, degrees.ep * degrees.etp);
-    const tp_ep_idx = rem % tp_ep_group; rem = Math.floor(rem / tp_ep_group);
+    const etp_idx = rem % degrees.etp; rem = Math.floor(rem / degrees.etp);
+    const ep_idx = rem % degrees.ep; rem = Math.floor(rem / degrees.ep);
+    const tp_idx = rem % degrees.tp; rem = Math.floor(rem / degrees.tp);
     const cp_idx = rem % degrees.cp; rem = Math.floor(rem / degrees.cp);
     const dp_idx = rem % degrees.dp; rem = Math.floor(rem / degrees.dp);
     const pp_idx = rem % degrees.pp;
 
-    const tp_idx = tp_ep_idx % degrees.tp;
-    
-    const actual_etp = degrees.etp > 1 ? degrees.etp : Math.max(1, Math.floor(degrees.tp / degrees.ep));
-    const actual_ep = degrees.ep;
-
-    const actual_etp_idx = degrees.etp > 1 ? (tp_ep_idx % degrees.etp) : (tp_ep_idx % actual_etp);
-    const actual_ep_idx = degrees.etp > 1 ? (Math.floor(tp_ep_idx / degrees.etp) % actual_ep) : (Math.floor(tp_ep_idx / actual_etp) % actual_ep);
-
-    return { tp_ep_idx, tp_idx, ep_idx: actual_ep_idx, etp_idx: actual_etp_idx, cp_idx, dp_idx, pp_idx, actual_etp };
+    return { tp_idx, ep_idx, etp_idx, cp_idx, dp_idx, pp_idx };
   };
 
   const DimBadge = ({ text, tooltip }) => (
@@ -341,13 +479,137 @@ const App = () => {
     );
   };
 
+  const renderPipelineSchedule = () => {
+    if (degrees.pp === 1) return null;
+    const phaseKey = {
+      idle: 'ppIdle',
+      warmup: 'ppWarmup',
+      steady: 'ppSteady',
+      drain: 'ppDrain',
+      done: 'ppDone',
+    }[pipelineState.schedulePhase];
+
+    return (
+      <div className="mb-3 rounded-lg border border-purple-200 bg-purple-50/50 p-2.5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-purple-800">{t('ppSchedule')}</span>
+            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${
+              pipelineState.schedulePhase === 'steady'
+                ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                : pipelineState.schedulePhase === 'done'
+                  ? 'border-slate-300 bg-slate-100 text-slate-700'
+                  : 'border-cyan-300 bg-cyan-50 text-cyan-800'
+            }`}>{t(phaseKey)}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={resetPipeline}
+              className="rounded border border-slate-200 bg-white p-1 text-slate-500 hover:bg-slate-50"
+              aria-label={t('ppReset')}
+              title={t('ppReset')}
+            >
+              <RotateCcw size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="rounded border border-purple-300 bg-white p-1 text-purple-700 hover:bg-purple-100"
+              aria-label={isPlaying ? t('ppPause') : t('ppPlay')}
+              title={isPlaying ? t('ppPause') : t('ppPlay')}
+            >
+              {isPlaying ? <Pause size={12} /> : <Play size={12} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPlaying(false);
+                handleNextStep();
+              }}
+              disabled={phase === 'done'}
+              className="rounded border border-purple-300 bg-white p-1 text-purple-700 hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={t('ppNext')}
+              title={t('ppNext')}
+            >
+              <SkipForward size={12} />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto pb-1">
+          <div className="min-w-[330px]">
+            <div
+              className="mb-1 grid gap-1 pl-[62px]"
+              style={{ gridTemplateColumns: `repeat(${pipelineState.slotCount}, minmax(28px, 1fr))` }}
+            >
+              {Array.from({ length: pipelineState.slotCount }, (_, slot) => (
+                <div key={slot} className={`text-center text-[8px] font-semibold ${phase !== 'idle' && slot === pipelineState.currentSlot ? 'text-cyan-700' : 'text-slate-400'}`}>
+                  {t('ppSlot')} {slot}
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1">
+              {pipelineState.stages.map((stage) => (
+                <div key={stage.stage} className="grid grid-cols-[58px_1fr] items-center gap-1">
+                  <div className="text-[8px] font-bold leading-tight text-purple-800">
+                    S{stage.stage}
+                    <span className="block font-normal text-slate-500">L{stage.startLayer}-{stage.endLayer}</span>
+                  </div>
+                  <div
+                    className="grid gap-1"
+                    style={{ gridTemplateColumns: `repeat(${pipelineState.slotCount}, minmax(28px, 1fr))` }}
+                  >
+                    {stage.cells.map((cell) => {
+                      const isCurrentColumn = phase !== 'idle' && cell.slot === pipelineState.currentSlot;
+                      const cellClass = !cell.hasWork
+                        ? `border-dashed border-slate-200 bg-white/60 text-slate-300 ${isCurrentColumn ? 'ring-1 ring-cyan-200' : ''}`
+                        : cell.status === 'active'
+                          ? 'border-cyan-500 bg-cyan-500 text-white shadow-sm ring-2 ring-cyan-200'
+                          : cell.status === 'passed'
+                            ? 'border-emerald-200 bg-emerald-100 text-emerald-800'
+                            : 'border-purple-200 bg-white text-purple-700';
+                      return (
+                        <div key={cell.slot} className={`flex h-6 items-center justify-center rounded border text-[8px] font-bold transition-all ${cellClass}`}>
+                          {cell.hasWork ? `MB${cell.microbatch}` : '—'}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-purple-100 pt-2 text-[8px] text-slate-600">
+          <div className="flex flex-wrap gap-x-2 gap-y-1">
+            {pipelineState.activeJobs.length > 0
+              ? pipelineState.activeJobs.map((job) => (
+                  <span key={`${job.stage}-${job.microbatch}`} className="rounded bg-white px-1.5 py-0.5">
+                    {job.stage === 0
+                      ? t('ppFirstStage', { microbatch: job.microbatch })
+                      : t('ppReceive', { stage: job.stage, microbatch: job.microbatch })}
+                  </span>
+                ))
+              : <span>{t(phaseKey)}</span>}
+          </div>
+          <span className="flex items-center gap-1 whitespace-nowrap">
+            {t('ppUtilization')}
+            <MathFormula>{String.raw`\frac{M}{M+P-1}=\frac{${PIPELINE_MICROBATCHES}}{${pipelineState.slotCount}}=${Math.round(pipelineState.utilization * 100)}\%`}</MathFormula>
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const renderLogicalView = () => {
     const coords = activeGpu !== null ? getGpuCoords(activeGpu) : null;
     
     const isEmbeddingActive = coords ? coords.pp_idx === 0 : true;
     const isLmHeadActive = coords ? coords.pp_idx === degrees.pp - 1 : true;
 
-    const expertTp = coords ? coords.actual_etp : (degrees.etp > 1 ? degrees.etp : Math.max(1, Math.floor(degrees.tp / degrees.ep)));
+    const expertTp = degrees.etp;
 
     return (
       <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 flex flex-col gap-2 relative overflow-hidden h-full">
@@ -409,9 +671,13 @@ const App = () => {
             <div className="flex gap-1 h-1.5 w-full mb-3">
               {Array.from({ length: degrees.pp }).map((_, l) => {
                 const isPpActive = coords === null || coords.pp_idx === l;
-                return <div key={l} className={`flex-1 rounded-sm transition-all duration-300 ${isPpActive ? 'bg-purple-500 shadow-sm shadow-purple-500/40' : 'bg-slate-200'}`} />
+                const start = Math.floor((l * TOTAL_LAYERS) / degrees.pp) + 1;
+                const end = Math.floor(((l + 1) * TOTAL_LAYERS) / degrees.pp);
+                return <div key={l} title={t('ppStageTip', { stage: l, start, end })} className={`flex-1 rounded-sm transition-all duration-300 ${isPpActive ? 'bg-purple-500 shadow-sm shadow-purple-500/40' : 'bg-slate-200'}`} />
               })}
             </div>
+
+            {renderPipelineSchedule()}
 
             <div className="bg-slate-50 p-2 md:p-3 rounded-lg border border-slate-200">
                
@@ -457,6 +723,7 @@ const App = () => {
                           />
                        </div>
                     </div>
+                    <p className="mt-1.5 text-center text-[8px] leading-relaxed text-slate-500">{t('kvMhaAssumption')}</p>
                  </div>
                </div>
 
@@ -487,7 +754,7 @@ const App = () => {
                    {Array.from({ length: 4 }).map((_, e) => {
                       const isEpActive = coords === null || (e % degrees.ep === coords.ep_idx);
                       const expertActiveColor = degrees.etp > 1 ? getColorClass('indigo', 'active') : getColorClass('amber', 'active');
-                      const expertLabel = expertTp > 1 ? (degrees.etp > 1 ? `ETP=${expertTp}` : `TP=${expertTp}`) : t('wholeBlock');
+                      const expertLabel = expertTp > 1 ? `ETP=${expertTp}` : t('wholeBlock');
 
                       return (
                         <div key={`exp-${e}`} className={`p-1.5 rounded border transition-all duration-300 ${isEpActive ? 'border-pink-300 bg-pink-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
@@ -598,7 +865,7 @@ const App = () => {
           {renderMiniTrack('pp', 'PP', 'purple', coords)}
           {renderMiniTrack('tp', 'TP', 'amber', coords)}
           {renderMiniTrack('ep', 'EP', 'pink', coords)}
-          {renderMiniTrack('etp', degrees.etp > 1 ? 'ETP' : 'TP(Exp)', degrees.etp > 1 ? 'indigo' : 'amber', coords, coords.actual_etp)}
+          {renderMiniTrack('etp', 'ETP', 'indigo', coords)}
         </div>
       </div>
     );

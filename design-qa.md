@@ -11,7 +11,7 @@
 **最终结果：failed。** 八章均能完成生产构建并在桌面浏览器中打开，但目前不能把整站视为已经通过“设计语言一致性 + 技术正确性”验收。
 
 - 未发现 P0（完全不可用或构建阻塞）。
-- 当前剩余 7 项 P1；Linear Attention 的两项问题与 LLMInference 的两项问题均已修复。其余 6 章仍至少各有一项未解决问题。
+- 当前剩余 6 项 P1；Linear Attention、LLMInference 与 ParallelStrategies 的已知 P1 正确性问题已修复。ParallelStrategies 仍保留原交互结构及其 convention 缺口，不报告为整章通过。
 - 除 `LinearAttention` 与 `LLMInference` 外，其余 6 章没有使用共享 KaTeX `MathFormula`；大量公式仍由普通文本、`sub/sup` 或 HTML 拼接。
 - `LinearAttention` 与 `LLMInference` 已采用 skill 的完整交互范式；`ParallelStrategies` 与 `RadixCache` 的状态模型缺口最大。
 - 已开始按项修复；每次修改的验证证据记录在“已修复记录”中。
@@ -74,45 +74,48 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 浏览器回归：基线中暂停状态从 `8/32` 自动跳到 `18/32`；修复后暂停前后均保持 `17/32`。手动单步状态依次为 `[active,pending,pending,pending]`、`[passed,active,pending,pending]`、`[passed,passed,active,pending]`，随后进入下一层 Attention。Dense 与 MoE 均完整播放到 `<EOS>` 并自动停止。
 - 工程回归：convention checker 8/8 且 0 warning；`npm run build` 通过；桌面、平板、`390×844` 均无页面级横向溢出；浏览器控制台无 warning/error。
 
+### 2026-07-16 — ParallelStrategies：在原布局内修正拓扑假设与 ETP 映射
+
+- 原问题：页面把 `DP × PP × CP × max(TP, EP×ETP)` 写成通用卡数恒等式，并在 `ETP=1` 时根据 TP/EP 静默推导 `actual_etp`；例如 `TP=4, EP=2, ETP=1` 会把专家切片暗中显示为 `TP(Exp)=2`。
+- 范围纠正：保留原有顶部六维控制卡、左侧张量/矩阵切片、右侧 GPU 卡片、悬浮优先与点击固定联动；撤销替换整章信息架构的方案。
+- 修改：明确把当前页面降级为“六维正交示意”，六个维度不复用 rank，示意槽位按 `DP × PP × CP × TP × EP × ETP` 计算；文案明确该结果不是任意运行时的通用 world size 恒等式。
+- ETP 回归：删除 `actual_etp` 隐式推导；Expert 权重只由用户选择的 ETP 切分，GPU 卡始终显示 ETP rank。`TP=4, EP=2, ETP=1` 时页面生成 8 个正交示意槽位，所有卡的 ETP rank 均为 0，不再出现 `TP(Exp)`。
+- PP 原位增强：不新增面板，只在原紫色 stage 分段上补充层范围 tooltip；`PP=4` 时依次为 1-8、9-16、17-24、25-32。
+- 工程边界：`npm run build` 通过；桌面端原布局、PP=4、TP/EP/ETP 映射及 GPU 固定联动完成浏览器复核。Convention checker 仍为原有 2/8，本次未把静态拓扑章强行改造成播放状态机。
+
 ## P1：优先修复
 
-### 1. ParallelStrategies：把一种拓扑假设写成通用 6D 恒等式
-
-- 证据：总卡数直接计算为 `DP × PP × CP × max(TP, EP×ETP)`（`src/components/ParallelStrategies.jsx:147-152`），所有维度可独立选择。
-- 问题：TP、EP、ETP 的进程组关系、整除约束和 dense/expert layer 复用方式依实现而异；当前 UI 允许无约束组合，却宣称是“严格数学映射”。
-- 修复方向：明确采用的运行时/模型假设，并编码合法组合约束、通信组与 collectives；否则降级为“示意性容量估算”，不能称通用恒等式。
-
-### 2. FlashAttention：错误宣称 O(N) IO 与“指数级扩展上下文”
+### 1. FlashAttention：错误宣称 O(N) IO 与“指数级扩展上下文”
 
 - 证据：中英文文案直接写“`O(N) IO Complexity`”及“上下文长度指数级扩展”（`src/components/FlashAttention.jsx:62-63,126`）。
 - 问题：FlashAttention 是 exact attention，通过 tiling 降低 HBM 与 SRAM 间的读写并实现 IO-aware/IO-optimal；它没有把 attention 的一般 IO 或计算复杂度简单变成 O(N)，也不推出上下文长度“指数级扩展”。
 - 修复方向：改为“避免物化 N×N 中间矩阵、按 SRAM 容量降低 HBM accesses”，并把计算复杂度与额外显存复杂度分开说明。
 
-### 3. FlashAttention：HBM 流量指标没有量纲基础
+### 2. FlashAttention：HBM 流量指标没有量纲基础
 
 - 证据：标准模式使用固定 `210/610/820 MB`，Flash 模式把每步 `deltaIo: 1/2` 直接累加成 MB（`src/components/FlashAttention.jsx:159-193`）。
 - 问题：两种模式没有由 N、d、dtype、tile shape 推导到共同字节尺度，当前柱状/数字比较不具定量意义。
 - 修复方向：用同一个 bytes model 计算 Q/K/V/O、S/P 与重读写流量；若只表达事件数，单位改成“tile transfers”，不要标 MB。
 
-### 4. FlashDecode：Simple 模式画布的归约公式缺少局部分母
+### 3. FlashDecode：Simple 模式画布的归约公式缺少局部分母
 
 - 证据：伪代码正确累积 `block_sum_exp[i] * exp(block_max[i]-global_max)`（`src/components/FlashDecode.jsx:233-244`），但画布显示 `O_final = Σ O_i w_i / Σ w_i`（`src/components/FlashDecode.jsx:536`）。
 - 问题：Simple 模式中的 `O_i` 是未归一化分子，因此分母必须包含每块的 `l_i/block_sum_exp[i]`；画布公式与本章自己的伪代码矛盾。
 - 修复方向：显示 `Σ O_i exp(m_i-m_g) / Σ l_i exp(m_i-m_g)`，或把 `O_i` 明确定义为已归一化局部输出并同步修改伪代码。
 
-### 5. Engram：伪代码的 hash_idx 会越界
+### 4. Engram：伪代码的 hash_idx 会越界
 
 - 证据：分配 `zeros(B,L,max_n,num_heads)` 后，循环 `n=2..max_n` 并写 `hash_idx[:,:,n,k]`（`src/components/Engram.jsx:869,893`）。
 - 问题：最后一次访问索引 `max_n`，超出长度为 `max_n` 的维度；展示的伪代码不可运行，也与官方 demo 的堆叠布局不一致。
 - 修复方向：使用 `n-2` 索引或按 `(max_n-1)×num_heads` 展平/堆叠，并让表索引和张量 shape 一致。
 
-### 6. RadixCache：未满容量却触发 Evict
+### 5. RadixCache：未满容量却触发 Evict
 
 - 证据：容量常量为 10（`src/components/RadixCache.jsx:148`）；渲染到第 7 步时页面同时显示“显存告急”和 `6 / 10` 块占用。
 - 问题：可视状态仍有 40% 空闲块，LRU eviction 没有触发条件；这是演示状态机与缓存策略真值的直接冲突。
 - 修复方向：增加真实会超过容量的新分配请求，或把容量调整到 6，并由 `requiredBlocks > freeBlocks` 动态决定是否进入 eviction。
 
-### 7. DpAttention：把历史实现路径写成 MoE 的普遍必要条件
+### 6. DpAttention：把历史实现路径写成 MoE 的普遍必要条件
 
 - 证据：伪代码和原理文案把重组后的 MoE 固定为“标准 TP 协同计算”（`src/components/DpAttention.jsx:79`），并以此解释必须 All-Gather。
 - 问题：这可描述 SGLang v0.4/特定 TP-FFN 路径，但不是现代 MoE 的普遍约束；EP/DeepEP/all-to-all 是重要替代执行图。
@@ -165,7 +168,7 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 
 ## 建议修复顺序
 
-1. 继续修复其余 6 个章节的 7 项 P1 技术真值与状态机错误；不要先做视觉抛光。
+1. 继续修复其余 5 个章节的 6 项 P1 技术真值与状态机错误；不要先做视觉抛光。
 2. 统一 `MathFormula`、i18n、canonical state 与动态指标单位。
 3. 补全 runtime pseudocode 和技术边界说明。
 4. 最后进行全章桌面/平板/移动端、中文/英文、所有模式从 idle 到 done 的回归，并把本报告中的未验证项逐一勾销。
