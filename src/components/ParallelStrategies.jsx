@@ -1,8 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Layers, Grid, Boxes, SplitSquareHorizontal, BrainCircuit, Cpu, Network, RotateCcw, Info, ArrowDown, Pin, Globe, Play, Pause, SkipForward } from 'lucide-react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Layers, Grid, Boxes, SplitSquareHorizontal, BrainCircuit, Cpu, Network, RotateCcw, Info, ArrowDown, ArrowRight, Pin, Globe, Play, Pause, SkipForward } from 'lucide-react';
 import { MathFormula } from './linear-attention/MathFormula';
+import {
+  MAX_GPUS,
+  getGpuCoordinates,
+  getIllustrativeGpuCount,
+  getMoeParallelState,
+  getPipelineOwnership,
+  isTopologyValid,
+} from './parallel-strategies/topologyModel';
 
-const MAX_GPUS = 16;
 const TOTAL_LAYERS = 32;
 const PIPELINE_MICROBATCHES = 4;
 
@@ -26,13 +33,19 @@ const i18n = {
     etpName:'专家张量并行(ETP)', etpDesc:'切分单个专家内部权重；通常与 TP/EP 共享或重组 Rank Mesh，并非普遍独立维度。',
     fullCopy: '全量复制',
     logicalTitle: 'LLM 数学架构与动态张量切片',
+    executionContext: '推理阶段',
+    prefill: 'Prefill',
+    decode: 'Decode',
     inputData: 'Input Tokens Data',
     dpCpSplit: 'DP切B({dp}) × CP切S({cp})',
+    decodeInputSplit: 'DP 分配请求；DCP Rank 共享当前 Query',
+    dpRequestFact: 'DP 表示不同副本拥有不同请求；这里的 B 网格是全局工作负载示意，不代表一次跨副本集合切分。',
     fullData: '完整数据 (无切分)',
     embedMatrix: 'Embedding Matrix',
     rowSplit: '横向切行(TP={tp})',
     colSplit: '纵向切列(TP={tp})',
     fullWeight: '完整权重',
+    ppNotResident: '仅驻留 PP Stage {stage}',
     transLayers: 'L × Transformer Layers',
     ppSplit: '按层划分阶段: PP({pp})',
     ppStageTip: 'PP Stage {stage}: Transformer 层 {start}-{end}',
@@ -51,18 +64,57 @@ const i18n = {
     ppReceive: 'S{stage} 接收 MB{microbatch} 激活',
     ppFirstStage: 'S0 读取 MB{microbatch}',
     ppUtilization: '理想 Stage 利用率',
+    ppReplicaScope: '时间表跟踪 DP replica 0；同一 Stage 内的 TP/CP/EP/ETP Rank 共享该执行阶段，其他 DP 副本运行各自的请求流。',
+    ppCardRunning: 'MB{microbatch} 执行中',
+    ppCardBubble: '流水气泡',
+    ppCardDone: 'Stage 完成',
+    ppCardIndependent: '独立请求流',
     noPp: '未开启流水线并行',
     attnBlock: 'Attention Block',
     qkvFused: 'Q,K,V (Fused)',
     qkvTooltip: '物理实现中 Q,K,V 通常被拼接为 3H 长度的一个大矩阵进行计算',
     outProj: 'Out Proj',
     kvCache: 'KV Cache & Activations',
-    split3D: '3D切分: DP切B × CP切S × TP切H',
-    kvMhaAssumption: '基础视图按 MHA 且 KV Head 可被 TP 整除绘制；GQA/MLA 在 TP 过大时可能复制 KV，后续由 DCP/Helix 模式表达。',
+    split3D: 'KV 所有权: DP请求 × CP切Token × TP切KV Head',
+    kvMhaAssumption: '基础视图按 MHA 且 KV Head 可被 TP 整除绘制；GQA/MLA 在 TP 过大时可能复制 KV，Decode 切换展示 DCP 语义，Helix 留在后续模式。',
+    kvDcpAssumption: 'DCP 复用模式按 MLA / 单 KV Head 的高复制场景绘制：CP Rank 由 TP Rank 派生，沿 KV 时间轴分片以减少 TP 引入的 KV 复制。',
+    cpPrefillFact: 'Prefill CP：按新 Token 切分 Q/K/V；可选择聚合完整 K/V，或以 Ring P2P 分块交换 K/V。',
+    cpDecodeFact: 'Decode DCP：当前 Query 很短，主要沿 KV 历史长度切分；vLLM 可复用 TP Rank，因此 DCP 不必增加 GPU 数。',
+    tpCommPath: 'TP 通信：QKV 列并行局部计算 → Attention → Out Projection 行并行 → All-Reduce / Reduce-Scatter',
+    tpCommTitle: 'TP 层内通信图',
+    qkvShardNode: 'QKV 权重分片',
+    localAttentionNode: '本地 Attention',
+    outProjShardNode: 'Out Proj 分片',
+    collectiveNode: 'All-Reduce / RS',
+    layerOutputNode: '层输出',
     noSplit: '无切分',
     moeLayer: 'MoE Layer (以 4 专家架构为例)',
     router: 'Router',
-    routerDesc: '计算后通过 Router 分发至目标 Expert',
+    routerDesc: 'Router 计算 Top-K，再把 Token 分发到目标 Expert',
+    moeCommPath: 'MoE 通信：Router → All-to-All Dispatch → 本地 Expert / ETP → All-to-All Combine',
+    moeCommTitle: 'MoE Token 通信图',
+    routerTopKNode: 'Router Top-K',
+    allTokensNode: '全部 Token',
+    a2aDispatchNode: 'All-to-All Dispatch',
+    localExpertNode: '本地 Expert / ETP',
+    expertCollectiveNode: 'Expert All-Reduce / RS',
+    a2aCombineNode: 'All-to-All Combine',
+    tokenOutputNode: 'Token 输出',
+    moeModeSingle: '单卡 Expert',
+    moeModeTp: '纯 TP：每个 Expert 随 TP 切分',
+    moeModeEp: '纯 EP：完整 Expert 分布到 EP Rank',
+    moeModeEtp: 'ETP：Expert 内部切分',
+    moeModeHybrid: '混合 EP × ETP',
+    tpLocalAttentionEdge: '本地 Attention',
+    tpCollectiveEdge: 'All-Reduce / RS → 层输出',
+    moeA2AEdge: 'All-to-All：Dispatch ↓ / Combine ↑',
+    moeLocalRouteEdge: '本地 Top-K 路由（各 TP Rank 已有全部 Token）',
+    moeExpertCollectiveEdge: '分片归约 · AR/RS',
+    moeExpertCollectiveTitle: 'Expert 分片之间执行 All-Reduce / Reduce-Scatter',
+    moeRoutingAria: 'Router 与 Expert 的通信连线',
+    ppCommTitle: 'PP Stage 激活通信',
+    p2pActivation: 'P2P 激活',
+    etpMeshBoundary: '运行时约束示例：TensorRT-LLM 要求 MoE-TP × MoE-EP = TP；纯 TP 模式下 MoE-TP 回退为 TP。本页 ETP 旋钮表示显式 Expert 内部切分，正交沙盒仍允许独立观察。',
     expert: 'Expert',
     w1w3: 'w1,w3 (Up)',
     w2: 'w2 (Down)',
@@ -72,12 +124,21 @@ const i18n = {
     wholeBlock: '整块',
     lmHead: 'LM Head',
     locked: '已锁定',
+    hovered: '悬浮',
     totalGpu: '示意 GPU:',
+    cards: '张卡',
     pageDesc: '调整参数并悬浮在物理卡上，观察六维正交示意中的张量切片与 GPU 槽位映射。',
     clusterHintTitle: '映射假设:',
     clusterHintDesc: '为保持六个维度独立可调，本页采用不复用 rank 的正交示意，总槽位 = DP × PP × CP × TP × EP × ETP。真实运行时可能复用或重组 TP、EP、ETP 进程组，因此该数值不是通用 world size 恒等式。',
+    mappingModel: 'Rank 映射',
+    orthogonalMapping: '正交沙盒',
+    dcpReuseMapping: 'DCP 复用 TP',
+    dcpHintTitle: 'DCP Rank 复用:',
+    dcpHintDesc: '按 vLLM Decode DCP 语义，DCP Rank 从 TP Rank 派生，不额外增加示意 GPU；本页为构造均匀子组要求 DCP 整除 TP。本模式仅修正 CP/TP 复用，其余 EP/ETP 仍使用正交沙盒。',
+    dcpPrefillDisabled: 'DCP 复用模式只用于 Decode；切回正交沙盒后可选择 Prefill。',
     clusterHintBold: '点击右侧 GPU 卡片可将其固定锁定，方便对比观察。',
     physGpuMap: 'GPU 集群分片映射（正交示意）',
+    physGpuMapDcp: 'GPU 集群分片映射（DCP 复用 TP）',
     singleCard: '单卡计算 (无切分)'
   },
   en: {
@@ -90,13 +151,19 @@ const i18n = {
     etpName:'Expert Tensor Parallel (ETP)', etpDesc:'Shard weights inside one expert; it usually shares or reorganizes a TP/EP rank mesh rather than being universally independent.',
     fullCopy: 'Full Replicate',
     logicalTitle: 'LLM Math Arch & Dynamic Tensor Sharding',
+    executionContext: 'Inference phase',
+    prefill: 'Prefill',
+    decode: 'Decode',
     inputData: 'Input Tokens Data',
     dpCpSplit: 'DP Shard B({dp}) × CP Shard S({cp})',
+    decodeInputSplit: 'DP routes requests; DCP ranks share the current query',
+    dpRequestFact: 'DP replicas own different requests. The B grid is a global workload view, not one batch tensor collectively sharded across replicas.',
     fullData: 'Full Data (No Sharding)',
     embedMatrix: 'Embedding Matrix',
     rowSplit: 'Row Shard(TP={tp})',
     colSplit: 'Col Shard(TP={tp})',
     fullWeight: 'Full Weight',
+    ppNotResident: 'Resident only on PP stage {stage}',
     transLayers: 'L × Transformer Layers',
     ppSplit: 'Layer Partition: PP({pp})',
     ppStageTip: 'PP Stage {stage}: Transformer layers {start}-{end}',
@@ -115,18 +182,57 @@ const i18n = {
     ppReceive: 'S{stage} receives MB{microbatch} activations',
     ppFirstStage: 'S0 loads MB{microbatch}',
     ppUtilization: 'Ideal stage utilization',
+    ppReplicaScope: 'The schedule follows DP replica 0. TP/CP/EP/ETP ranks in the same stage share this execution phase; other DP replicas run independent request streams.',
+    ppCardRunning: 'Running MB{microbatch}',
+    ppCardBubble: 'Pipeline bubble',
+    ppCardDone: 'Stage complete',
+    ppCardIndependent: 'Independent stream',
     noPp: 'No Pipeline Parallelism',
     attnBlock: 'Attention Block',
     qkvFused: 'Q,K,V (Fused)',
     qkvTooltip: 'Physically Q, K, V are usually concatenated into a large 3H matrix.',
     outProj: 'Out Proj',
     kvCache: 'KV Cache & Activations',
-    split3D: '3D Shard: DP(B) × CP(S) × TP(H)',
-    kvMhaAssumption: 'The base view assumes MHA with KV heads divisible by TP. GQA/MLA may replicate KV when TP is too large; DCP/Helix modes will model that case.',
+    split3D: 'KV ownership: DP requests × CP tokens × TP KV heads',
+    kvMhaAssumption: 'The base view assumes MHA with KV heads divisible by TP. GQA/MLA may replicate KV when TP is too large; Decode shows DCP semantics, while Helix remains a later mode.',
+    kvDcpAssumption: 'DCP reuse uses an MLA / single-KV-head high-replication teaching case: CP ranks are derived from TP ranks and shard KV over time to reduce TP-induced KV replication.',
+    cpPrefillFact: 'Prefill CP shards new-token Q/K/V. It may gather full K/V or exchange K/V chunks with Ring P2P.',
+    cpDecodeFact: 'Decode DCP has a tiny current query and mainly shards KV history by time. vLLM can reuse TP ranks, so DCP need not increase GPU count.',
+    tpCommPath: 'TP communication: column-parallel QKV → Attention → row-parallel output projection → All-Reduce / Reduce-Scatter',
+    tpCommTitle: 'TP intra-layer communication',
+    qkvShardNode: 'QKV weight shard',
+    localAttentionNode: 'Local attention',
+    outProjShardNode: 'Out Proj shard',
+    collectiveNode: 'All-Reduce / RS',
+    layerOutputNode: 'Layer output',
     noSplit: 'No Sharding',
     moeLayer: 'MoE Layer (4 Experts Example)',
     router: 'Router',
-    routerDesc: 'Dispatched to target Expert via Router after calculation',
+    routerDesc: 'The router computes Top-K, then dispatches tokens to target experts',
+    moeCommPath: 'MoE communication: Router → All-to-All Dispatch → local Expert / ETP → All-to-All Combine',
+    moeCommTitle: 'MoE token communication',
+    routerTopKNode: 'Router Top-K',
+    allTokensNode: 'All tokens',
+    a2aDispatchNode: 'All-to-All Dispatch',
+    localExpertNode: 'Local Expert / ETP',
+    expertCollectiveNode: 'Expert All-Reduce / RS',
+    a2aCombineNode: 'All-to-All Combine',
+    tokenOutputNode: 'Token output',
+    moeModeSingle: 'Single-GPU expert',
+    moeModeTp: 'TP only: every expert follows TP',
+    moeModeEp: 'EP only: full experts distributed by EP rank',
+    moeModeEtp: 'ETP: intra-expert sharding',
+    moeModeHybrid: 'Hybrid EP × ETP',
+    tpLocalAttentionEdge: 'Local Attention',
+    tpCollectiveEdge: 'All-Reduce / RS → layer output',
+    moeA2AEdge: 'All-to-All: Dispatch ↓ / Combine ↑',
+    moeLocalRouteEdge: 'Local Top-K routing (every TP rank already has all tokens)',
+    moeExpertCollectiveEdge: 'Shard reduce · AR/RS',
+    moeExpertCollectiveTitle: 'All-Reduce / Reduce-Scatter across expert shards',
+    moeRoutingAria: 'Communication links between Router and Experts',
+    ppCommTitle: 'PP stage activation communication',
+    p2pActivation: 'P2P activation',
+    etpMeshBoundary: 'Runtime example: TensorRT-LLM requires MoE-TP × MoE-EP = TP; in TP-only mode, MoE-TP falls back to TP. The ETP control represents an explicit intra-expert shard in this orthogonal sandbox.',
     expert: 'Expert',
     w1w3: 'w1,w3 (Up)',
     w2: 'w2 (Down)',
@@ -136,12 +242,21 @@ const i18n = {
     wholeBlock: 'Whole',
     lmHead: 'LM Head',
     locked: 'Pinned',
+    hovered: 'Hover',
     totalGpu: 'Illustrative GPU:',
+    cards: 'Cards',
     pageDesc: 'Tune parameters and hover over GPU cards to inspect tensor shards in an orthogonal six-dimensional teaching map.',
     clusterHintTitle: 'Mapping assumption:',
     clusterHintDesc: 'To keep all six dimensions independently adjustable, this page uses an orthogonal no-rank-reuse sandbox: slots = DP × PP × CP × TP × EP × ETP. Real runtimes may reuse or reorganize TP, EP, and ETP process groups, so this is not a universal world-size identity. ',
+    mappingModel: 'Rank mapping',
+    orthogonalMapping: 'Orthogonal sandbox',
+    dcpReuseMapping: 'DCP reuses TP',
+    dcpHintTitle: 'DCP rank reuse:',
+    dcpHintDesc: 'Following vLLM decode DCP semantics, DCP ranks are derived from TP ranks and add no illustrative GPUs. This page requires DCP to divide TP to form uniform subgroups. Only CP/TP reuse changes; EP/ETP remain orthogonal sandbox axes.',
+    dcpPrefillDisabled: 'DCP reuse is decode-only. Switch back to the orthogonal sandbox to select Prefill.',
     clusterHintBold: 'Click a GPU card on the right to pin it for comparison.',
     physGpuMap: 'GPU Shard Mapping (Orthogonal Sandbox)',
+    physGpuMapDcp: 'GPU Shard Mapping (DCP Reuses TP)',
     singleCard: 'Single GPU (No Sharding)'
   }
 };
@@ -213,14 +328,118 @@ const getColorClass = (color, type) => {
   return colors[color][type];
 };
 
+const ExpertConnectionOverlay = ({
+  containerRef,
+  sourceRef,
+  targetRefs,
+  activeExpertIndexes,
+  crossRank,
+  label,
+  ariaLabel,
+  layoutKey,
+}) => {
+  const [geometry, setGeometry] = useState(null);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const source = sourceRef.current;
+    const targets = targetRefs.current.filter(Boolean);
+    if (!container || !source || targets.length === 0) return undefined;
+
+    const updateGeometry = () => {
+      const containerRect = container.getBoundingClientRect();
+      const sourceRect = source.getBoundingClientRect();
+      setGeometry({
+        width: containerRect.width,
+        height: containerRect.height,
+        source: {
+          x: sourceRect.left - containerRect.left + sourceRect.width / 2,
+          y: sourceRect.bottom - containerRect.top,
+        },
+        targets: targets.map((target, index) => {
+          const rect = target.getBoundingClientRect();
+          return {
+            index,
+            x: rect.left - containerRect.left + rect.width / 2,
+            y: rect.top - containerRect.top,
+          };
+        }),
+      });
+    };
+
+    const frame = requestAnimationFrame(updateGeometry);
+    const observer = new ResizeObserver(updateGeometry);
+    [container, source, ...targets].forEach((element) => observer.observe(element));
+    window.addEventListener('resize', updateGeometry);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('resize', updateGeometry);
+    };
+  }, [containerRef, sourceRef, targetRefs, layoutKey]);
+
+  if (!geometry) return null;
+  const firstTargetY = Math.min(...geometry.targets.map((target) => target.y));
+  const labelTop = Math.max(geometry.source.y + 5, firstTargetY - 27);
+  const stroke = crossRank ? '#f43f5e' : '#64748b';
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5]" role="img" aria-label={ariaLabel}>
+      <svg width={geometry.width} height={geometry.height} className="absolute inset-0 overflow-visible" aria-hidden="true">
+        <defs>
+          <marker id="moe-link-end" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3.5 L0,7 Z" fill={stroke} />
+          </marker>
+          {crossRank && (
+            <marker id="moe-link-start" markerWidth="7" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse" markerUnits="strokeWidth">
+              <path d="M0,0 L7,3.5 L0,7 Z" fill={stroke} />
+            </marker>
+          )}
+        </defs>
+        {geometry.targets.map((target) => {
+          const active = activeExpertIndexes.includes(target.index);
+          const delta = Math.max(20, (target.y - geometry.source.y) * 0.5);
+          const path = `M ${geometry.source.x} ${geometry.source.y} C ${geometry.source.x} ${geometry.source.y + delta}, ${target.x} ${target.y - delta}, ${target.x} ${target.y}`;
+          return (
+            <path
+              key={target.index}
+              d={path}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={active ? 2 : 1.25}
+              strokeDasharray={crossRank ? undefined : '4 3'}
+              opacity={active ? 0.9 : 0.16}
+              markerStart={crossRank ? 'url(#moe-link-start)' : undefined}
+              markerEnd="url(#moe-link-end)"
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
+      </svg>
+      <span
+        className={`absolute max-w-[210px] -translate-x-1/2 rounded-full border bg-white/95 px-2 py-0.5 text-center text-[7px] font-bold leading-tight shadow-sm ${crossRank ? 'border-rose-300 text-rose-700' : 'border-slate-300 text-slate-600'}`}
+        style={{ left: geometry.source.x, top: labelTop }}
+      >
+        {label}
+      </span>
+    </div>
+  );
+};
+
 const App = () => {
   const [degrees, setDegrees] = useState({ dp: 1, tp: 1, pp: 1, cp: 1, ep: 1, etp: 1 });
   const [hoveredGpu, setHoveredGpu] = useState(null);
   const [pinnedGpu, setPinnedGpu] = useState(null);
   const [lang, setLang] = useState(getInitialLang());
+  const [contextMode, setContextMode] = useState('prefill');
+  const [mappingModel, setMappingModel] = useState('orthogonal');
   const [phase, setPhase] = useState('idle');
   const [step, setStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const moeGraphRef = useRef(null);
+  const moeRouterRef = useRef(null);
+  const moeExpertRefs = useRef([]);
   
   // 支持插值的 t 函数
   const t = (k, vars = {}) => {
@@ -240,12 +459,11 @@ const App = () => {
   );
 
   const totalGpus = useMemo(() => {
-    return degrees.dp * degrees.pp * degrees.cp * degrees.tp * degrees.ep * degrees.etp;
-  }, [degrees]);
+    return getIllustrativeGpuCount(degrees, mappingModel);
+  }, [degrees, mappingModel]);
 
-  const checkConstraints = (newDegrees) => {
-    const total = newDegrees.dp * newDegrees.pp * newDegrees.cp * newDegrees.tp * newDegrees.ep * newDegrees.etp;
-    return total <= MAX_GPUS;
+  const checkConstraints = (newDegrees, nextMappingModel = mappingModel) => {
+    return isTopologyValid(newDegrees, nextMappingModel);
   };
 
   const handleSetDegree = (dim, val) => {
@@ -299,6 +517,32 @@ const App = () => {
     setIsPlaying(false);
   };
 
+  const handleContextMode = (nextMode) => {
+    setContextMode(nextMode);
+    resetPipeline();
+  };
+
+  const handleMappingModel = (nextModel) => {
+    if (nextModel === mappingModel) return;
+    if (nextModel === 'dcpReuse') {
+      const expandedTp = { ...degrees, tp: Math.max(degrees.tp, degrees.cp) };
+      const nextDegrees = getIllustrativeGpuCount(expandedTp, 'dcpReuse') <= MAX_GPUS
+        ? expandedTp
+        : { ...degrees, cp: Math.min(degrees.cp, degrees.tp) };
+      setDegrees(nextDegrees);
+      setContextMode('decode');
+      setMappingModel('dcpReuse');
+    } else {
+      const nextDegrees = getIllustrativeGpuCount(degrees, 'orthogonal') > MAX_GPUS
+        ? { ...degrees, cp: 1 }
+        : degrees;
+      setDegrees(nextDegrees);
+      setMappingModel('orthogonal');
+    }
+    setPinnedGpu(null);
+    resetPipeline();
+  };
+
   useEffect(() => {
     if (!isPlaying || phase === 'done') return undefined;
     const timer = setTimeout(handleNextStep, 900);
@@ -309,20 +553,12 @@ const App = () => {
     setDegrees({ dp: 1, tp: 1, pp: 1, cp: 1, ep: 1, etp: 1 });
     setHoveredGpu(null);
     setPinnedGpu(null);
+    setContextMode('prefill');
+    setMappingModel('orthogonal');
     resetPipeline();
   };
 
-  const getGpuCoords = (g) => {
-    let rem = g;
-    const etp_idx = rem % degrees.etp; rem = Math.floor(rem / degrees.etp);
-    const ep_idx = rem % degrees.ep; rem = Math.floor(rem / degrees.ep);
-    const tp_idx = rem % degrees.tp; rem = Math.floor(rem / degrees.tp);
-    const cp_idx = rem % degrees.cp; rem = Math.floor(rem / degrees.cp);
-    const dp_idx = rem % degrees.dp; rem = Math.floor(rem / degrees.dp);
-    const pp_idx = rem % degrees.pp;
-
-    return { tp_idx, ep_idx, etp_idx, cp_idx, dp_idx, pp_idx };
-  };
+  const getGpuCoords = (g) => getGpuCoordinates(g, degrees, mappingModel);
 
   const DimBadge = ({ text, tooltip }) => (
     <span title={tooltip} className="ml-1 text-[8px] lg:text-[9px] font-mono text-slate-500 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded cursor-help whitespace-nowrap">
@@ -331,9 +567,10 @@ const App = () => {
   );
 
   // 1. 基础权重矩阵块 (白色主题)
-  const MatrixBlock = ({ title, dims, sliceDir, splitLabel, isLayerActive, activeColorClass, degree = 1, activeChunkIndex = 0, mW, mH, tooltip }) => {
+  const MatrixBlock = ({ title, dims, sliceDir, splitLabel, isLayerActive, activeColorClass, degree = 1, activeChunkIndex = 0, mW, mH, tooltip, inactiveReason }) => {
     const inactiveColorClass = "bg-slate-100 border border-slate-200/60";
     const numChunks = sliceDir === 'rep' ? 1 : Math.max(1, degree);
+    const isNotResident = activeGpu !== null && !isLayerActive && Boolean(inactiveReason);
     
     // 替换原本的 hoveredGpu 为 activeGpu
     const effectiveActive = (activeGpu === null) 
@@ -341,7 +578,7 @@ const App = () => {
         : (isLayerActive ? [activeChunkIndex] : []);
 
     return (
-      <div className="bg-white rounded flex flex-col items-center justify-between border border-slate-200 p-1.5 md:p-2 h-full w-full shadow-sm" title={tooltip}>
+      <div className={`rounded flex flex-col items-center justify-between border p-1.5 md:p-2 h-full w-full shadow-sm transition-colors ${isNotResident ? 'border-dashed border-purple-200 bg-purple-50/40' : 'border-slate-200 bg-white'}`} title={tooltip}>
         <div className="flex flex-col items-center leading-tight mb-2 h-[28px] justify-start w-full">
           <span className="text-[9px] md:text-[11px] font-semibold text-slate-700 text-center leading-tight break-words">{title}</span>
           {dims && <span className="text-[8px] md:text-[9px] font-mono text-slate-400 mt-[2px]">{dims}</span>}
@@ -358,8 +595,8 @@ const App = () => {
           </div>
         </div>
         
-        <div className="text-[7px] md:text-[8px] text-slate-500 whitespace-nowrap mt-1 text-center h-[14px] flex items-end justify-center">
-          {sliceDir === 'rep' ? t('fullCopy') : splitLabel}
+        <div className={`text-[7px] md:text-[8px] whitespace-nowrap mt-1 text-center min-h-[14px] flex items-end justify-center ${isNotResident ? 'font-semibold text-purple-700' : 'text-slate-500'}`}>
+          {isNotResident ? inactiveReason : sliceDir === 'rep' ? t('fullCopy') : splitLabel}
         </div>
       </div>
     );
@@ -549,9 +786,23 @@ const App = () => {
                 </div>
               ))}
             </div>
-            <div className="space-y-1">
-              {pipelineState.stages.map((stage) => (
-                <div key={stage.stage} className="grid grid-cols-[58px_1fr] items-center gap-1">
+            <div>
+              {pipelineState.stages.map((stage, stageIndex) => {
+                const currentCell = stage.cells[pipelineState.currentSlot];
+                const connectorActive = phase === 'running' && currentCell?.status === 'active';
+                const connectorPassed = phase === 'done' || currentCell?.status === 'passed';
+                return (
+                <React.Fragment key={stage.stage}>
+                  {stageIndex > 0 && (
+                    <div data-testid={`pp-link-${stageIndex - 1}-${stageIndex}`} className="grid h-5 grid-cols-[58px_1fr] items-center gap-1" aria-label={t('p2pActivation')}>
+                      <div className={`flex h-full items-center justify-center gap-0.5 text-[7px] font-bold ${connectorActive ? 'text-cyan-700' : connectorPassed ? 'text-emerald-700' : 'text-purple-500'}`}>
+                        <ArrowDown size={9} className={connectorActive ? 'animate-pulse' : ''} />
+                        <span>{t('p2pActivation')}</span>
+                      </div>
+                      <div className={`h-px ${connectorActive ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.55)]' : connectorPassed ? 'bg-emerald-300' : 'bg-purple-200'}`} />
+                    </div>
+                  )}
+                  <div className="grid grid-cols-[58px_1fr] items-center gap-1">
                   <div className="text-[8px] font-bold leading-tight text-purple-800">
                     S{stage.stage}
                     <span className="block font-normal text-slate-500">L{stage.startLayer}-{stage.endLayer}</span>
@@ -576,8 +827,9 @@ const App = () => {
                       );
                     })}
                   </div>
-                </div>
-              ))}
+                  </div>
+                </React.Fragment>
+              )})}
             </div>
           </div>
         </div>
@@ -599,17 +851,43 @@ const App = () => {
             <MathFormula>{String.raw`\frac{M}{M+P-1}=\frac{${PIPELINE_MICROBATCHES}}{${pipelineState.slotCount}}=${Math.round(pipelineState.utilization * 100)}\%`}</MathFormula>
           </span>
         </div>
+        <p className="mt-1.5 text-[8px] leading-relaxed text-slate-500">{t('ppReplicaScope')}</p>
       </div>
     );
   };
 
   const renderLogicalView = () => {
     const coords = activeGpu !== null ? getGpuCoords(activeGpu) : null;
-    
-    const isEmbeddingActive = coords ? coords.pp_idx === 0 : true;
-    const isLmHeadActive = coords ? coords.pp_idx === degrees.pp - 1 : true;
-
-    const expertTp = degrees.etp;
+    const ownership = coords
+      ? getPipelineOwnership(degrees.pp, coords.pp_idx)
+      : { ownsEmbedding: true, ownsLmHead: true };
+    const isEmbeddingActive = ownership.ownsEmbedding;
+    const isLmHeadActive = ownership.ownsLmHead;
+    const moeParallel = getMoeParallelState(degrees);
+    const expertTp = moeParallel.expertTp;
+    const expertShardIndex = moeParallel.shardAxis === 'tp'
+      ? coords?.tp_idx || 0
+      : coords?.etp_idx || 0;
+    const moeModeKey = {
+      single: 'moeModeSingle',
+      tp: 'moeModeTp',
+      ep: 'moeModeEp',
+      etp: 'moeModeEtp',
+      hybrid: 'moeModeHybrid',
+    }[moeParallel.mode];
+    const moeUsesCrossRankRouting = moeParallel.mode === 'ep' || moeParallel.mode === 'hybrid';
+    const activeExpertIndexes = coords
+      ? Array.from({ length: 4 }, (_, expertIndex) => expertIndex).filter((expertIndex) => expertIndex % degrees.ep === coords.ep_idx)
+      : [0, 1, 2, 3];
+    const isPrefill = contextMode === 'prefill';
+    const inputCpDegree = isPrefill ? degrees.cp : 1;
+    const inputDims = isPrefill ? '[B, S_new]' : '[B, 1]';
+    const kvDims = isPrefill ? '[B, S_new, H_kv]' : '[B, T_cache, H_kv]';
+    const inputSplitLabel = degrees.dp > 1 || degrees.cp > 1
+      ? isPrefill
+        ? t('dpCpSplit', { dp: degrees.dp, cp: degrees.cp })
+        : t('decodeInputSplit')
+      : t('fullData');
 
     return (
       <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 flex flex-col gap-2 relative overflow-hidden h-full">
@@ -620,12 +898,30 @@ const App = () => {
             {t('logicalTitle')}
           </h3>
           
-          <div className="flex flex-wrap gap-1.5 text-[9px] font-mono">
-            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 shadow-sm">B=Batch(32)</span>
-            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm">S=Seq(128)</span>
-            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shadow-sm">H=Hidden(16)</span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-300 shadow-sm">V=Vocab(64)</span>
-            <span className="px-1.5 py-0.5 rounded bg-pink-50 text-pink-600 border border-pink-200 shadow-sm">E=Experts(4)</span>
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-1.5 text-[9px] font-mono">
+              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 shadow-sm">B=Batch(32)</span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm">S=Seq(128)</span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shadow-sm">H=Hidden(16)</span>
+              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-300 shadow-sm">V=Vocab(64)</span>
+              <span className="px-1.5 py-0.5 rounded bg-pink-50 text-pink-600 border border-pink-200 shadow-sm">E=Experts(4)</span>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label={t('executionContext')}>
+              <span className="px-1 text-[9px] font-semibold text-slate-500">{t('executionContext')}</span>
+              {['prefill', 'decode'].map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={mappingModel === 'dcpReuse' && mode === 'prefill'}
+                  aria-pressed={contextMode === mode}
+                  onClick={() => handleContextMode(mode)}
+                  title={mappingModel === 'dcpReuse' && mode === 'prefill' ? t('dcpPrefillDisabled') : undefined}
+                  className={`rounded px-2 py-1 text-[9px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${contextMode === mode ? 'bg-cyan-500 text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                >
+                  {t(mode)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -633,15 +929,20 @@ const App = () => {
         <div className="flex justify-center mt-1">
           <div className="w-64">
              <GridBlock
-                title={t('inputData')} dims="[B, S]"
-                splitLabel={degrees.dp > 1 || degrees.cp > 1 ? t('dpCpSplit', { dp: degrees.dp, cp: degrees.cp }) : t('fullData')}
-                degreeX={degrees.cp} degreeY={degrees.dp}
-                activeX={coords?.cp_idx || 0} activeY={coords?.dp_idx || 0}
+                title={t('inputData')} dims={inputDims}
+                splitLabel={inputSplitLabel}
+                degreeX={inputCpDegree} degreeY={degrees.dp}
+                activeX={isPrefill ? coords?.cp_idx || 0 : 0} activeY={coords?.dp_idx || 0}
                 isLayerActive={true} activeColorClass={getColorClass('cyan', 'active')}
                 mW={128} mH={32}
              />
           </div>
         </div>
+        {degrees.dp > 1 && (
+          <p className="mx-auto max-w-md rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-center text-[8px] leading-relaxed text-blue-800">
+            {t('dpRequestFact')}
+          </p>
+        )}
 
         <div className="flex justify-center my-0.5 relative z-10"><ArrowDown className="text-slate-400" size={14} /></div>
 
@@ -653,6 +954,7 @@ const App = () => {
               splitLabel={degrees.tp > 1 ? t('rowSplit', { tp: degrees.tp }) : t('fullWeight')}
               degree={degrees.tp} activeChunkIndex={coords?.tp_idx || 0}
               isLayerActive={isEmbeddingActive} activeColorClass={getColorClass('amber', 'active')}
+              inactiveReason={t('ppNotResident', { stage: 0 })}
               mW={16} mH={64}
             />
           </div>
@@ -670,10 +972,20 @@ const App = () => {
             </div>
             <div className="flex gap-1 h-1.5 w-full mb-3">
               {Array.from({ length: degrees.pp }).map((_, l) => {
-                const isPpActive = coords === null || coords.pp_idx === l;
+                const isPpSelected = coords === null || coords.pp_idx === l;
+                const currentCell = pipelineState.stages[l]?.cells[pipelineState.currentSlot];
+                const isExecuting = phase === 'running' && currentCell?.hasWork;
+                const isDone = phase === 'done';
                 const start = Math.floor((l * TOTAL_LAYERS) / degrees.pp) + 1;
                 const end = Math.floor(((l + 1) * TOTAL_LAYERS) / degrees.pp);
-                return <div key={l} title={t('ppStageTip', { stage: l, start, end })} className={`flex-1 rounded-sm transition-all duration-300 ${isPpActive ? 'bg-purple-500 shadow-sm shadow-purple-500/40' : 'bg-slate-200'}`} />
+                const stageClass = isExecuting
+                  ? 'bg-cyan-500 shadow-sm shadow-cyan-500/50 ring-1 ring-cyan-200'
+                  : isDone
+                    ? 'bg-emerald-400'
+                    : isPpSelected
+                      ? 'bg-purple-500 shadow-sm shadow-purple-500/40'
+                      : 'bg-slate-200';
+                return <div key={l} title={t('ppStageTip', { stage: l, start, end })} className={`flex-1 rounded-sm transition-all duration-300 ${stageClass}`} />
               })}
             </div>
 
@@ -688,12 +1000,15 @@ const App = () => {
                  </div>
                  
                  <div className="flex flex-col gap-1.5 md:gap-2">
-                    <div className="grid grid-cols-3 gap-1.5 md:gap-2">
+                    <div className="grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)_32px_minmax(0,1fr)] items-stretch gap-1">
                        <MatrixBlock 
                           title="RMSNorm" dims="[H]" sliceDir="rep" 
                           isLayerActive={true} activeColorClass={getColorClass('slate', 'active')}
                           mW={16} mH={4}
                        />
+                       <div className="flex items-center justify-center text-slate-400" aria-hidden="true">
+                         <ArrowRight size={13} />
+                       </div>
                        <MatrixBlock 
                           title={t('qkvFused')} dims="[H, 3H]" sliceDir="col" 
                           splitLabel={degrees.tp > 1 ? t('colSplit', { tp: degrees.tp }) : t('fullWeight')}
@@ -702,6 +1017,10 @@ const App = () => {
                           mW={48} mH={16}
                           tooltip={t('qkvTooltip')}
                        />
+                       <div className="flex flex-col items-center justify-center gap-0.5 text-center text-[7px] font-bold leading-tight text-cyan-700" aria-label={t('tpLocalAttentionEdge')}>
+                         <ArrowRight size={13} />
+                         <span>{t('tpLocalAttentionEdge')}</span>
+                       </div>
                        <MatrixBlock 
                           title={t('outProj')} dims="[H, H]" sliceDir="row" 
                           splitLabel={degrees.tp > 1 ? t('rowSplit', { tp: degrees.tp }) : t('fullWeight')}
@@ -710,11 +1029,19 @@ const App = () => {
                           mW={16} mH={16}
                        />
                     </div>
+                    {degrees.tp > 1 && (
+                      <div data-testid="tp-collective-link" className="ml-auto flex w-[48%] items-center gap-1 py-1 text-[7px] font-bold text-rose-700" role="note" aria-label={t('tpCommTitle')}>
+                        <div className="h-px flex-1 bg-rose-300" />
+                        <Network size={10} className="shrink-0" />
+                        <span className="leading-tight">{t('tpCollectiveEdge')}</span>
+                        <ArrowDown size={10} className="shrink-0" />
+                      </div>
+                    )}
                     
                     <div className="flex justify-center mt-2 pb-1">
                        <div className="w-full max-w-[240px]">
                           <Tensor3DBlock 
-                             title={t('kvCache')} dims="[B, S, H]" 
+                             title={t('kvCache')} dims={kvDims}
                              splitLabel={degrees.dp > 1 || degrees.cp > 1 || degrees.tp > 1 ? t('split3D') : t('noSplit')}
                              degreeX={degrees.cp} degreeY={degrees.dp} degreeZ={degrees.tp}
                              activeX={coords?.cp_idx || 0} activeY={coords?.dp_idx || 0} activeZ={coords?.tp_idx || 0}
@@ -723,62 +1050,108 @@ const App = () => {
                           />
                        </div>
                     </div>
-                    <p className="mt-1.5 text-center text-[8px] leading-relaxed text-slate-500">{t('kvMhaAssumption')}</p>
+                    {degrees.cp > 1 && (
+                      <p className="mt-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[8px] leading-relaxed text-emerald-800">
+                        {t(isPrefill ? 'cpPrefillFact' : 'cpDecodeFact')}
+                      </p>
+                    )}
+                    <p className="mt-1.5 text-center text-[8px] leading-relaxed text-slate-500">
+                      {t(mappingModel === 'dcpReuse' ? 'kvDcpAssumption' : 'kvMhaAssumption')}
+                    </p>
                  </div>
                </div>
 
                {/* MoE Layer */}
                <div className="bg-white p-2 md:p-3 rounded-lg border border-slate-200 shadow-sm mt-3">
-                 <div className="text-xs font-semibold text-slate-700 mb-2.5 flex items-center gap-1.5">
-                   <BrainCircuit size={14} className="text-pink-500"/> {t('moeLayer')}
+                 <div className="mb-2.5 flex flex-wrap items-center justify-between gap-1.5 text-xs font-semibold text-slate-700">
+                   <span className="flex items-center gap-1.5"><BrainCircuit size={14} className="text-pink-500"/> {t('moeLayer')}</span>
+                   {(degrees.tp > 1 || degrees.ep > 1 || degrees.etp > 1) && (
+                     <span className="rounded-full border border-pink-200 bg-pink-50 px-2 py-0.5 text-[8px] font-bold text-pink-700">{t(moeModeKey)}</span>
+                   )}
                  </div>
-                 
-                 <div className="grid grid-cols-4 gap-1.5 md:gap-2 mb-3">
+
+                 <div ref={moeGraphRef} data-testid="moe-graph" className="relative">
+                 <div className="relative z-10 mb-1 grid grid-cols-4 gap-1.5 md:gap-2">
                     <MatrixBlock 
                        title="RMSNorm" dims="[H]" sliceDir="rep" 
                        isLayerActive={true} activeColorClass={getColorClass('slate', 'active')}
                        mW={16} mH={4}
                     />
+                    <div ref={moeRouterRef} data-testid="moe-router-node" className="h-full">
                     <MatrixBlock 
                        title={t('router')} dims="[H, E]" sliceDir="rep"
                        isLayerActive={true} activeColorClass="bg-pink-500 text-white shadow-md shadow-pink-500/40"
                        mW={8} mH={16}
                     />
+                    </div>
                     <div className="col-span-2 flex items-center justify-center px-2">
                        <span className="text-[10px] text-slate-500 text-center leading-tight">{t('routerDesc')}</span>
                     </div>
                  </div>
 
+                 {(degrees.tp > 1 || degrees.ep > 1 || degrees.etp > 1) && <div className="h-10" aria-hidden="true" />}
+
                  {/* 专家池 */}
-                 <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+                 <div className="relative z-10 grid grid-cols-4 gap-1 md:gap-2">
                    {Array.from({ length: 4 }).map((_, e) => {
                       const isEpActive = coords === null || (e % degrees.ep === coords.ep_idx);
-                      const expertActiveColor = degrees.etp > 1 ? getColorClass('indigo', 'active') : getColorClass('amber', 'active');
-                      const expertLabel = expertTp > 1 ? `ETP=${expertTp}` : t('wholeBlock');
+                      const expertActiveColor = moeParallel.shardAxis === 'etp' ? getColorClass('indigo', 'active') : getColorClass('amber', 'active');
+                      const expertLabel = expertTp > 1
+                        ? `${moeParallel.shardAxis === 'tp' ? 'TP' : 'ETP'}=${expertTp}`
+                        : t('wholeBlock');
 
                       return (
-                        <div key={`exp-${e}`} className={`p-1.5 rounded border transition-all duration-300 ${isEpActive ? 'border-pink-300 bg-pink-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}>
+                        <div
+                          key={`exp-${e}`}
+                          ref={(element) => { moeExpertRefs.current[e] = element; }}
+                          data-testid={`moe-expert-${e}`}
+                          className={`rounded border p-1 transition-all duration-300 md:p-1.5 ${isEpActive ? 'border-pink-300 bg-pink-50' : 'border-slate-200 bg-slate-50 opacity-60'}`}
+                        >
                           <div className={`text-[9px] font-bold text-center mb-1.5 transition-colors ${isEpActive ? 'text-pink-600' : 'text-slate-400'}`}>{t('expert')} {e}</div>
                           <div className="flex flex-col gap-1.5 w-full">
                             <MatrixBlock 
                                title={t('w1w3')} dims="[H, 4H]" sliceDir="col" 
                                splitLabel={expertTp > 1 ? t('colSlice', { label: expertLabel }) : t('fullCalc')}
-                               degree={expertTp} activeChunkIndex={coords?.etp_idx || 0}
+                               degree={expertTp} activeChunkIndex={expertShardIndex}
                                isLayerActive={isEpActive} activeColorClass={expertActiveColor}
-                               mW={64} mH={16}
+                               mW={48} mH={16}
                             />
                             <MatrixBlock 
                                title={t('w2')} dims="[4H, H]" sliceDir="row" 
                                splitLabel={expertTp > 1 ? t('rowSlice', { label: expertLabel }) : t('fullCalc')}
-                               degree={expertTp} activeChunkIndex={coords?.etp_idx || 0}
+                               degree={expertTp} activeChunkIndex={expertShardIndex}
                                isLayerActive={isEpActive} activeColorClass={expertActiveColor}
                                mW={16} mH={64}
                             />
                           </div>
+                          {expertTp > 1 && (
+                            <div title={t('moeExpertCollectiveTitle')} aria-label={t('moeExpertCollectiveTitle')} className={`mt-1 flex items-center justify-center gap-0.5 rounded border px-1 py-0.5 text-center text-[7px] font-bold leading-tight ${isEpActive ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-400'}`}>
+                              <Network size={8} className="shrink-0" />
+                              <span>{t('moeExpertCollectiveEdge')}</span>
+                            </div>
+                          )}
                         </div>
                       )
                    })}
                  </div>
+                 {(degrees.tp > 1 || degrees.ep > 1 || degrees.etp > 1) && (
+                   <ExpertConnectionOverlay
+                     containerRef={moeGraphRef}
+                     sourceRef={moeRouterRef}
+                     targetRefs={moeExpertRefs}
+                     activeExpertIndexes={activeExpertIndexes}
+                     crossRank={moeUsesCrossRankRouting}
+                     label={t(moeUsesCrossRankRouting ? 'moeA2AEdge' : 'moeLocalRouteEdge')}
+                     ariaLabel={t('moeRoutingAria')}
+                     layoutKey={`${lang}-${degrees.tp}-${degrees.ep}-${degrees.etp}-${activeGpu ?? 'all'}`}
+                   />
+                 )}
+                 </div>
+                 {(degrees.ep > 1 || degrees.etp > 1) && (
+                   <p className="mt-2 rounded border border-pink-100 bg-pink-50 px-2 py-1 text-[8px] leading-relaxed text-pink-700">
+                     {t('etpMeshBoundary')}
+                   </p>
+                 )}
                </div>
 
             </div>
@@ -795,6 +1168,7 @@ const App = () => {
               splitLabel={degrees.tp > 1 ? t('colSplit', { tp: degrees.tp }) : t('fullWeight')}
               degree={degrees.tp} activeChunkIndex={coords?.tp_idx || 0}
               isLayerActive={isLmHeadActive} activeColorClass={getColorClass('amber', 'active')}
+              inactiveReason={t('ppNotResident', { stage: degrees.pp - 1 })}
               mW={64} mH={16}
             />
           </div>
@@ -837,15 +1211,48 @@ const App = () => {
     const isPinned = pinnedGpu === g;
     const isHovered = hoveredGpu === g;
     const isActiveCard = isPinned || isHovered;
+    const followsPipeline = coords.dp_idx === 0;
+    const currentCell = pipelineState.stages[coords.pp_idx]?.cells[pipelineState.currentSlot];
+    const isExecuting = followsPipeline && phase === 'running' && currentCell?.hasWork;
+    const isBubble = followsPipeline && phase === 'running' && !currentCell?.hasWork;
+    const isStageDone = followsPipeline && phase === 'done';
+    const pipelineLabel = !followsPipeline
+      ? t('ppCardIndependent')
+      : isExecuting
+        ? t('ppCardRunning', { microbatch: currentCell.microbatch })
+        : isBubble
+          ? t('ppCardBubble')
+          : isStageDone
+            ? t('ppCardDone')
+            : t('ppIdle');
+    const pipelineTone = isExecuting
+      ? 'border-cyan-200 bg-cyan-50 text-cyan-800'
+      : isStageDone
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        : isBubble
+          ? 'border-slate-200 bg-slate-100 text-slate-500'
+          : followsPipeline
+            ? 'border-purple-100 bg-purple-50 text-purple-700'
+            : 'border-slate-200 bg-white text-slate-500';
 
     return (
       <div 
         key={g}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isPinned}
         onClick={() => setPinnedGpu(isPinned ? null : g)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setPinnedGpu(isPinned ? null : g);
+          }
+        }}
         onMouseEnter={() => setHoveredGpu(g)}
         onMouseLeave={() => setHoveredGpu(null)}
-        className={`bg-white rounded-xl p-3 border cursor-pointer transition-all duration-200 
-          ${isActiveCard ? 'border-cyan-400 shadow-[0_8px_20px_rgba(6,182,212,0.15)] scale-105 z-10' : 'border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md'}
+        className={`rounded-xl p-3 border cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500
+          ${isExecuting ? 'border-cyan-500 bg-cyan-50/60 shadow-[0_0_18px_rgba(6,182,212,0.22)]' : isStageDone ? 'border-emerald-300 bg-emerald-50/40' : 'bg-white'}
+          ${isActiveCard ? 'shadow-[0_8px_20px_rgba(6,182,212,0.15)] scale-105 z-10' : 'shadow-sm hover:border-slate-300 hover:shadow-md'}
           ${isPinned ? 'ring-2 ring-cyan-400 ring-offset-1' : ''}`}
       >
         <div className="flex justify-between items-center border-b border-slate-100 pb-1.5 mb-2">
@@ -855,10 +1262,16 @@ const App = () => {
           </span>
           <div className="flex items-center gap-1">
             {isPinned && <Pin size={10} className="text-cyan-600 fill-cyan-100" />}
-            {isHovered && !isPinned && <span className="text-[9px] text-cyan-500 font-semibold animate-pulse">Hover</span>}
+            {isHovered && !isPinned && <span className="text-[9px] text-cyan-500 font-semibold animate-pulse">{t('hovered')}</span>}
             {isPinned && <span className="text-[9px] text-cyan-600 font-semibold">{t('locked')}</span>}
           </div>
         </div>
+        {degrees.pp > 1 && (
+          <div className={`mb-2 flex items-center gap-1.5 rounded border px-1.5 py-1 text-[9px] font-semibold ${pipelineTone}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${isExecuting ? 'bg-cyan-500 animate-pulse' : isStageDone ? 'bg-emerald-500' : isBubble ? 'bg-slate-400' : 'bg-purple-400'}`} />
+            <span>{pipelineLabel}</span>
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           {renderMiniTrack('dp', 'DP', 'blue', coords)}
           {renderMiniTrack('cp', 'CP', 'emerald', coords)}
@@ -938,10 +1351,31 @@ const App = () => {
             )
           })}
           
-          <div className="col-span-2 md:col-span-3 xl:col-span-6 flex items-center justify-between text-[11px] text-slate-500 mt-1 bg-white shadow-sm p-2.5 rounded-lg border border-slate-200">
-            <div className="flex items-center gap-1.5">
+          <div className="col-span-2 md:col-span-3 xl:col-span-6 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 mt-1 bg-white shadow-sm p-2.5 rounded-lg border border-slate-200">
+            <div className="flex min-w-0 flex-1 items-start gap-1.5">
               <Info size={14} className="text-blue-500 shrink-0" />
-              <span><strong>{t('clusterHintTitle')}</strong> {t('clusterHintDesc')}<strong>{t('clusterHintBold')}</strong></span>
+              <span>
+                <strong>{t(mappingModel === 'dcpReuse' ? 'dcpHintTitle' : 'clusterHintTitle')}</strong>{' '}
+                {t(mappingModel === 'dcpReuse' ? 'dcpHintDesc' : 'clusterHintDesc')}
+                {' '}<strong>{t('clusterHintBold')}</strong>
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label={t('mappingModel')}>
+              <span className="hidden px-1 text-[9px] font-semibold text-slate-500 sm:inline">{t('mappingModel')}</span>
+              {[
+                ['orthogonal', 'orthogonalMapping'],
+                ['dcpReuse', 'dcpReuseMapping'],
+              ].map(([model, labelKey]) => (
+                <button
+                  key={model}
+                  type="button"
+                  aria-pressed={mappingModel === model}
+                  onClick={() => handleMappingModel(model)}
+                  className={`rounded px-2 py-1 text-[9px] font-bold transition ${mappingModel === model ? 'bg-blue-500 text-white shadow-sm' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                >
+                  {t(labelKey)}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -956,7 +1390,7 @@ const App = () => {
              <div className="flex items-center justify-between mb-6">
                <h3 className="text-base md:text-lg font-bold flex items-center gap-2 text-slate-800">
                  <ServerIcon className="text-emerald-500" />
-                 {t('physGpuMap')} ({totalGpus} Cards)
+                 {t(mappingModel === 'dcpReuse' ? 'physGpuMapDcp' : 'physGpuMap')} ({totalGpus} {t('cards')})
                </h3>
                {totalGpus === 1 && <span className="text-xs px-2 py-1 bg-slate-100 text-slate-600 rounded border border-slate-200">{t('singleCard')}</span>}
              </div>

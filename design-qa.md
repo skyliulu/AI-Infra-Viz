@@ -80,8 +80,21 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 范围纠正：保留原有顶部六维控制卡、左侧张量/矩阵切片、右侧 GPU 卡片、悬浮优先与点击固定联动；撤销替换整章信息架构的方案。
 - 修改：明确把当前页面降级为“六维正交示意”，六个维度不复用 rank，示意槽位按 `DP × PP × CP × TP × EP × ETP` 计算；文案明确该结果不是任意运行时的通用 world size 恒等式。
 - ETP 回归：删除 `actual_etp` 隐式推导；Expert 权重只由用户选择的 ETP 切分，GPU 卡始终显示 ETP rank。`TP=4, EP=2, ETP=1` 时页面生成 8 个正交示意槽位，所有卡的 ETP rank 均为 0，不再出现 `TP(Exp)`。
-- PP 原位增强：不新增面板，只在原紫色 stage 分段上补充层范围 tooltip；`PP=4` 时依次为 1-8、9-16、17-24、25-32。
-- 工程边界：`npm run build` 通过；桌面端原布局、PP=4、TP/EP/ETP 映射及 GPU 固定联动完成浏览器复核。Convention checker 仍为原有 2/8，本次未把静态拓扑章强行改造成播放状态机。
+- PP 原位增强：在原紫色 stage 分段下加入 4 个 microbatch 的真实流水时隙；`PP=4` 时 stage 层范围依次为 1-8、9-16、17-24、25-32，理想 stage 利用率由 `M/(M+P-1)` 动态计算。
+- 执行态联动：同一 `getPipelineState()` 快照驱动时间表、左侧 stage 条和右侧 GPU 卡片。浏览器单步回归中，时隙 0 仅 `PP0` 显示 `MB0`；时隙 1 同时显示 `PP0/MB1` 与 `PP1/MB0`，其余 stage 明确标为流水气泡。DP>1 时只跟踪 replica 0，其他副本标记为独立请求流。
+- 推理语义：增加 Prefill/Decode 局部切换。Prefill 输入按新 token chunk 表达；Decode 输入变为 `[B,1]`，KV 变为 `[B,T_cache,H_kv]`，并明确 vLLM DCP 可沿 KV 时间轴切分且复用 TP rank。DP 网格标明是全局请求工作负载，不是假装成跨副本 collective tensor。
+- DCP Rank 复用：在原映射假设条内加入“正交沙盒 / DCP 复用 TP”切换。`TP=4, CP=4` 在正交模式使用 16 张示意卡，DCP 模式只生成 4 张卡，并依次派生 `(TP,CP)=(0,0)…(3,3)`；Prefill 被禁用。本页明确采用 MLA / 单 KV Head 的高复制教学场景，并把“DCP 整除 TP”标为本页均匀分组约束，而非通用恒等式。
+- 通信语义：TP 显示 QKV 列并行与 Out Projection 行并行后的 All-Reduce/Reduce-Scatter；MoE 显示 Router → All-to-All Dispatch → Expert/ETP → All-to-All Combine，并注明 TensorRT-LLM 的 `MoE-TP × MoE-EP = TP` 运行时约束示例、纯 TP 的 MoE-TP 回退，以及本页正交沙盒的差异。
+- 工程证据：convention checker 8/8，保留 1 条 Unicode 数学外观 warning；`npm run build` 通过。桌面浏览器完成 PP 预热并发、Decode+CP、DCP rank 复用、TP 通信、EP+ETP 和中英文回归，页面宽度 `1280px` 时无横向溢出。平板/移动端与后续 Wide-EP、PD 分离、Helix、DWDP 尚未完成，不报告整章最终通过。
+
+### 2026-07-17 — ParallelStrategies：MoE TP 回退、PP 归属与通信图回归
+
+- MoE 正确性：专家并行状态改为显式派生。`EP=1, ETP=1, TP>1` 时，Expert 权重回退到 TP 切分；`EP>1, ETP=1` 时，完整 Expert 分布到 EP rank；`ETP>1` 时才按 ETP 切单个 Expert。页面不再用 `ETP` 单一变量错误决定所有专家内部切分。
+- PP 参数归属：Embedding 仅驻留 PP stage 0，LM Head 仅驻留最后一个 PP stage。锁定不持有该参数的 GPU 时，矩阵仍保留位置、shape 与虚线轮廓，并显示“仅驻留 PP Stage N”；切换到持有该参数的 stage 后恢复对应 TP 分片，避免把“未驻留”画成“组件消失”。
+- 图形化通信：通信边改为依附原有组件，而不是另起一排重复节点。TP 在现有 RMSNorm、QKV、Out Proj 之间绘制本地 Attention 箭头，并从 Out Proj 引出 collective；PP 在相邻 Stage 时间行之间绘制 P2P 激活边；MoE 从真实 Router 卡片向四个真实 Expert 卡片扇出。纯 TP 使用本地虚线路由，并把分片归约贴在 Expert 卡内；EP/混合模式使用双向 All-to-All Dispatch/Combine 实线。锁定 GPU 后，仅对应 EP Rank 的 Expert 与连线保持强化。
+- 容量与回归：示意 GPU 上限由 16 调整为 32。新增 `npm run check:parallel`，枚举 `3^6 × 2 = 1458` 个六维并行度/映射模型候选；553 个合法拓扑、11010 张 GPU 卡通过卡数、坐标范围、rank 唯一性、DCP 复用、PP 归属与 MoE 模式不变量检查。
+- 浏览器证据：真实服务中复测 `TP2` 纯 TP（Expert 按 TP 切分、本地虚线路由、每个 Expert 显示分片归约）、`TP2×EP2`（完整 Expert 分布、Router 到 Expert 的双向 All-to-All）、`TP2×PP2×EP2` 锁定 GPU3（只强化 Expert 1/3 路径），以及 32 卡渲染。桌面和 `768×1024` 完成视觉检查；`390×844` 量测为 viewport/scrollWidth `390/390`，四个 Expert 卡均满足 `clientWidth=scrollWidth=64`，没有页面级或组件级横向溢出。中英文通信标签均未压住 Expert 卡，控制台无 warning/error。
+- 工程证据：模块 convention checker 为 8/8，保留 1 条 Unicode 数学外观 warning；组合回归为 553/1458 个合法拓扑、11010 张 GPU 卡通过；`git diff --check` 通过；`npm run build` 通过（Vite 5.4.21，1889 modules transformed）。
 
 ## P1：优先修复
 
