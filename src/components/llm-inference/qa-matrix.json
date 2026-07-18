@@ -1,0 +1,20 @@
+{
+  "dimensions": {
+    "phase": ["prefill", "decode"],
+    "model": ["dense", "moe"],
+    "language": ["zh", "en"],
+    "viewport": ["desktop", "mobile"],
+    "sampling": ["restrictive", "permissive"]
+  },
+  "requiredCrossProducts": [
+    ["phase", "model"],
+    ["language", "viewport"],
+    ["sampling", "viewport"]
+  ],
+  "cases": [
+    { "name": "prefill dense desktop zh restrictive", "state": { "phase": "prefill", "model": "dense", "language": "zh", "viewport": "desktop", "sampling": "restrictive" }, "checks": ["triangular score matrix", "full FFN weight path", "Top-K and Top-P curve cutoff"] },
+    { "name": "prefill moe desktop en permissive", "state": { "phase": "prefill", "model": "moe", "language": "en", "viewport": "desktop", "sampling": "permissive" }, "checks": ["per-token router rows", "selected expert weight path", "normalized sampling curve"] },
+    { "name": "decode dense mobile en permissive", "state": { "phase": "decode", "model": "dense", "language": "en", "viewport": "mobile", "sampling": "permissive" }, "checks": ["single query row", "single KV append", "sampling controls do not overflow"] },
+    { "name": "decode moe mobile zh restrictive", "state": { "phase": "decode", "model": "moe", "language": "zh", "viewport": "mobile", "sampling": "restrictive" }, "checks": ["single router row", "last-row LM head", "curve cutoff remains legible"] }
+  ]
+}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Play, Pause, SkipForward, RotateCcw, Cpu, Database, Zap, AlignLeft, Code, ArrowDown, CornerDownRight, Network, Repeat, SlidersHorizontal, Orbit, Globe } from 'lucide-react';
+import { Play, Pause, SkipForward, RotateCcw, Cpu, Database, Zap, AlignLeft, Code, CornerDownRight, Network, SlidersHorizontal, Orbit, Globe } from 'lucide-react';
 import { MathFormula } from './linear-attention/MathFormula';
+import { deriveInferenceTensorSnapshot, deriveSamplingDistribution, MODULE, TOTAL_LAYERS } from './llm-inference/model';
+import { LayerKvOverview, TensorWorkbench } from './llm-inference/TensorWorkbench';
 
 const i18n = {
   zh: {
@@ -16,6 +18,10 @@ const i18n = {
     moe: 'MoE (稀疏)',
     adjustRandomness: '调整生成随机性',
     tempLabel: '温度',
+    topKLabel: 'Top-K',
+    topPLabel: 'Top-P',
+    adjustTopK: '调整 Top-K 候选数量',
+    adjustTopP: '调整 Top-P 累计概率阈值',
     sequenceTitle: '序列 (Sequence) - 观察自回归回路',
     promptLabel: 'Prompt (输入提示词):',
     generationLabel: 'Generation (模型生成):',
@@ -96,7 +102,63 @@ const i18n = {
     stateLmDesc5: '缩小概率差异，提高低概率 token 被采样的机会。',
     stateDoneTitle: 'Token 生成完毕',
     stateDoneDesc: '通过采样掷骰子选中下一个词，准备丢回起点循环。',
-    routerMatrix: 'Router 矩阵'
+    routerMatrix: 'Router 矩阵',
+    currentLayerCache: '当前层 KV',
+    layerCommitProgress: '层写入进度',
+    batchWrite: '整段 Prompt 批量写入',
+    singleAppend: '当前 Token 逐层追加',
+    layerStack: '每层独立 KV 堆栈',
+    representativeSlice: '代表性张量切片',
+    embeddingLookupTitle: 'Token ID、Embedding 与 Residual Stream',
+    embeddingLookupDesc: '从词表查表得到连续向量；只展示少量维度，标签保留真实形状。',
+    tokenIds: 'Token ID 行',
+    embeddingTable: 'Embedding Table',
+    rowLookup: '按行查表',
+    residualStream: 'Residual Stream X',
+    attentionTensorTitle: 'RMSNorm、Q/K/V、Attention 与 Residual',
+    attentionTensorPrefill: '多行 Prompt 并行计算，Score 矩阵显式显示因果遮罩。',
+    attentionTensorDecode: '单行 Query 读取历史 KV，并把当前 K/V 追加到本层 Cache。',
+    qkvProjection: '当前层并行投影 Q/K/V；Q/K 再应用 RoPE',
+    writeCurrentLayerK: '写入当前层 K Cache',
+    writeCurrentLayerV: '写入当前层 V Cache',
+    scoreMatrix: 'Score = QKᵀ',
+    causalMaskVisible: '上三角位置不可见',
+    queryReadsCache: '一行 Query 读取全部历史位置',
+    softmax: '逐行 Softmax',
+    probabilityMatrix: 'Attention Probability',
+    attentionOutput: 'Context = PV',
+    attentionResidualMerge: 'Attention 输出投影后与 Residual Stream 相加',
+    denseTensorTitle: 'Dense MLP：所有 Token 经过同一组权重',
+    denseTensorDesc: '隐藏维度扩张后再压回 d；矩阵宽度表达中间激活规模。',
+    expandedHidden: 'Expanded Hidden',
+    ffnOutput: 'MLP Output',
+    reuseExpandedHidden: '复用 Expanded Hidden',
+    selectedExpertWeights: '当前路由 Expert 的独立权重矩阵',
+    expertHidden: 'Expert Hidden',
+    expertActivation: '专家激活',
+    moeTensorTitle: 'MoE：每个 Token 独立路由',
+    moeTensorDesc: 'Router 的每一行对应一个 Token，并分别选择 Top-2 Expert。',
+    routerByToken: 'Router Probability',
+    perTokenTopK: '每行独立 Top-2；描边为选中项',
+    singleTokenTopK: '当前 Token 仅路由到两个 Expert',
+    expertBank: 'Expert Bank · 路由 Token 数',
+    weightedExpertMerge: '按 Token 的路由权重融合 Expert 输出',
+    ffnResidualMerge: 'FFN/MoE 输出与 Residual Stream 相加后进入下一层',
+    lmTensorTitle: '最后一行 Hidden State 到 LM Head 与采样',
+    lmTensorDesc: '生成下一个 Token 时只读取最后一个位置，而不是把全部 L 行都送去采样。',
+    lastHiddenRow: '最后一行 Hidden State',
+    logitsVector: 'Vocabulary Logits',
+    sampleNext: '等待采样',
+    feedbackToDecode: '采样 Token 回到 Embedding，成为下一次 Decode 输入',
+    samplingCurve: '温度缩放与 Top-K、Top-P 截断曲线',
+    temperatureCurve: '温度缩放',
+    filteredCurve: '最终分布',
+    cumulativeCurve: '累计概率 / Top-P',
+    keptCandidates: '保留候选',
+    status_active: '执行中',
+    status_passed: '已完成',
+    status_pending: '待执行',
+    layerLabel: '层'
   },
   en: {
     title: 'LLM Inference Panorama',
@@ -111,6 +173,10 @@ const i18n = {
     moe: 'MoE (Sparse)',
     adjustRandomness: 'Adjust generation randomness',
     tempLabel: 'Temperature',
+    topKLabel: 'Top-K',
+    topPLabel: 'Top-P',
+    adjustTopK: 'Adjust the Top-K candidate count',
+    adjustTopP: 'Adjust the Top-P cumulative probability threshold',
     sequenceTitle: 'Sequence - Observe Autoregressive Loop',
     promptLabel: 'Prompt (Input):',
     generationLabel: 'Generation (Model Output):',
@@ -191,72 +257,78 @@ const i18n = {
     stateLmDesc5: 'shrinks probability differences and raises the chance of sampling lower-probability tokens.',
     stateDoneTitle: 'Token Generation Complete',
     stateDoneDesc: 'Select the next word via probability sampling and throw it back to the start of the loop.',
-    routerMatrix: 'Router Matrix'
+    routerMatrix: 'Router Matrix',
+    currentLayerCache: 'Current-layer KV',
+    layerCommitProgress: 'Layer commit progress',
+    batchWrite: 'Batch-write the full prompt',
+    singleAppend: 'Append the current token per layer',
+    layerStack: 'Independent KV stack per layer',
+    representativeSlice: 'Representative tensor slice',
+    embeddingLookupTitle: 'Token IDs, Embedding, and Residual Stream',
+    embeddingLookupDesc: 'Look up continuous vectors from the vocabulary; sampled cells preserve the real shape label.',
+    tokenIds: 'Token ID row',
+    embeddingTable: 'Embedding Table',
+    rowLookup: 'row lookup',
+    residualStream: 'Residual Stream X',
+    attentionTensorTitle: 'RMSNorm, Q/K/V, Attention, and Residual',
+    attentionTensorPrefill: 'Process prompt rows in parallel and expose the causal mask in the score matrix.',
+    attentionTensorDecode: 'One query row reads historical KV and appends the current K/V to this layer cache.',
+    qkvProjection: 'Project Q/K/V in this layer, then apply RoPE to Q/K',
+    writeCurrentLayerK: 'Write this layer K cache',
+    writeCurrentLayerV: 'Write this layer V cache',
+    scoreMatrix: 'Score = QKᵀ',
+    causalMaskVisible: 'Upper-triangle positions are unavailable',
+    queryReadsCache: 'One query row reads every historical position',
+    softmax: 'row Softmax',
+    probabilityMatrix: 'Attention Probability',
+    attentionOutput: 'Context = PV',
+    attentionResidualMerge: 'Project the attention output and add it to the residual stream',
+    denseTensorTitle: 'Dense MLP: every token uses the same weights',
+    denseTensorDesc: 'Expand the hidden width, then project back to d; matrix width exposes activation size.',
+    expandedHidden: 'Expanded Hidden',
+    ffnOutput: 'MLP Output',
+    reuseExpandedHidden: 'Reuse Expanded Hidden',
+    selectedExpertWeights: 'Independent weights of the routed expert',
+    expertHidden: 'Expert Hidden',
+    expertActivation: 'expert activation',
+    moeTensorTitle: 'MoE: route every token independently',
+    moeTensorDesc: 'Every router row belongs to one token and chooses its own Top-2 experts.',
+    routerByToken: 'Router Probability',
+    perTokenTopK: 'Independent Top-2 per row; rings mark selections',
+    singleTokenTopK: 'The current token routes to two experts',
+    expertBank: 'Expert Bank · routed token count',
+    weightedExpertMerge: 'Merge expert outputs with per-token routing weights',
+    ffnResidualMerge: 'Add the FFN/MoE output to the residual stream before the next layer',
+    lmTensorTitle: 'Last hidden row to LM Head and sampling',
+    lmTensorDesc: 'Next-token generation reads only the last position, not all L rows.',
+    lastHiddenRow: 'Last hidden row',
+    logitsVector: 'Vocabulary Logits',
+    sampleNext: 'Waiting to sample',
+    feedbackToDecode: 'Feed the sampled token back to Embedding as the next Decode input',
+    samplingCurve: 'Temperature scaling with Top-K and Top-P cutoff curves',
+    temperatureCurve: 'temperature-scaled',
+    filteredCurve: 'final distribution',
+    cumulativeCurve: 'cumulative / Top-P',
+    keptCandidates: 'Kept candidates',
+    status_active: 'Active',
+    status_passed: 'Passed',
+    status_pending: 'Pending',
+    layerLabel: 'Layer'
   }
 };
 
 const getInitialLang = () => (typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().includes('zh') ? 'zh' : 'en');
 
-// 模拟 Router 动态打分与选择
-const MOCK_EXPERT_ROUTING = [
-  { topK: [2, 5], weights: [0.72, 0.28] }, { topK: [1, 7], weights: [0.61, 0.39] },
-  { topK: [0, 4], weights: [0.53, 0.47] }, { topK: [3, 6], weights: [0.82, 0.18] },
-  { topK: [2, 7], weights: [0.61, 0.39] }, { topK: [0, 5], weights: [0.53, 0.47] }
-];
-
-const TOTAL_LAYERS = 32; // 模拟如 Llama-3 常见的 32 层 Transformer Block
-
-const MODULE = {
-  idle: 0,
-  embedding: 1,
-  attention: 2,
-  ffn: 3,
-  lmHead: 5,
-  tokenDone: 6,
-};
-
-const getStageStatus = (stage, activeModule) => {
-  if (activeModule === MODULE.idle) return 'pending';
-  if (stage === 'embedding') return activeModule === MODULE.embedding ? 'active' : 'passed';
-  if (stage === 'attention') {
-    if (activeModule === MODULE.attention) return 'active';
-    return activeModule > MODULE.attention ? 'passed' : 'pending';
-  }
-  if (stage === 'ffn') {
-    if (activeModule === MODULE.ffn) return 'active';
-    return activeModule > MODULE.ffn ? 'passed' : 'pending';
-  }
-  if (activeModule === MODULE.lmHead) return 'active';
-  return activeModule === MODULE.tokenDone ? 'passed' : 'pending';
-};
-
-const getInferenceState = ({ phase, activeModule, currentLayer, step, promptLength }) => ({
-  isLayerStage: activeModule === MODULE.attention || activeModule === MODULE.ffn,
-  positionFormula: phase === 'prefill'
-    ? String.raw`p=0,\ldots,${promptLength - 1}`
-    : String.raw`p=${promptLength + step}`,
-  kvCacheSize: phase === 'idle'
-    ? 0
-    : phase === 'prefill'
-      ? (activeModule >= MODULE.attention ? promptLength : 0)
-      : promptLength + step - 1 + (activeModule >= MODULE.attention ? 1 : 0),
-  stageStatus: {
-    embedding: getStageStatus('embedding', activeModule),
-    attention: getStageStatus('attention', activeModule),
-    ffn: getStageStatus('ffn', activeModule),
-    lmHead: getStageStatus('lmHead', activeModule),
-  },
-  layerProgress: `${currentLayer} / ${TOTAL_LAYERS}`,
-});
-
 const App = () => {
   const [modelType, setModelType] = useState('moe');
-  const [temperature, setTemperature] = useState(1.0);
+  const [temperature, setTemperature] = useState(0.7);
+  const [topK, setTopK] = useState(3);
+  const [topP, setTopP] = useState(0.9);
   const [currentLayer, setCurrentLayer] = useState(1);
   const [phase, setPhase] = useState('idle');
   const [step, setStep] = useState(0);
   
-  // Embedding 只运行一次；随后每层按 Attention（含 RoPE）→ FFN/MoE 执行。
+  // Embedding 只运行一次；随后每层依次执行 Attention（含 RoPE）与 FFN/MoE。
   const [activeModule, setActiveModule] = useState(MODULE.idle);
   const [isPlaying, setIsPlaying] = useState(false);
   const [lang, setLang] = useState(getInitialLang());
@@ -377,25 +449,32 @@ const App = () => {
     setTemperature(parseFloat(event.target.value));
   };
 
+  const handleTopKChange = (event) => {
+    setTopK(parseInt(event.target.value, 10));
+  };
+
+  const handleTopPChange = (event) => {
+    setTopP(parseFloat(event.target.value));
+  };
+
   // 2. 动态计算带温度的概率 (Temperature Scaling)
   const currentProbs = activeModule >= MODULE.lmHead ? generatedTokens[step].probs : null;
-  const displayProbs = useMemo(() => {
-    if (!currentProbs) return null;
-    if (temperature === 1.0) return currentProbs; // T=1 时保持原样
-    // 温度公式：p_i^(1/T) 然后重新归一化
-    const adjusted = currentProbs.map(p => ({ ...p, weight: Math.pow(p.p, 1 / temperature) }));
-    const sum = adjusted.reduce((acc, p) => acc + p.weight, 0);
-    return adjusted.map(p => ({ t: p.t, p: p.weight / sum }));
-  }, [currentProbs, temperature]);
+  const samplingState = useMemo(() => deriveSamplingDistribution({
+    candidates: currentProbs,
+    temperature,
+    topK,
+    topP,
+  }), [currentProbs, temperature, topK, topP]);
 
-  const inferenceState = getInferenceState({
+  const inferenceState = useMemo(() => deriveInferenceTensorSnapshot({
     phase,
     activeModule,
     currentLayer,
     step,
     promptLength: promptTokens.length,
-  });
-  const { kvCacheSize, stageStatus, isLayerStage, positionFormula, layerProgress } = inferenceState;
+    modelType,
+  }), [phase, activeModule, currentLayer, step, promptTokens.length, modelType]);
+  const { stageStatus, isLayerStage, layerProgress, positionFormula } = inferenceState;
 
   const renderTokens = (tokens, isInput) => (
     <div className="flex flex-wrap gap-2 mb-4">
@@ -454,12 +533,24 @@ const App = () => {
           </div>
           
           <div className="flex flex-wrap items-center justify-center gap-3">
-            {/* 采样温度滑块 (Temperature) */}
-            <div className="flex items-center gap-2 bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200 mr-2" title={t('adjustRandomness')}>
-              <SlidersHorizontal size={14} className="text-purple-600" />
-              <span className="text-xs font-semibold text-purple-800">{t('tempLabel')} (<MathFormula>{String.raw`T`}</MathFormula>)</span>
-              <input aria-label={t('adjustRandomness')} type="range" min="0.1" max="2.0" step="0.1" value={temperature} onInput={handleTemperatureChange} onChange={handleTemperatureChange} className="w-20 accent-purple-500" />
-              <span className="text-xs font-mono font-bold text-purple-700 w-6 text-right">{temperature.toFixed(1)}</span>
+            {/* Sampling controls */}
+            <div data-testid="sampling-controls" className="grid gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 sm:grid-cols-3">
+              <label className="flex items-center gap-1.5" title={t('adjustRandomness')}>
+                <SlidersHorizontal size={13} className="shrink-0 text-purple-600" />
+                <span className="w-10 text-[10px] font-semibold text-purple-800">{t('tempLabel')}</span>
+                <input aria-label={t('adjustRandomness')} type="range" min="0.1" max="0.9" step="0.1" value={temperature} onInput={handleTemperatureChange} onChange={handleTemperatureChange} className="w-16 accent-purple-500" />
+                <span className="w-5 text-right text-[10px] font-bold text-purple-700">{temperature.toFixed(1)}</span>
+              </label>
+              <label className="flex items-center gap-1.5" title={t('adjustTopK')}>
+                <span className="w-10 text-[10px] font-semibold text-purple-800">{t('topKLabel')}</span>
+                <input aria-label={t('adjustTopK')} type="range" min="1" max="3" step="1" value={topK} onInput={handleTopKChange} onChange={handleTopKChange} className="w-16 accent-emerald-500" />
+                <span className="w-5 text-right text-[10px] font-bold text-emerald-700">{topK}</span>
+              </label>
+              <label className="flex items-center gap-1.5" title={t('adjustTopP')}>
+                <span className="w-10 text-[10px] font-semibold text-purple-800">{t('topPLabel')}</span>
+                <input aria-label={t('adjustTopP')} type="range" min="0.5" max="1.0" step="0.1" value={topP} onInput={handleTopPChange} onChange={handleTopPChange} className="w-16 accent-amber-500" />
+                <span className="w-5 text-right text-[10px] font-bold text-amber-700">{topP.toFixed(1)}</span>
+              </label>
             </div>
 
             {/* Model Type Selector */}
@@ -506,21 +597,18 @@ const App = () => {
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <Database className="text-indigo-500" size={20} /> {t('kvCacheTitle')}
                 </h2>
-                <div className="flex items-end gap-2 mb-2">
-                  <span className="text-3xl font-bold text-indigo-600">{kvCacheSize}</span>
-                  <span className="text-slate-500 text-sm mb-1">/ {promptTokens.length + generatedTokens.length - 1} {t('slots')}</span>
-                </div>
-                <div className="flex flex-wrap gap-1 mt-6">
-                  {Array.from({ length: promptTokens.length + generatedTokens.length - 1 }).map((_, i) => (
-                    <div key={i} className={`h-8 md:h-10 flex-1 rounded-sm transition-all duration-300 ${i < kvCacheSize ? (i < promptTokens.length ? 'bg-blue-400' : 'bg-green-400') : 'bg-slate-100'}`} title={i < kvCacheSize ? `${t('cachedToken')} ${i + 1}` : t('emptyCacheSlot')}></div>
-                  ))}
-                </div>
+                <LayerKvOverview
+                  snapshot={inferenceState}
+                  maxTokens={promptTokens.length + generatedTokens.length - 1}
+                  promptLength={promptTokens.length}
+                  t={t}
+                />
               </div>
             </div>
           </div>
 
           {/* 中间层：流水线与底层代码 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+          <div className="grid grid-cols-1 gap-6 items-start xl:grid-cols-[minmax(0,3fr)_minmax(360px,2fr)]">
             {/* 左侧：模型内部流水线 */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 h-full flex flex-col min-w-0">
                <h2 className="text-lg font-semibold mb-6 flex items-center justify-between shrink-0">
@@ -532,188 +620,17 @@ const App = () => {
                 </span>
               </h2>
 
-              <div className="relative p-4 md:p-6 border-2 border-dashed border-indigo-200 rounded-xl bg-indigo-50/30 flex-1 overflow-x-auto">
-                <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all
-                    ${phase === 'prefill' ? 'bg-amber-100 text-amber-700 ring-2 ring-amber-400 scale-105' : 'bg-slate-100 text-slate-400'}`}>
-                    {t('prefill')}
-                  </span>
-                </div>
-                <div className="absolute top-4 right-4 z-10">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all
-                    ${phase === 'decode' ? 'bg-emerald-100 text-emerald-700 ring-2 ring-emerald-400 scale-105' : 'bg-slate-100 text-slate-400'}`}>
-                    {t('decode')}
-                  </span>
-                </div>
+              <TensorWorkbench
+                snapshot={inferenceState}
+                sampling={samplingState}
+                sampledToken={activeModule >= MODULE.lmHead ? generatedTokens[step]?.token : null}
+                t={t}
+              />
 
-                <div className={`mx-auto w-full max-w-sm mt-10 md:mt-12 rounded-xl p-3 md:p-4 flex flex-col relative transition-all duration-500 shadow-xl border bg-white
-                  ${phase === 'prefill' ? 'border-amber-300 ring-4 ring-amber-400/20' : phase === 'decode' ? 'border-emerald-300 ring-4 ring-emerald-400/20' : 'border-slate-200'}`}
-                >
-                  <div className="text-center mb-4 h-8 flex items-center justify-center">
-                    {phase === 'prefill' && activeModule > MODULE.idle && <span className="text-xs md:text-sm font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 animate-fade-in">{t('currentInput')}</span>}
-                    {phase === 'decode' && activeModule > MODULE.idle && step > 0 && <span className="text-xs md:text-sm font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200 flex items-center gap-2 animate-fade-in"><CornerDownRight size={14} /> {t('autoRegInput')} "{generatedTokens[step-1].token}"</span>}
-                  </div>
-                  
-                  <div className="relative z-10 flex flex-col">
-                    {(() => {
-                      const L_seq = phase === 'idle' ? "?" : (phase === 'prefill' ? promptTokens.length : 1);
-                      const L_cache = phase === 'idle' ? "?" : (phase === 'prefill' ? promptTokens.length : promptTokens.length + step);
-                      const seqColorClass = phase === 'prefill' ? 'text-amber-600' : (phase === 'decode' ? 'text-emerald-600' : 'text-slate-400');
-                      const currentRouting = MOCK_EXPERT_ROUTING[Math.min(step, MOCK_EXPERT_ROUTING.length - 1)];
-
-                      return (
-                        <>
-                          {/* Module 1: Embedding */}
-                          <div data-stage-status={stageStatus.embedding} className={`p-2 rounded border transition-all duration-300 shadow-sm ${stageStatus.embedding === 'active' ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-200 scale-105 z-10' : stageStatus.embedding === 'passed' ? 'bg-emerald-50 border-emerald-200 opacity-90' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                            <div className={`font-semibold text-xs md:text-sm text-center ${stageStatus.embedding === 'active' ? 'text-indigo-900' : stageStatus.embedding === 'passed' ? 'text-emerald-800' : 'text-slate-500'}`}>{t('inputEmbedding')}</div>
-                            <div className="mt-2 text-[10px] md:text-xs font-mono bg-white p-1.5 rounded border border-indigo-100 flex flex-col gap-1">
-                              <div className="flex justify-between px-1">
-                                <span className="tracking-wide text-[11px] md:text-[13px]"><MathFormula>{String.raw`X=\operatorname{Embed}(\text{tokens})`}</MathFormula></span>
-                                <span className={`${seqColorClass} font-bold text-xs bg-slate-100 px-1 rounded`}><MathFormula>{String.raw`${L_seq}\times d`}</MathFormula></span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex justify-center -my-1 relative z-0"><ArrowDown className={`${activeModule === MODULE.embedding ? 'text-indigo-400 animate-bounce' : 'text-slate-200'}`} size={16} /></div>
-
-                          {/* --- 层堆叠循环框 (Transformer Block) --- */}
-                          <div className={`border-2 rounded-xl p-2 relative transition-all duration-300 mt-2 mb-2 ${isLayerStage ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200 border-dashed'}`}>
-                             <div className="absolute -left-2 -top-3 bg-white px-2 text-[10px] font-bold text-slate-500 flex items-center gap-1 rounded border border-slate-200">
-                               <Repeat size={12} className={isLayerStage ? 'text-amber-500' : ''}/>
-                               {t('transformerBlock')}
-                             </div>
-                             
-                             {/* 光速循环层数指示器 */}
-                             {isLayerStage && (
-                               <div className="absolute right-2 -top-4 bg-amber-500 text-white px-3 py-0.5 rounded-full text-[11px] font-bold shadow-lg animate-pulse flex items-center gap-1">
-                                 <Zap size={12}/> {t('loopingLayer')}{layerProgress}
-                               </div>
-                             )}
-
-                            {/* Module 2: Attention */}
-                            <div data-stage-status={stageStatus.attention} className={`mt-3 p-2 rounded border transition-all duration-300 shadow-sm ${stageStatus.attention === 'active' ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200 scale-105 z-10 shadow-lg' : stageStatus.attention === 'passed' ? 'bg-emerald-50 border-emerald-200 opacity-90' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                              <div className={`font-semibold text-xs md:text-sm mb-2 text-center flex items-center justify-center gap-1 ${stageStatus.attention === 'active' ? 'text-blue-900' : stageStatus.attention === 'passed' ? 'text-emerald-800' : 'text-slate-500'}`}><Orbit size={14} className={stageStatus.attention === 'active' ? 'animate-spin' : ''}/>{t('maskedSelfAttention')}</div>
-                              <div className="text-[10px] md:text-xs font-mono bg-white p-1.5 rounded border border-blue-100 flex flex-col gap-1.5">
-                                <div className="flex justify-between px-1">
-                                  <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`Q,K,V=XW_Q,XW_K,XW_V`}</MathFormula></span>
-                                  <span className={`${seqColorClass} font-bold text-xs bg-slate-100 px-1 rounded`}><MathFormula>{String.raw`${L_seq}\times d`}</MathFormula></span>
-                                </div>
-                                <div className={`flex justify-between items-center px-1 md:px-2 py-0.5 rounded border -mx-1 ${stageStatus.attention === 'active' ? 'bg-fuchsia-50 border-fuchsia-200' : 'border-transparent'}`}>
-                                  <span className={`text-[11px] md:text-[13px] tracking-wide ${stageStatus.attention === 'active' ? 'text-fuchsia-900' : 'text-slate-600'}`}><MathFormula>{String.raw`Q',K'=\operatorname{RoPE}(Q,K;\,p)`}</MathFormula></span>
-                                  <span className="text-fuchsia-700 font-bold text-[10px]"><MathFormula>{positionFormula}</MathFormula></span>
-                                </div>
-                                <div className="flex justify-between px-1">
-                                  <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`A=\operatorname{softmax}(Q'K_{\mathrm{cache}}^{\prime\top}/\sqrt{d_k})V_{\mathrm{cache}}`}</MathFormula></span>
-                                  <span className="text-slate-600 font-bold text-xs"><MathFormula>{String.raw`${L_seq}\times ${L_cache}`}</MathFormula></span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex justify-center -my-1 relative z-0"><ArrowDown className={`${activeModule === MODULE.attention ? 'text-blue-400 animate-bounce' : 'text-slate-200'}`} size={16} /></div>
-
-                            {/* Module 3: FFN vs MoE */}
-                            {modelType === 'dense' ? (
-                              <div data-stage-status={stageStatus.ffn} className={`p-2 rounded border transition-all duration-300 shadow-sm ${stageStatus.ffn === 'active' ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-200 scale-105 z-10 shadow-lg' : stageStatus.ffn === 'passed' ? 'bg-emerald-50 border-emerald-200 opacity-90' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                                <div className={`font-semibold text-xs md:text-sm text-center ${stageStatus.ffn === 'active' ? 'text-indigo-900' : stageStatus.ffn === 'passed' ? 'text-emerald-800' : 'text-slate-500'}`}>{t('denseFfn')}</div>
-                                <div className="mt-1 text-[10px] md:text-xs font-mono bg-white p-1.5 rounded border border-indigo-100 flex flex-col gap-1.5">
-                                  <div className="flex justify-between items-center bg-indigo-50 -mx-1 px-2 py-0.5 rounded border border-indigo-100">
-                                    <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`H=\operatorname{GELU}(XW_{\mathrm{up}})`}</MathFormula></span>
-                                    <span className={`${seqColorClass} font-bold text-xs bg-slate-100 px-1 rounded`}><MathFormula>{String.raw`${L_seq}\times 4d`}</MathFormula></span>
-                                  </div>
-                                  <div className="flex justify-between px-1">
-                                    <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`Y=HW_{\mathrm{down}}`}</MathFormula></span>
-                                    <span className={`${seqColorClass} font-bold text-xs bg-slate-100 px-1 rounded`}><MathFormula>{String.raw`${L_seq}\times d`}</MathFormula></span>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : (
-                              <div data-stage-status={stageStatus.ffn} className={`p-2 rounded border transition-all duration-300 shadow-sm ${stageStatus.ffn === 'active' ? 'bg-teal-50 border-teal-400 ring-2 ring-teal-200 scale-105 z-10 shadow-lg' : stageStatus.ffn === 'passed' ? 'bg-emerald-50 border-emerald-200 opacity-90' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                                <div className={`font-semibold text-xs md:text-sm text-center flex items-center justify-center gap-1 ${stageStatus.ffn === 'active' ? 'text-teal-900' : stageStatus.ffn === 'passed' ? 'text-emerald-800' : 'text-slate-500'}`}>
-                                  <Network size={14}/> {t('sparseMoeLayer')}
-                                </div>
-                                <div className="mt-1 text-[10px] md:text-xs font-mono bg-white p-1 md:p-1.5 rounded border border-teal-100 flex flex-col gap-1.5">
-                                  <div className="flex justify-between px-1 opacity-60">
-                                    <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`W_g`}</MathFormula> {t('routerMatrix')}</span>
-                                    <span><MathFormula>{String.raw`d\times 8`}</MathFormula></span>
-                                  </div>
-                                  <div className={`flex justify-between px-1 rounded transition-colors ${stageStatus.ffn === 'active' ? 'bg-amber-50 text-amber-800 border border-amber-200' : ''}`}>
-                                    <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`r=\operatorname{softmax}(XW_g)`}</MathFormula></span>
-                                  </div>
-                                  <div className="flex justify-between items-end gap-0.5 md:gap-1 mt-1 mb-1">
-                                    {[0, 1, 2, 3, 4, 5, 6, 7].map(e => {
-                                      const isMoEActive = activeModule === MODULE.ffn;
-                                      const isExpertSelected = currentRouting.topK.includes(e);
-                                      const isActive = isMoEActive && isExpertSelected;
-                                      const weightStr = isActive ? currentRouting.weights[currentRouting.topK.indexOf(e)].toFixed(2) : (isMoEActive ? "0.01" : "-");
-                                      return (
-                                        <div key={e} className="flex flex-col items-center justify-end w-full">
-                                          <div className={`text-[8px] mb-0.5 transition-all duration-500 ${isActive ? 'text-teal-700 font-bold scale-125' : 'text-slate-300 opacity-50'}`}>{weightStr}</div>
-                                          <div className={`w-full h-4 md:h-5 rounded border flex items-center justify-center text-[8px] md:text-[10px] transition-all duration-300 ${isActive ? 'bg-teal-100 border-teal-400 text-teal-800 font-bold shadow ring-1 ring-teal-300 animate-pulse' : 'bg-slate-50 border-slate-200 text-slate-400'}`}><MathFormula>{String.raw`E_{${e}}`}</MathFormula></div>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                  {/* 恢复 Top-K 融合计算式 */}
-                                  <div className={`flex flex-col bg-teal-50 -mx-1 px-1 md:px-2 py-1 rounded border transition-colors ${stageStatus.ffn === 'active' ? 'border-teal-300' : 'border-teal-100'}`}>
-                                    <div className="flex justify-between items-center w-full mb-1">
-                                      <span className="text-teal-800 font-semibold">{t('top2Fusion')}</span>
-                                      <span className={`${seqColorClass} font-bold text-[10px] bg-white px-1 rounded border border-teal-100`}><MathFormula>{String.raw`${L_seq}\times d`}</MathFormula></span>
-                                    </div>
-                                    <div className="text-[10px] md:text-[12px] text-teal-900 text-center tracking-wide">
-                                      {activeModule === MODULE.ffn
-                                        ? <MathFormula>{String.raw`Y=${currentRouting.weights[0].toFixed(2)}E_{${currentRouting.topK[0]}}+${currentRouting.weights[1].toFixed(2)}E_{${currentRouting.topK[1]}}`}</MathFormula>
-                                        : <span className="font-sans font-normal text-[10px]">{t('waitingRouter')}</span>}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          {/* --- 循环框结束 --- */}
-
-                          <div className="flex justify-center -my-1 relative z-0"><ArrowDown className={`${activeModule === MODULE.ffn ? 'text-purple-400 animate-bounce' : 'text-slate-200'}`} size={16} /></div>
-
-                          {/* Module 4: LM Head & Probabilities */}
-                          <div data-stage-status={stageStatus.lmHead} className={`p-2 md:p-3 rounded border transition-all duration-300 shadow-sm ${stageStatus.lmHead === 'active' ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-200 scale-105 z-10' : stageStatus.lmHead === 'passed' ? 'bg-emerald-50 border-emerald-200 opacity-90' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                            <div className={`font-semibold text-xs md:text-sm text-center mb-2 ${stageStatus.lmHead === 'active' ? 'text-purple-900' : stageStatus.lmHead === 'passed' ? 'text-emerald-800' : 'text-slate-500'}`}>{t('lmHeadSample')} <MathFormula>{String.raw`T=${temperature.toFixed(1)}`}</MathFormula></div>
-                            <div className="text-[10px] md:text-xs font-mono bg-white p-1.5 rounded border border-purple-100 flex flex-col gap-1.5">
-                              <div className="flex justify-between items-center bg-purple-50 -mx-1 px-2 py-0.5 rounded border border-purple-100">
-                                <span className="text-[11px] md:text-[13px] tracking-wide"><MathFormula>{String.raw`\ell=XW_{\mathrm{vocab}}`}</MathFormula></span>
-                                <span className={`${seqColorClass} font-bold text-xs bg-slate-100 px-1 rounded`}><MathFormula>{String.raw`${L_seq}\times |\mathcal V|`}</MathFormula></span>
-                              </div>
-                            </div>
-                            <div className="mt-3 pt-3 border-t border-purple-200">
-                               <div className="text-[10px] font-semibold text-purple-600 mb-2 uppercase tracking-wider flex justify-between">
-                                 <span>{t('probDist')}</span>
-                                 {activeModule === MODULE.tokenDone && <span className="text-emerald-600 font-bold animate-pulse">{t('predDone')}</span>}
-                               </div>
-                               {displayProbs ? (
-                                 <div className="space-y-1.5 animate-fade-in">
-                                   {displayProbs.map((prob, idx) => (
-                                     <div key={idx} className="flex items-center gap-2">
-                                       <div className="w-8 md:w-10 text-xs font-medium text-right text-purple-900">{prob.t}</div>
-                                       <div className="flex-1 h-2.5 bg-purple-100 rounded-full overflow-hidden relative">
-                                         <div className={`h-full rounded-full transition-all duration-300 ease-out ${idx === 0 ? 'bg-purple-500' : 'bg-purple-300'}`} style={{ width: `${prob.p * 100}%` }}></div>
-                                       </div>
-                                       <div className="w-8 text-[10px] text-purple-600 text-right font-mono">{(prob.p * 100).toFixed(0)}%</div>
-                                     </div>
-                                   ))}
-                                 </div>
-                               ) : (
-                                 <div className="text-center text-purple-400 text-[10px] italic py-2">
-                                   {activeModule > MODULE.idle && activeModule < MODULE.lmHead ? t('waitStack') : t('waitCalc')}
-                                 </div>
-                               )}
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
             </div>
 
             {/* 右侧：代码级原理解析 (Pseudocode) */}
-            <div className="bg-slate-900 rounded-2xl p-6 shadow-lg border border-slate-800 text-slate-300 h-full flex flex-col min-w-0">
+            <div className="bg-slate-900 rounded-2xl p-6 shadow-lg border border-slate-800 text-slate-300 flex flex-col min-w-0">
                <h2 className="text-lg font-semibold mb-4 flex items-center justify-between text-white shrink-0">
                  <div className="flex items-center gap-2">
                    <Code className="text-emerald-400" size={20} /> {t('codeTitle')} <span className="text-xs text-slate-400 font-normal ml-2">{t('pyCode')}</span>
@@ -722,7 +639,7 @@ const App = () => {
               </h2>
               <div className="font-mono text-[10px] md:text-xs xl:text-sm overflow-x-auto bg-[#0d1117] p-4 rounded-lg border border-slate-800 flex-1 leading-relaxed">
                 <div className={`transition-all duration-500 whitespace-pre block`}>
-                  <div><span className="text-emerald-400">def</span> <span className="text-blue-400">{phase === 'prefill' ? 'prefill' : 'decode_step'}</span>(request_ids, input_tokens, kv_cache, temp={temperature.toFixed(1)}):</div>
+                  <div><span className="text-emerald-400">def</span> <span className="text-blue-400">{phase === 'prefill' ? 'prefill' : 'decode_step'}</span>(request_ids, input_tokens, kv_cache, temp={temperature.toFixed(1)}, top_k={topK}, top_p={topP.toFixed(1)}):</div>
                   
                   {/* Emb 高亮 */}
                   <div className={activeModule === MODULE.embedding ? "bg-indigo-900/60 text-indigo-200 px-1 -mx-1 rounded" : "text-slate-400"}>
@@ -780,9 +697,11 @@ const App = () => {
                   <div className={activeModule >= MODULE.lmHead ? "bg-purple-900/60 text-purple-200 px-1 -mx-1 rounded" : "text-slate-400"}>
                     <div>  <span className="text-slate-500">{t('c_lm1')}</span></div>
                     <div>  logits = x[-1] @ W_vocab <span className="text-slate-500">{t('c_lm2')}</span></div>
-                    <div className={activeModule >= MODULE.lmHead && temperature !== 1.0 ? "text-purple-300 font-bold" : ""}>  logits = logits / temp   <span className="text-slate-500">{t('c_lm3')}</span></div>
+                    <div className={activeModule >= MODULE.lmHead ? "text-purple-300 font-bold" : ""}>  logits = logits / temp   <span className="text-slate-500">{t('c_lm3')}</span></div>
                     <div>  probs = softmax(logits)</div>
-                    <div>  <span className="text-emerald-400">return</span> sample(probs)</div>
+                    <div>  probs = top_k_filter(probs, top_k)</div>
+                    <div>  probs = top_p_filter(probs, top_p)</div>
+                    <div>  <span className="text-emerald-400">return</span> sample(renormalize(probs))</div>
                   </div>
                 </div>
               </div>

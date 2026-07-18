@@ -13,6 +13,7 @@
     "check:engram": "node scripts/check-engram.mjs",
     "check:radix": "node scripts/check-radix-cache.mjs",
     "check:dpa": "node scripts/check-dp-attention.mjs",
+    "check:llm": "node scripts/check-llm-inference.mjs",
     "check:visual": "node scripts/visual-check.js",
     "check:visual:module": "node scripts/visual-check.js --module"
   },

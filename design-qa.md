@@ -469,3 +469,43 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 输出证据：DPA 的 Reduce-Scatter 与 All-to-All Combine 阶段继续复用原通信连线和四 Rank 终点，但最终 `subset` 的 6px 色带改为每 Rank 一个 3×4 本地矩阵；操作节点同时显示“每个 Rank 取回”与 `[B/4,S,H]`。两条路径均验证存在 4 个矩阵、每个 12 个单元，颜色与请求归属 Rank 一致。
 - 响应式：390×844 英文状态无页面级溢出、控制交叠数为 0；主画布 `clientWidth=309 / scrollWidth=520`，保留带文字提示的有意内部横向滚动。桌面不再显示不必要的滚动提示。
 - 回归：`check:dpa` 增加 520px 密度契约、禁止 760px 回归、`localMatrix` 与返回语义标签断言；QA matrix 继续通过 9 cases / 5 dimensions，模块 convention checker 9/9、0 warning，Vite 生产构建通过（1894 modules）。
+## 2026-07-18 — LLMInference：在既有全景结构内补充张量执行视角
+
+- 变更分类与结构契约：本轮是功能扩展与正确性修复，不是结构重做。保留原顶部模式/采样/播放控件、Sequence 与 KV 区、左侧模型画布、右侧伪代码和底部状态说明的顺序与阅读路径；张量主画布已经覆盖执行证据，因此后续按用户要求移除了重复的折叠公式参考。
+- 教学问题：同一个 Token/Prompt 在 Embedding、逐层 Attention、Dense/MoE FFN 和 LM Head 中，张量形状、数据依赖、KV 所有权与采样输入如何变化？
+- 能力声明：`timeline`、`multiple-modes`、`data-movement`、`dense-layout`、`math`。
+
+### Claim ledger
+
+| Claim | 领域模型与可见证据 | 边界 |
+|---|---|---|
+| Prefill 同时处理 Prompt 多行并使用因果遮罩 | `deriveInferenceTensorSnapshot()` 派生 `L×d_h` Q/K/V、`L×L` Score/Probability；6-token 示例在页面中显示 36 个单元与 15 个上三角遮罩 | 只展示最多 6×8 个代表单元，真实形状由 KaTeX 标签保留 |
+| Decode 是单行 Query 读取历史 KV，并在当前层追加一个 K/V | Decode 页面显示 `1×d_h` Q/K/V、`1×L_cache` Score；首个 Decode Attention 中 Layer 1 为 7 个槽，未来层仍为 6 个槽；RoPE 位置为 `p=6` | 固定 32 层教学配置，不展开 paged KV 的 block table 与具体 kernel 布局 |
+| KV Cache 属于每一层，而不是一个全局扁平进度条 | 顶部 KV 区显示当前层 K/V 两行、32 层提交进度和代表层堆栈；Prefill Layer 1 Attention 为 `1/32`，首个 Decode LM Head 为 `32/32` | 代表层条只抽取 L1/L2/当前层/L31/L32，完整计数仍由 32 项模型数组派生 |
+| Prefill MoE 必须按 Token 独立路由 | Router 使用 `L×E` 矩阵；6 行各自选择 Top-2，共 12 个选中单元，并在 Expert Bank 显示聚合负载 | 固定 8 Experts、Top-2 教学场景，不模拟容量因子、丢 Token 或跨设备 All-to-All |
+| 下一 Token 采样只读取最后一个 Hidden State | LM Head 主画布固定显示 `1×d · d×|V| → 1×|V|`，温度/Top-K/Top-P 曲线与采样 Token 由同一阶段快照驱动 | 不展开词表全量单元，只显示代表候选 logits |
+
+### 已修复问题与交互证据
+
+- Attention 由单一含混公式拆成 Score、逐行 Softmax Probability 和 `PV` Context 三个真实中间对象；Prefill 显式遮罩，Decode 不画遮罩。
+- Dense/MoE 切换会重置不兼容进度，并真实改变 FFN 结构：Dense 显示 `L×4d` 扩张和 `L×d` 回投影；MoE 显示逐 Token Router 与 Expert Bank，而不是只改标题或颜色。
+- Decode 位置修正为 `promptLength + step - 1`；第一枚生成 Token 作为 Decode 输入时显示绝对位置 `p=6`，避免原先的 off-by-one。
+- 初始阶段只在外层 Stage 降低透明度，内部矩阵不再二次叠加透明度；桌面测得 pending opacity 为 0.7，矩阵数值仍可辨认。
+- 主区域保持左 3 / 右 2 的既有关系；右侧伪代码不再被高张量画布强制拉伸。1280px 下左画布约 1683px 高、代码区约 803px 高，不再产生大块空黑区。
+- 浏览器回测确认删除公式参考后页面不再存在 `details`，且没有残留 `displayProbs` 或旧图标依赖；张量主画布、伪代码和底部状态说明继续保持原顺序。
+
+### 回归证据与限制
+
+- 纯模型：`npm run check:llm` 通过，覆盖 96 个 Prefill/Decode × Dense/MoE × 阶段 × 代表层状态，并检查因果遮罩、概率归一化、KV 层进度、逐行 Top-2、位置编号和 LM Head 行数。
+- 规范与矩阵：module convention checker 9/9、0 warning；QA matrix 4 cases 覆盖 phase×model、language×viewport 与 sampling×viewport。
+- 构建：Vite 5.4.21 生产构建通过，1896 modules transformed。
+- 浏览器：桌面保持原主区比例；390×844 下顶部采样控件自动变为紧凑三行，模式/语言/播放控制均未裁切。中英文标题、阶段状态与控件均完成实页核查；公式参考已移除。
+- 已知边界：矩阵值为确定性代表样本，目的是说明数据形状与依赖，不是数值精度验证或 profiler 输出；本章仍是宏观 decoder-only 教学视角，不覆盖多头物理布局、GQA/MQA 分组、paged KV 分配、量化或具体后端 fused kernel。
+
+### 2026-07-18 — LLMInference：补齐 FFN 权重路径与 Top-K / Top-P 曲线
+
+- Dense FFN 在原 Stage 内补齐 `Norm(X) → W_up[d,4d] → H[L,4d] → W_down[4d,d] → Y[L,d]`，MoE 则在原 Router/Expert Bank 下补齐 `W_gate[d,E]` 以及当前选中 Expert 的 Up/Hidden/Down 矩阵；没有增加页面级面板或改动左右主区结构。
+- 采样由纯 `deriveSamplingDistribution()` 统一派生。温度被约束在 `0.1–0.9`；先进行温度重标定，再执行 Top-K，随后按累计质量执行 Top-P，最后只对保留候选重新归一化。曲线同时显示温度分布、筛选后的最终分布与累计概率/Top-P 阈值。
+- 顶部控制保留原位置并扩展为温度、Top-K、Top-P 三个紧凑滑块；伪代码同步显示 `top_k_filter → top_p_filter → renormalize → sample`，避免控件与主画布语义脱节。
+- 浏览器实测：MoE 画布存在 `router weight / router / expert up / expert hidden / expert down` 五个对象；Dense 切换后存在 `input / up weight / hidden / down weight / output` 五个对象。推进到 LM Head 后曲线出现；`T=0.9,K=3,P=1.0` 保留 3 个候选，切到 `K=1` 后立即只保留 1 个，证明曲线由控件实时驱动。
+- 回归：`npm run check:llm` 通过 96 个代表状态，并新增 FFN/MoE 权重形状、温度上限、Top-K/Top-P 截断和概率归一化断言；convention checker 9/9、QA matrix 通过，Vite 5.4.21 生产构建通过（1896 modules transformed）。
