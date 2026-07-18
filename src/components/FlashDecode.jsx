@@ -460,12 +460,12 @@ const App = () => {
             </div>
 
             <button onClick={() => setLang((prev) => (prev === 'zh' ? 'en' : 'zh'))} className="px-2 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition flex items-center gap-1" title="Language"><Globe size={16} /> {t('langToggle')}</button>
-            <button onClick={reset} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition" title={t('reset')}><RotateCcw size={20} /></button>
-            <button onClick={togglePlay} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white transition shadow-sm bg-blue-600 hover:bg-blue-700`}>
-               <>{isPlaying ? <Pause size={18} /> : <Play size={18} />} {isPlaying ? t('pause') : snapshot.outputReady ? t('replay') : t('play')}</>
+            <button type="button" onClick={reset} aria-label={t('reset')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200" title={t('reset')}><RotateCcw size={18} /></button>
+            <button type="button" onClick={togglePlay} aria-label={isPlaying ? t('pause') : snapshot.outputReady ? t('replay') : t('play')} title={isPlaying ? t('pause') : snapshot.outputReady ? t('replay') : t('play')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm transition hover:bg-blue-700">
+               {isPlaying ? <Pause size={18} /> : <Play size={18} />}
             </button>
-             <button onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || snapshot.outputReady} className="flex items-center gap-2 px-4 py-2 w-48 justify-center rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-300 disabled:opacity-50 transition shadow-sm font-semibold">
-              <SkipForward size={18} /> <span className="text-sm">{t('next')}</span>
+             <button type="button" onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || snapshot.outputReady} aria-label={t('next')} title={t('next')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <SkipForward size={18} />
             </button>
           </div>
 

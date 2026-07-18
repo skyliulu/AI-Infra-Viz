@@ -30,6 +30,8 @@ Capture a rendered baseline before the first layout-affecting edit. After implem
 
 Declare the change surface before editing: list the dimensions that can alter behavior (for example mode, lifecycle state, language, or viewport), the affected views, and the behavior that must remain unchanged. Include only dimensions relevant to this iteration.
 
+For top-level controls, first inventory neighboring modules and capture the repository's control contract: order, grouping, shape, label semantics, trailing-edge placement, and responsive breakpoint. Reuse the established pattern for semantically equivalent controls instead of introducing a chapter-specific variant. Treat language as a presentation preference; use the repository's established single-toggle or segmented pattern consistently, and make a toggle label communicate the target language. In timeline modules, keep the reset/play/next group at the trailing edge when that is the repository convention. Deviate only when the chapter has a real interaction need, and record the reason in QA.
+
 ## 2. Declare the teaching capabilities
 
 State which capabilities the module actually needs:
@@ -73,6 +75,8 @@ A mode switch must visibly change every layer it claims to affect. Reuse the pri
 Read [content-and-math.md](references/content-and-math.md). Implement or correct the pure model first, then connect the existing views to it, then refine visual encoding and prose. Route display prose through i18n and mathematical notation through the shared KaTeX renderer.
 
 Keep rendering a pure model-to-UI mapping. Separate domain derivation, translated content, visual primitives, and panels when complexity justifies it. Avoid broad refactors that do not contribute to the accepted teaching claim or regression safety.
+
+Reuse an existing shared control component when the repository provides one. Otherwise copy the smallest established markup and interaction semantics from a neighboring module, including dimensions, icon sizing, target-language text, dynamic accessible names, disabled states, and responsive wrapping. Do not standardize controls by moving or rebuilding unrelated content.
 
 ## 7. Validate in layers
 

@@ -136,7 +136,7 @@ function LinearAttention() {
       <style>{'.linear-focus:focus-visible{outline:3px solid rgba(99,102,241,.35);outline-offset:2px}@media(prefers-reduced-motion:reduce){.linear-lab *,.linear-lab *::before,.linear-lab *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}'}</style>
       <div className="linear-lab mx-auto max-w-[1560px] space-y-4">
         <header className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm"><Sigma size={20} /></div>
               <div className="min-w-0">
@@ -145,7 +145,7 @@ function LinearAttention() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
               <div className="flex rounded-xl bg-slate-100 p-1" role="group" aria-label={t('comparisonTarget')}>
                 {['linear', 'gla'].map((value) => (
                   <button
@@ -160,15 +160,21 @@ function LinearAttention() {
                 ))}
               </div>
 
-              <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
-                <button type="button" onClick={reset} title={t('reset')} aria-label={t('reset')} className="linear-focus rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><RotateCcw size={16} /></button>
-                <button type="button" onClick={togglePlay} title={isPlaying ? t('pause') : t('play')} aria-label={isPlaying ? t('pause') : t('play')} className="linear-focus rounded-lg bg-indigo-600 p-2 text-white transition hover:bg-indigo-700">{isPlaying ? <Pause size={16} /> : <Play size={16} />}</button>
-                <button type="button" onClick={handleNextStep} title={t('next')} aria-label={t('next')} className="linear-focus rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><SkipForward size={16} /></button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setLang((current) => current === 'zh' ? 'en' : 'zh')}
+                aria-label={t('language')}
+                title={t('language')}
+                className="linear-focus flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                <Globe size={16} />
+                {t('langToggle')}
+              </button>
 
-              <div className="flex items-center gap-1 rounded-xl border border-slate-200 p-1">
-                <Globe size={14} className="ml-1 text-slate-400" />
-                {['zh', 'en'].map((value) => <button key={value} type="button" onClick={() => setLang(value)} aria-pressed={lang === value} className={`linear-focus rounded-lg px-2.5 py-1.5 text-[10px] font-bold transition ${lang === value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{t(value)}</button>)}
+              <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                <button type="button" onClick={reset} title={t('reset')} aria-label={t('reset')} className="linear-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><RotateCcw size={18} /></button>
+                <button type="button" onClick={togglePlay} title={isPlaying ? t('pause') : t('play')} aria-label={isPlaying ? t('pause') : t('play')} className="linear-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-700">{isPlaying ? <Pause size={18} /> : <Play size={18} />}</button>
+                <button type="button" onClick={handleNextStep} title={t('next')} aria-label={t('next')} className="linear-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"><SkipForward size={18} /></button>
               </div>
             </div>
           </div>

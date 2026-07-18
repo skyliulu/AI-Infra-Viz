@@ -1113,12 +1113,12 @@ function FlashAttention() {
               <button type="button" onClick={() => setLang((current) => current === 'zh' ? 'en' : 'zh')} className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50" title={t('language')}>
                 <Globe size={15} /> {t('language')}
               </button>
-              <button type="button" onClick={reset} className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50" title={t('reset')}><RotateCcw size={16} /></button>
-              <button type="button" onClick={togglePlay} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700">
-                {isPlaying ? <Pause size={15} /> : <Play size={15} />} {isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')}
+              <button type="button" onClick={reset} aria-label={t('reset')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50" title={t('reset')}><RotateCcw size={18} /></button>
+              <button type="button" onClick={togglePlay} aria-label={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} title={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm transition hover:bg-blue-700">
+                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
               </button>
-              <button type="button" onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-indigo-50 disabled:opacity-40">
-                <SkipForward size={15} /> {t('next')}
+              <button type="button" onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} aria-label={t('next')} title={t('next')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <SkipForward size={18} />
               </button>
             </div>
           </div>

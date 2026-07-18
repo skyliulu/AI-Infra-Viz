@@ -1,0 +1,25 @@
+{
+  "dimensions": {
+    "mode": ["tp", "dp"],
+    "moeTopology": ["tp", "ep"],
+    "language": ["zh", "en"],
+    "viewport": ["desktop", "tablet", "mobile"],
+    "state": ["initial", "communication", "done"]
+  },
+  "requiredCrossProducts": [
+    ["mode", "viewport"],
+    ["moeTopology", "state"],
+    ["language", "viewport"]
+  ],
+  "cases": [
+    { "name": "tp desktop initial zh", "state": { "mode": "tp", "moeTopology": "tp", "language": "zh", "viewport": "desktop", "state": "initial" }, "checks": ["layout contract", "four ranks fit without internal overflow", "zero cache before attention"] },
+    { "name": "tp tablet communication en", "state": { "mode": "tp", "moeTopology": "ep", "language": "en", "viewport": "tablet", "state": "communication" }, "checks": ["topology normalized to tp", "four replicated caches"] },
+    { "name": "tp mobile done zh", "state": { "mode": "tp", "moeTopology": "tp", "language": "zh", "viewport": "mobile", "state": "done" }, "checks": ["completed controls", "intentional canvas scroll"] },
+    { "name": "dp tp desktop communication en", "state": { "mode": "dp", "moeTopology": "tp", "language": "en", "viewport": "desktop", "state": "communication" }, "checks": ["all-gather", "reduce-scatter"] },
+    { "name": "dp tp tablet done zh", "state": { "mode": "dp", "moeTopology": "tp", "language": "zh", "viewport": "tablet", "state": "done" }, "checks": ["four returned local matrices", "local output ownership", "cluster cache 1x"] },
+    { "name": "dp tp mobile initial en", "state": { "mode": "dp", "moeTopology": "tp", "language": "en", "viewport": "mobile", "state": "initial" }, "checks": ["control labels", "no page overflow"] },
+    { "name": "dp ep desktop done zh", "state": { "mode": "dp", "moeTopology": "ep", "language": "zh", "viewport": "desktop", "state": "done" }, "checks": ["all-to-all dispatch", "all-to-all combine", "four returned local matrices"] },
+    { "name": "dp ep tablet initial en", "state": { "mode": "dp", "moeTopology": "ep", "language": "en", "viewport": "tablet", "state": "initial" }, "checks": ["representative assumption", "layout contract"] },
+    { "name": "dp ep mobile communication zh", "state": { "mode": "dp", "moeTopology": "ep", "language": "zh", "viewport": "mobile", "state": "communication" }, "checks": ["router and expert evidence", "scroll cue"] }
+  ]
+}

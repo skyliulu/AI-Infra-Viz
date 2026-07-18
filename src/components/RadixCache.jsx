@@ -443,12 +443,12 @@ const App = () => {
               </button>
             </div>
             <button aria-label={t('langToggle')} onClick={() => setLang((prev) => (prev === 'zh' ? 'en' : 'zh'))} className="min-w-10 whitespace-nowrap rounded-lg bg-slate-100 px-2 py-2 text-center text-sm font-bold text-slate-600 transition hover:bg-slate-200">{t('langToggle')}</button>
-            <button aria-label={t('reset')} onClick={reset} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition" title={t('reset')}><RotateCcw size={18} /></button>
-            <button aria-label={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} onClick={togglePlay} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white transition shadow-sm bg-indigo-600 hover:bg-indigo-700">
-              {isPlaying ? <Pause size={16} /> : <Play size={16} />} {isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')}
+            <button type="button" aria-label={t('reset')} onClick={reset} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200" title={t('reset')}><RotateCcw size={18} /></button>
+            <button type="button" aria-label={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} title={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} onClick={togglePlay} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm transition hover:bg-indigo-700">
+              {isPlaying ? <Pause size={18} /> : <Play size={18} />}
             </button>
-            <button aria-label={t('next')} onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} className="flex items-center gap-2 px-4 py-2 w-32 md:w-48 justify-center rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 text-sm font-bold disabled:opacity-50 transition shadow-sm">
-              <SkipForward size={16} /> <span className="truncate">{t('next')}</span>
+            <button type="button" aria-label={t('next')} title={t('next')} onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <SkipForward size={18} />
             </button>
           </div>
         </div>

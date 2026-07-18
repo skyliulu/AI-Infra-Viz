@@ -79,6 +79,9 @@ Apply common checks to every module, then apply only the capability sections dec
 - [ ] Dense components have no unintended internal overflow in sparse, representative, and maximum-content states.
 - [ ] Both languages preserve readable proportions and control labels.
 - [ ] Controls remain keyboard reachable and have labels.
+- [ ] Semantically equivalent top-level controls match neighboring modules in order, grouping, shape, sizing, label semantics, and responsive breakpoint unless a documented interaction need requires a deviation.
+- [ ] Language controls use the repository's established toggle pattern, expose an accessible action label, and make the target language unambiguous.
+- [ ] Timeline reset/play/next controls occupy the established trailing position and keep consistent icon-only or text-button treatment across sibling modules.
 - [ ] Important region proportions, unused space, wrapping, and overflow were compared against the baseline with measurable evidence.
 
 ## Regression and runtime verification

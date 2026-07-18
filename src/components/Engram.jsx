@@ -543,14 +543,14 @@ const App = () => {
              <button onClick={toggleLang} aria-label={t('langToggle')} className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition font-bold text-sm shadow-sm whitespace-nowrap">
                 <Globe size={16} /> {t('langToggle')}
              </button>
-             <button onClick={reset} aria-label={t('reset')} className="p-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition tooltip" title={t('reset')}>
+             <button type="button" onClick={reset} aria-label={t('reset')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-600 transition hover:bg-slate-200" title={t('reset')}>
                 <RotateCcw size={18} />
              </button>
-             <button onClick={togglePlay} aria-label={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} className="flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-lg font-bold text-white transition shadow-sm bg-blue-600 hover:bg-blue-700 whitespace-nowrap">
-                <>{isPlaying ? <Pause size={18} /> : <Play size={18} />} {isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')}</>
+             <button type="button" onClick={togglePlay} aria-label={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} title={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm transition hover:bg-blue-700">
+                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
              </button>
-             <button onClick={handleNextStep} disabled={phase === 'done'} aria-label={phase === 'done' ? t('completed') : t('next')} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-purple-50 hover:text-purple-700 transition shadow-sm font-semibold whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-slate-700">
-                <SkipForward size={18} /> {phase === 'done' ? t('completed') : t('next')}
+             <button type="button" onClick={handleNextStep} disabled={phase === 'done'} aria-label={phase === 'done' ? t('completed') : t('next')} title={phase === 'done' ? t('completed') : t('next')} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-slate-700">
+                <SkipForward size={18} />
              </button>
           </div>
         </div>

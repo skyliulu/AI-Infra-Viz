@@ -6,6 +6,29 @@
 
 审计依据：`.agents/skills/develop-interactive-module/` 的交互模型、视觉语法、内容与数学、QA checklist，以及仓库根目录 `AGENTS.md`。
 
+### 2026-07-18 — LinearAttention 语言控件与跨章节控制契约
+
+- 变更分类：局部一致性修复。Linear Attention 的双选分段语言控件改为仓库通用的单按钮切换，不改变语言状态来源、算法状态、时间轴进度或标题栏区域顺序。
+- 语言语义：中文界面按钮显示目标语言 `EN`，英文界面显示目标语言 `中文`；按钮带 Globe 图标、36px 高度、明确的 `aria-label` 与 `title`。真实点击验证标题、正文和时间轴动作标签同步切换，语言变化不重置算法状态。
+- 响应式证据：1265px CSS 页面宽度下语言按钮位于时间轴组左侧且尺寸为约 65×36px，页面 `scrollWidth=clientWidth=1265`；390×844 英文视口下按钮为 72×36px，后接三枚 36×36px 时间轴按钮，页面 `scrollWidth=clientWidth=375`。
+- Skill 影响：`develop-interactive-module` 新增通用顶层控件契约，要求修改前盘点相邻模块的顺序、分组、形态、标签语义、末端位置与响应式断点；优先复用共享控件或最小既有模式。QA checklist 同步增加语言目标语义、时间轴末端位置及跨章节控件一致性检查，不写入 Linear Attention 专属实现。
+- 回归：模块 convention checker 9/9 通过，保留本次修改前已有的 Unicode 数学外观提示；Vite 5.4.21 生产构建通过（1894 modules transformed）；中英文桌面与窄屏真实页面均无控制台 warning/error。
+
+### 2026-07-18 — LinearAttention 顶层控件右对齐
+
+- 变更分类：局部布局修复。仅调整标题栏的响应式断点和顶层控件顺序；算法选择、语言切换、时间轴按钮、状态机、主画布及下层阅读顺序均保持不变。
+- 一致性修复：标题与控件从 `2xl` 才并排改为仓库常用的 `xl` 并排；语言切换移到时间轴控制之前，使重置、播放/暂停和下一步稳定成为最右侧控件。
+- 桌面证据：在 1265px CSS 页面宽度下，时间轴按钮从第二行的 `x=530/570/610, y=114` 移到标题同一行右端的 `x=1107/1147/1187, y=47`；语言切换位于其左侧，页面 `scrollWidth=clientWidth=1265`。
+- 窄屏证据：390×844 视口下继续按原顺序自然换行，语言按钮位于 `x=56–134`，时间轴按钮位于其右侧 `x=152–268`；页面 `scrollWidth=clientWidth=375`，无横向溢出。中英文均完成真实页面复核，控制台无 warning/error。
+
+### 2026-07-18 — 全仓时间轴控件统一为纯图标
+
+- 变更分类：跨章节的一致性修复。保留各章节原有标题、模式选择、主画布布局、时间轴状态机和主题色，仅统一全局时间轴的重置、播放/暂停/重播、下一步三个控制按钮；`ParallelStrategies` 的局部 PP 步进控件原本已是纯图标，未重复改造。
+- 视觉契约：`LLMInference`、`FlashAttention`、`FlashDecode`、`Engram`、`RadixCache`、`DpAttention`、`LinearAttention` 的时间轴按钮统一为 36×36px，图标为 18px，不再显示重复文字，以降低顶部控制区宽度压力。播放状态仍沿用各章节原有强调色，禁用态保留透明度与光标反馈。
+- 可访问性：纯图标不依赖视觉猜测；每个按钮均保留或补充 `type="button"`、随状态变化的 `aria-label` 与 `title`。播放按钮在播放、暂停和完成后重播三种状态间同步更新语义；下一步完成后仍按原状态机禁用。
+- 浏览器证据：逐页检查上述 7 个全局时间轴章节，每页均恰好得到 3 个控制按钮，按钮 `textContent` 为空、尺寸均为 36×36px，且 `aria-label`/`title` 非空。`FlashDecode` 在 390×844 移动端视口下三个按钮仍完整可见，页面无横向溢出；`DpAttention` 实测播放后标签由“播放”切换为“暂停”，下一步按既有规则禁用。控制台无 warning/error。
+- 工程回归：Vite 5.4.21 生产构建通过（1894 modules transformed）；`check:dpa`、`check:flash`、`check:flashdecode`、`check:engram`、`check:radix`、`check:parallel` 全部通过。8 个时间轴模块均通过 convention checker；`LinearAttention` 与 `ParallelStrategies` 仅保留本次变更前已有的 Unicode 数学外观提示，与控制按钮改动无关。
+
 ## 结论
 
 **最终结果：failed。** 八章均能完成生产构建并在桌面浏览器中打开，但目前不能把整站视为已经通过“设计语言一致性 + 技术正确性”验收。
@@ -417,3 +440,32 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 模型回归：`npm run check:radix` 遍历两种模式的全部合法步骤，验证槽位上限、唯一 active 节点、D 的非连续分配引用、淘汰前后指标不变和完整锁生命周期。QA matrix helper 通过（6 cases，覆盖 mode/language/viewport/state 的指定交叉积）；模块 convention checker 9/9、0 warning。
 - 浏览器证据：中文 Radix 压力态显示 `6/10、需要 5、空闲 4、缺口 1`，共享前缀/B/C 均为 `lock_ref=0`，A 后缀标为 LRU candidate；下一步显示 `5/10、空闲 5、缺口 0、已淘汰 1`；D 分配后为 `10/10`，最终请求和所有树节点解锁。标准模式最终显示 `8/10、需要 5、空闲 2、缺口 3`。英文 Radix/Standard 的请求、指标与伪代码均完成实页复核，无残留中文注释。
 - 响应式限制：修改前原页面已在 390/768/1024 宽度验证无 body 级溢出；本轮新增请求行使用 `flex-col → sm:flex-row`，容量证据使用 `2 → 4` 列，主区和物理池仍沿用原断点与有意内部滚动。本轮浏览器的 viewport override 未实际改变 CSS viewport，因此没有把新的移动端状态误报为已渲染通过；后续人工确认时应重点检查四请求长 Token 行、三根树节点和成对槽位横向滚动。
+
+### 2026-07-18 — DpAttention：统一 KV 口径并补齐 TP-FFN / EP-MoE 通信路径
+
+- 变更分类与结构契约：本轮是现有章节内的正确性修复与能力扩展。保留顶部模式/播放控制、左侧四 Rank 张量切片主画布、右侧运行时伪代码和底部原理解析的区域顺序与 7:5 桌面比例；MoE 拓扑只作为 DPA 模式下的紧凑附加控件，没有重建页面信息架构。
+- canonical 模型：新增 `dp-attention/model.js`，以 `mode × moeTopology × step` 派生阶段、通信原语、张量形状、KV 指标和所有画布可见性。标准 TP 使用 `input → attention → moe → output`；DPA + TP-FFN 使用 `attention → all-gather → moe → reduce-scatter`；DPA + EP-MoE 使用 `attention → all-to-all dispatch → moe → all-to-all combine`。idle/done 不保留伪 active 状态，播放、单步、重置、完成和重播共用同一时间线。
+
+#### Claim ledger
+
+| Claim | 领域模型与可见证据 | 边界 |
+|---|---|---|
+| MLA Decode 持久缓存包含压缩 KV latent 与解耦 RoPE key，Q 从当前隐藏状态生成 | 画布缓存标签、伪代码和公式统一显示 `c_kv + k_rope`；`q_proj(x_owned)` 与 `kv_proj(x_owned)` 同源于 hidden state | 固定表达 DeepSeek-V3 MLA 的教学形状，不展开吸收矩阵后的具体 kernel 布局 |
+| 代表性 Attention-TP4 会在四个 Rank 保存同一请求集合的 KV | 标准 TP attention 态显示单 Rank 100%、集群 400%、复制因子 4，并由四张 Rank 卡分别展示一份完整缓存 | 不宣称所有 TP 后端都必然如此；这是单 KV head / latent 与本页固定拓扑的结果 |
+| 代表性 DPA 配置 `TP=DP=4, Attention TP=1` 令每 Rank 只拥有四分之一请求 KV，集群合计一份 | DPA attention 态显示单 Rank 25%、集群 100%、复制因子 1；缓存形状为 `[B/4,S,d_c+d_h^R]` | 若 `DP<TP`，DP 组内仍可能保留 Attention-TP 复制，因此页面不使用“普遍零冗余”表述 |
+| DPA 不强制 MoE 只能采用 TP | 同一 DPA 开关下提供 TP-FFN 与 EP-MoE 两条后半段；前者显示 Gather/Reduce-Scatter，后者显示 Router、Expert shard 与 All-to-All Dispatch/Combine | 通信原语是代表性执行图，不把某一后端的 fusion 或 collective 选择写成唯一实现 |
+
+- 技术依据：DeepSeek-V3 技术报告的 MLA 定义明确给出 `c_t^KV` 与解耦 `k_t^R`；SGLang v0.4 官方说明确认标准 TP 下单 KV head 的缓存复制，以及 DPA attention 后进入 MoE 前的聚合和返回分发；SGLang 大规模 EP 官方说明进一步确认 DPA 可与混合 DP/TP 及 Router 驱动的 Expert Parallelism 组合。
+- 内容与数学：矩阵/张量维度和 KV 内存公式全部经共享 `MathFormula`/KaTeX 渲染；公式明确区分单 Rank footprint、集群 footprint 和复制因子。文案删除“灾难复制”“完美切块”“MoE 必须 TP”等绝对结论，并显示固定四 Rank、Decode-only、非 profiler 的教学边界。
+- 模型与工程回归：`npm run check:dpa` 遍历标准 TP、DPA+TP、DPA+EP 的全部合法步骤并验证 Q/KV 来源、阶段映射与 `100/400/4`、`25/100/1` 指标；QA matrix helper 通过（9 cases，5 个受影响维度）；模块 convention checker 9/9、0 warning。
+- 浏览器证据：标准 TP 完整推进后显示四份 KV 和完成态；DPA+TP 依次出现 All-Gather、TP-FFN、Reduce-Scatter；DPA+EP 依次出现 Router + Top-k、Expert Shard、All-to-All Dispatch/Combine。中英文控制与指标完成实页切换；控制台仅有 Vite debug 和 React DevTools info，无 warning/error。
+- 响应式证据：1280px 桌面保留 7:5 主结构；四 Rank 密集画布继续使用带显式提示的内部横向滚动，修复了 oversized 子画布居中导致左端不可达的问题。实际 `768×900` 与 `390×844` CSS viewport 下，页面 `scrollWidth == clientWidth`，顶栏控件交叠数为 0；390px 下图标版 Next 仍保留中文 `aria-label`。
+
+### 2026-07-18 — DpAttention：压缩四 Rank 画布并显式展示通信后矩阵
+
+- 结构契约：本轮仅修改左侧主画布内部的密度和状态证据；顶部控制、7:5 主区比例、四 Rank 泳道、右侧伪代码、底部解析以及既有时间线均保持不变。
+- 宽度修复：四 Rank 内层最小宽度由 760px 降为 520px，列间距和卡片 padding 同步压缩；维度图例改为 KaTeX 符号加短说明，长标题改为允许两行的紧凑标签。1280px 下左画布 scroller 从 `clientWidth=538 / scrollWidth=941` 改为 `538 / 538`，Rank 0–3 各约 126px 并全部同时可见。
+- 标签修复：`KV 压缩投影`、`Q / 吸收投影`、`MLA KV Cache`、MoE Up/Down 等名称改为画布级短标签；实现与边界说明仍保留在伪代码和解析区。中英文代表性 MLA/MoE 状态的叶节点 `scrollWidth > clientWidth` 数量均为 0。
+- 输出证据：DPA 的 Reduce-Scatter 与 All-to-All Combine 阶段继续复用原通信连线和四 Rank 终点，但最终 `subset` 的 6px 色带改为每 Rank 一个 3×4 本地矩阵；操作节点同时显示“每个 Rank 取回”与 `[B/4,S,H]`。两条路径均验证存在 4 个矩阵、每个 12 个单元，颜色与请求归属 Rank 一致。
+- 响应式：390×844 英文状态无页面级溢出、控制交叠数为 0；主画布 `clientWidth=309 / scrollWidth=520`，保留带文字提示的有意内部横向滚动。桌面不再显示不必要的滚动提示。
+- 回归：`check:dpa` 增加 520px 密度契约、禁止 760px 回归、`localMatrix` 与返回语义标签断言；QA matrix 继续通过 9 cases / 5 dimensions，模块 convention checker 9/9、0 warning，Vite 生产构建通过（1894 modules）。
