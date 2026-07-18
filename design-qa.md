@@ -396,3 +396,24 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 汇聚间距：桥接区由 64px 增至 80px，`E_t=Concat(E_{t,2},E_{t,3})` 汇聚框下移；其顶边与上层检索卡底边从 −2.4px 重叠改为 +13.6px 间隔，双 channel 连线仍从两侧汇入并连续下行至 `E_t`。
 - 响应式与语言：`768×900` 和 `390×844` 页面均无页面级横向溢出；移动端分别检查左右半幅，内部滚动范围维持 399px，紧凑节点没有产生新的裁切或碰撞。中英文标题及语义带文案均完成复核。
 - 回归：`check:engram` 增加 80px bridge、32px 核心算子和紧凑 Conv1D 的源断言；canonical 生命周期、convention checker、QA matrix、生产构建与浏览器 console 继续作为交付门槛。
+
+### 2026-07-18 — RadixCache：修正容量淘汰、引用锁与前缀复用指标
+
+- 变更分类与结构契约：本轮是局部修复与时间线扩展。保留“顶部控制 → Incoming Requests → 左侧逻辑树/线性布局与物理池 → 右侧运行时伪代码 → 底部原理解析”的区域顺序、3:2 主区比例、模式切换和响应式阅读顺序；新增请求 D、容量缺口和指标证据均嵌入原有区域，没有替换页面信息架构。
+- canonical 模型：新增 `radix-cache/model.js`，统一派生两种模式的请求状态、树节点、成对 KV 槽位、`lock_ref`、容量缺口、累计复用率和伪代码高亮。标准模式使用 8 个生命周期状态；Radix 模式使用 13 个状态，把 match、split、insert/acquire、finish/release、capacity check、evict 和重新分配按依赖顺序分开。
+
+#### Claim ledger
+
+| Claim | 领域模型与可见证据 | 边界 |
+|---|---|---|
+| 淘汰由待分配需求产生，而不是必须等池占满 | 请求 D 需要 5 个槽位；Radix 压力态显示 `used=6, free=4, shortage=1`，标准对照显示 `used=8, free=2, shortage=3` | 固定 10 个成对 KV 槽位、`page_size=4 tokens` 仅是教学参数 |
+| 活动请求保护最后节点及祖先，请求完成后释放 | A/B/C/D 分别在处理态显示 3/3/2/5 个锁定槽位，紧随的完成态均回到 0；树节点与物理池同步 | 表达 SGLang 核心 `inc_lock_ref/dec_lock_ref` 生命周期，不复刻所有调度器并发细节 |
+| LRU 只能回收未锁定叶子，并按实际缺口回收 | 压力态把 A 后缀标为 `lock_ref=0` 的 LRU 候选；淘汰一步后 `used=5, free=5, shortage=0, evicted=1` | 只演示一个候选叶子与一次级联检查，不声称覆盖所有 eviction policy |
+| 前缀命中率不应随物理淘汰虚增 | 指标改为 `reused prompt tokens / arrived prompt tokens`；淘汰前后均为 `8/52=15.4%` | 展示累计 Prompt Token 口径，不冒充请求吞吐或 KV byte 节省率 |
+| 容量按 K/V 槽位对计数 | K/V 两行继续保留，但顶部明确每一列是同一 page 的 K/V 槽位对，容量按 10 列计数 | 不把 10 列误写成 20 个可独立分配的块 |
+
+- 实现证据：伪代码增加分配前 deficit 计算、`cache_finished_req → dec_lock_ref`、未命中后缀分配以及未锁定叶子的 LRU 回收；中英文注释全部走 i18n。文案删除“零开销”“完全不搬运”和“传统缓存必然连续分配”等绝对化表述，明确 KV 不重算但树、索引与引用计数仍有元数据开销。
+- 设计与可访问性：四个请求在原 Incoming Requests 中显示 Waiting/Matching/Running/Done/Capacity Check 等生命周期；容量缺口复用原主画布 KPI 区；物理池继续保留 K/V 两行和内部横向滚动。模式、语言、重置、播放与单步按钮补充 `aria-pressed/aria-label`，完成态 Next 禁用且 Play 变为 Replay。
+- 模型回归：`npm run check:radix` 遍历两种模式的全部合法步骤，验证槽位上限、唯一 active 节点、D 的非连续分配引用、淘汰前后指标不变和完整锁生命周期。QA matrix helper 通过（6 cases，覆盖 mode/language/viewport/state 的指定交叉积）；模块 convention checker 9/9、0 warning。
+- 浏览器证据：中文 Radix 压力态显示 `6/10、需要 5、空闲 4、缺口 1`，共享前缀/B/C 均为 `lock_ref=0`，A 后缀标为 LRU candidate；下一步显示 `5/10、空闲 5、缺口 0、已淘汰 1`；D 分配后为 `10/10`，最终请求和所有树节点解锁。标准模式最终显示 `8/10、需要 5、空闲 2、缺口 3`。英文 Radix/Standard 的请求、指标与伪代码均完成实页复核，无残留中文注释。
+- 响应式限制：修改前原页面已在 390/768/1024 宽度验证无 body 级溢出；本轮新增请求行使用 `flex-col → sm:flex-row`，容量证据使用 `2 → 4` 列，主区和物理池仍沿用原断点与有意内部滚动。本轮浏览器的 viewport override 未实际改变 CSS viewport，因此没有把新的移动端状态误报为已渲染通过；后续人工确认时应重点检查四请求长 Token 行、三根树节点和成对槽位横向滚动。

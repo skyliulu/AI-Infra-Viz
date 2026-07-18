@@ -1,5 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, SkipForward, RotateCcw, Database, Network, GitMerge, Trash2, Code, Activity, Lock, Unlock, ArrowDownToLine, Grid2X2, SplitSquareHorizontal, Info } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Play, Pause, SkipForward, RotateCcw, Database, Network, Trash2, Code, Activity, Lock, Unlock, ArrowDownToLine, Grid2X2, SplitSquareHorizontal, Info } from 'lucide-react';
+import { MathFormula } from './linear-attention/MathFormula';
+import {
+  deriveRadixCacheState,
+  MODE_MAX_STEPS,
+  RADIX_PREFIX_TOKENS,
+  RADIX_REQUESTS,
+  RADIX_SUFFIX_A_TOKENS,
+  TOTAL_KV_SLOTS,
+} from './radix-cache/model';
 
 const i18n = {
   zh: {
@@ -14,22 +23,32 @@ const i18n = {
     play: '播放',
     next: '下一步',
     
-    // Steps
-    step0: '等待请求接入...',
-    step1: '1. 请求 A 到达 (前缀 + 后缀 A)',
-    step2: '2. 请求 A 完成 (解除锁定，保留物理缓存)',
-    step3: '3. 请求 B 到达 (相同前缀 + 新后缀 B)',
-    step4: '4. 前缀匹配与动态分裂 (Lazy Splitting)',
-    step5: '5. 挂载后缀并复用物理块 (零显存冗余)',
-    step6: '6. 请求 C 到达 (全新请求，无复用)',
-    step7: '7. 显存告急！触发 Evict (淘汰) 机制',
-    step8: '8. 驱逐无引用的 LRU 叶子节点 (释放物理块)',
-    step9: '9. 级联检查 (No Merge): 保留单链，父节点若空则入堆',
+    standardStep0: '等待请求接入...',
+    standardStep1: '1. 请求 A 分配独立 KV 槽位',
+    standardStep2: '2. 请求 A 完成，缓存保留且解除锁定',
+    standardStep3: '3. 请求 B 再次分配相同前缀的 KV 槽位',
+    standardStep4: '4. 请求 B 完成，重复前缀仍占用物理槽位',
+    standardStep5: '5. 请求 C 分配两个新 KV 槽位',
+    standardStep6: '6. 请求 C 完成，当前占用 8/10 个槽位',
+    standardStep7: '7. 请求 D 需要 5 个槽位，仅剩 2 个，无法接纳',
+    radixStep0: '等待请求接入...',
+    radixStep1: '1. 请求 A 插入树并锁定当前路径',
+    radixStep2: '2. 请求 A 完成，路径解除锁定但缓存保留',
+    radixStep3: '3. 请求 B 命中 8/12 个前缀 Token',
+    radixStep4: '4. 在匹配边界分裂压缩节点并锁定共享前缀',
+    radixStep5: '5. 仅为请求 B 的新后缀分配一个 KV 槽位',
+    radixStep6: '6. 请求 B 完成，共享前缀与后缀均解除锁定',
+    radixStep7: '7. 请求 C 无前缀命中，分配两个新槽位',
+    radixStep8: '8. 请求 C 完成；请求 D 进入等待队列',
+    radixStep9: '9. 请求 D 需要 5 个槽位，仅剩 4 个，缺口为 1',
+    radixStep10: '10. 淘汰未锁定的 LRU 叶子 A，空闲槽位增至 5',
+    radixStep11: '11. 为请求 D 分配 5 个空闲槽位并锁定路径',
+    radixStep12: '12. 请求 D 完成，所有缓存节点均可参与后续 LRU',
     
     // UI Elements
     memUsage: '显存池占用 (物理块)',
     lockRef: '引用锁',
-    hitRate: '全局命中率',
+    hitRate: '累计前缀复用率',
     savedMem: '节省显存块',
     logicalLayout: '逻辑层：Memory Layout',
     physicalPool: '物理层：底层 KV Cache 显存池',
@@ -46,25 +65,65 @@ const i18n = {
     reqA: '请求 A',
     reqB: '请求 B',
     reqC: '请求 C',
+    reqD: '请求 D',
     blks: '块',
     tokens: '词元',
+    pairedSlots: '成对 KV 槽位',
+    slotPairNote: '每一列代表同一页的 K/V 槽位对；容量按列计数',
+    kPool: 'K Cache 槽位',
+    vPool: 'V Cache 槽位',
+    capacity: '容量',
+    needs: '需要',
+    free: '空闲',
+    shortage: '缺口',
+    evicted: '已淘汰',
+    requestWaiting: '等待',
+    requestRunning: '处理中',
+    requestDone: '已完成',
+    requestMatching: '匹配前缀',
+    requestSplitting: '分裂节点',
+    requestQueued: '已入队',
+    requestChecking: '容量检查',
+    requestEvicting: '回收槽位',
+    requestBlocked: '容量不足',
+    legendPrefix: '共享前缀',
+    legendA: '请求 A',
+    legendB: '请求 B',
+    legendC: '请求 C',
+    legendD: '请求 D',
+    legendEmpty: '空闲',
+    legendLocked: '锁定',
+    target: 'LRU 候选',
+    matchedTokens: '复用 Token',
+    promptTokens: '已到达 Prompt Token',
+    simplifiedScope: '教学模型：page_size = 4 tokens，10 个成对 KV 槽位',
+    nodeKeyComment: '# 压缩节点对应的 Token 序列',
+    nodeValueComment: '# 映射到成对的物理 KV 槽位',
+    nodeChildrenComment: '# Token 前缀索引的子节点',
+    nodeParentComment: '# 父节点引用',
+    nodeLockComment: '# 活动请求路径引用计数',
+    freeSlotComment: '# 释放成对的物理 KV 槽位',
     pyComment1: '# 线性分配物理块，完全隔离无复用',
     pyComment2: '# 再次分配，前缀部分的物理块完全重复冗余',
     pyComment3: '# 从树根遍历，寻找最长匹配的前缀 Token 序列',
     pyComment4: '# 命中部分 Token，按 prefix_len 切分原节点的 key 和 value',
-    pyComment5: '# 将新请求的后缀挂载，底层物理块不再重复申请',
-    pyComment6: '# 显存不足，从可驱逐堆中弹出最少使用的节点并释放物理块',
+    pyComment5: '# 仅为未命中的后缀分配槽位，并增加活动路径引用',
+    pyComment6: '# 待分配槽位大于空闲槽位时，从可驱逐叶子中选择 LRU',
     pyComment9: '# SGLang不主动合并，仅当父节点变为空叶子时入堆',
+    pyCommentFinish: '# 请求完成时递减最后节点及其祖先的 lock_ref',
+    pyCommentCapacity: '# 分配前计算缺口，而不是等待池占用达到 100%',
     
     // Deep Dive
     memWallTitle: '传统 KV Cache 的显存黑洞',
-    memWallDesc: '在并发请求中，多个请求往往共享相同的 System Prompt 或长文档（如 RAG 场景）。传统的 KV Cache 为每个请求独立分配连续的物理显存块，导致大量完全相同的 KV Tensor 冗余，极大地限制了并发量（Batch Size）。',
+    memWallDesc: '本页用“每个请求独立持有 KV 槽位”作为对照基线。并发请求共享 System Prompt 或长文档时，这种基线会重复保存相同前缀；真实引擎是否连续分配取决于其分页与分配器实现。',
     radixTreeTitle: '1. 基数树 (Radix Tree) 逻辑共享',
-    radixTreeDesc: '将 KV Cache 升级为全局树。具有相同 Token ID 前缀的请求在物理显存中只存一份，后续请求的逻辑节点直接将指针映射到已有的物理块（PagedAttention）上，实现零额外开销。',
+    radixTreeDesc: 'Radix Tree 将 Token 前缀映射到已有 KV 槽位。相同前缀无需重新计算或重复分配 KV；树查询、索引和引用计数仍会产生元数据开销。',
     lazySplitTitle: '2. 动态分裂 (Lazy Splitting)',
-    lazySplitDesc: '为了减少树的层级开销，多个 Token 被压缩在同一个节点中。当新请求的 Token 序列只匹配了当前节点的前半部分时，系统会动态调用 _split_node 将其切分成两个节点，这保证了最细粒度的复用且不产生数据搬运。',
+    lazySplitDesc: '多个 Token 可压缩在同一个节点中。部分命中时，_split_node 在匹配边界拆分节点并复用既有 KV 槽位；无需重算 KV，但仍要切分 key/value 索引等元数据。',
     evictTitle: '3. 引用计数与物理块回收',
-    evictDesc: '引入 lock_ref 机制。当请求正在处理时，路径节点加锁（物理块受保护）。请求结束，锁释放。当显存池告急时，系统根据 LRU 策略，从底层“叶子节点”向上修剪，调用 allocator.free 真正释放物理显存块。',
+    evictDesc: '活动请求会增加最后节点及祖先的 lock_ref，请求完成后对应递减。新分配出现容量缺口时，系统按 LRU 从 lock_ref=0 的叶子开始回收，并在父节点成为未锁定叶子时继续级联。',
+    metricTitle: '指标口径',
+    metricDesc: '累计前缀复用率 = 已复用 Prompt Token / 已到达 Prompt Token。它不依赖当前缓存占用，因此淘汰无关节点不会让命中率虚增。',
   },
   en: {
     title: 'Radix Cache Principle Visualization',
@@ -78,23 +137,34 @@ const i18n = {
     play: 'Play',
     next: 'Next',
     
-    step0: 'Waiting for requests...',
-    step1: '1. Req A Arrives (Prefix + Suffix A)',
-    step2: '2. Req A Finishes (Unlocked, keep blocks)',
-    step3: '3. Req B Arrives (Same Prefix + New Suffix B)',
-    step4: '4. Prefix Match & Lazy Splitting',
-    step5: '5. Mount Suffix & Reuse Blocks (Zero Redundancy)',
-    step6: '6. Req C Arrives (New Request, No Match)',
-    step7: '7. OOM Warning! Trigger Evict Mechanism',
-    step8: '8. Evict Unreferenced LRU Leaf (Free blocks)',
-    step9: '9. Cascade Check (No Merge): Push parent if it becomes empty',
+    standardStep0: 'Waiting for requests...',
+    standardStep1: '1. Allocate independent KV slots for Request A',
+    standardStep2: '2. Request A finishes; keep its cache and release locks',
+    standardStep3: '3. Allocate the same prefix again for Request B',
+    standardStep4: '4. Request B finishes; duplicated prefix slots remain',
+    standardStep5: '5. Allocate two new KV slots for Request C',
+    standardStep6: '6. Request C finishes; 8 of 10 slots are occupied',
+    standardStep7: '7. Request D needs 5 slots but only 2 are free',
+    radixStep0: 'Waiting for requests...',
+    radixStep1: '1. Insert Request A and lock its active path',
+    radixStep2: '2. Request A finishes; unlock the path and retain cache',
+    radixStep3: '3. Request B matches 8 of 12 prompt tokens',
+    radixStep4: '4. Split the compressed node at the match boundary',
+    radixStep5: '5. Allocate one KV slot only for Request B’s new suffix',
+    radixStep6: '6. Request B finishes; release prefix and suffix locks',
+    radixStep7: '7. Request C has no match and allocates two new slots',
+    radixStep8: '8. Request C finishes; Request D enters the queue',
+    radixStep9: '9. Request D needs 5 slots; 4 are free, so 1 is missing',
+    radixStep10: '10. Evict unlocked LRU leaf A; free capacity becomes 5',
+    radixStep11: '11. Allocate 5 free slots for Request D and lock its path',
+    radixStep12: '12. Request D finishes; all nodes become LRU-eligible',
     
     memUsage: 'Memory Pool (Blocks)',
     lockRef: 'Lock Ref',
-    hitRate: 'Cache Hit Rate',
+    hitRate: 'Cumulative Prefix Reuse',
     savedMem: 'Saved Blocks',
     logicalLayout: 'Logical: Memory Layout',
-    physicalPool: 'Physical: Underly KV Cache Pool',
+    physicalPool: 'Physical: Underlying KV Cache Pool',
     underlyingCode: 'Python Pseudocode & Core Structures',
     principleAnalysis: 'Deep Principle Analysis',
     incomingReq: 'Incoming Requests Stream',
@@ -108,316 +178,144 @@ const i18n = {
     reqA: 'Req A',
     reqB: 'Req B',
     reqC: 'Req C',
+    reqD: 'Req D',
     blks: 'Blks',
     tokens: 'Tokens',
+    pairedSlots: 'Paired KV Slots',
+    slotPairNote: 'Each column is one K/V slot pair for the same page; capacity counts columns.',
+    kPool: 'K Cache Slots',
+    vPool: 'V Cache Slots',
+    capacity: 'Capacity',
+    needs: 'Needs',
+    free: 'Free',
+    shortage: 'Short',
+    evicted: 'Evicted',
+    requestWaiting: 'Waiting',
+    requestRunning: 'Running',
+    requestDone: 'Done',
+    requestMatching: 'Matching',
+    requestSplitting: 'Splitting',
+    requestQueued: 'Queued',
+    requestChecking: 'Capacity check',
+    requestEvicting: 'Reclaiming',
+    requestBlocked: 'Insufficient capacity',
+    legendPrefix: 'Shared prefix',
+    legendA: 'Request A',
+    legendB: 'Request B',
+    legendC: 'Request C',
+    legendD: 'Request D',
+    legendEmpty: 'Free',
+    legendLocked: 'Locked',
+    target: 'LRU candidate',
+    matchedTokens: 'Reused Tokens',
+    promptTokens: 'Arrived Prompt Tokens',
+    simplifiedScope: 'Teaching model: page_size = 4 tokens, 10 paired KV slots',
+    nodeKeyComment: '# Token sequence stored in a compressed node',
+    nodeValueComment: '# Maps to paired physical KV slots',
+    nodeChildrenComment: '# Children indexed by token prefixes',
+    nodeParentComment: '# Parent node reference',
+    nodeLockComment: '# Active-request path reference count',
+    freeSlotComment: '# Release paired physical KV slots',
     pyComment1: '# Linear block allocation, isolated, no reuse',
     pyComment2: '# Allocate again, prefix blocks are entirely duplicated',
     pyComment3: '# Traverse from root to find longest matching prefix tokens',
     pyComment4: '# Partial match found, execute lazy split on node.key and node.value',
-    pyComment5: '# Mount new suffix, underlying physical blocks are NOT duplicated',
-    pyComment6: '# OOM: pop least used node from heap and free physical blocks',
+    pyComment5: '# Allocate only the unmatched suffix and acquire its active path',
+    pyComment6: '# If required slots exceed free slots, choose an evictable LRU leaf',
     pyComment9: '# SGLang skips merge, pushes parent to heap if childless',
+    pyCommentFinish: '# On completion, decrement lock_ref on the last node and ancestors',
+    pyCommentCapacity: '# Compute the deficit before allocation; the pool need not be 100% full',
     
     memWallTitle: 'The Memory Black Hole of Traditional KV Cache',
-    memWallDesc: 'In concurrent requests, many share the same System Prompt or long documents (e.g., RAG). Traditional KV Cache allocates independent memory blocks for each request, causing massive redundancy of identical KV Tensors, severely limiting concurrency (Batch Size).',
+    memWallDesc: 'This page uses per-request KV ownership as a comparison baseline. Shared system prompts or documents duplicate prefix KV under that policy; whether blocks are contiguous depends on the real engine allocator and paging design.',
     radixTreeTitle: '1. Radix Tree Logical Sharing',
-    radixTreeDesc: 'Upgrades to a global tree. Requests with identical Token ID prefixes store only one physical copy. Subsequent requests directly map their logical node pointers to existing physical blocks (PagedAttention), achieving zero-overhead reuse.',
+    radixTreeDesc: 'The radix tree maps token prefixes to existing KV slots. Matching prefixes avoid KV recomputation and duplicate allocation, while tree lookup, indexing, and reference counting still incur metadata work.',
     lazySplitTitle: '2. Lazy Splitting',
-    lazySplitDesc: 'To reduce tree hierarchy overhead, multiple tokens are compressed into a single node. When a new request matches only the first half of a node, the system dynamically calls _split_node to divide it into two. This ensures fine-grained reuse without data moving.',
+    lazySplitDesc: 'Multiple tokens may share one compressed node. On a partial match, _split_node divides it at the boundary and reuses the existing KV slots. KV is not recomputed, but key/value indices and other metadata are sliced.',
     evictTitle: '3. Ref Counting & Physical Reclaim',
-    evictDesc: 'Introduces lock_ref. Nodes are locked (blocks protected) while a request processes and unlocked when done. When memory is low, LRU strategies prune from "leaf nodes" up, calling allocator.free to physically reclaim VRAM blocks.',
+    evictDesc: 'An active request increments lock_ref on its last node and ancestors, then decrements them on completion. When a new allocation has a deficit, LRU reclaims unlocked leaves and cascades when the parent becomes an unlocked leaf.',
+    metricTitle: 'Metric Definition',
+    metricDesc: 'Cumulative prefix reuse = reused prompt tokens / arrived prompt tokens. It is independent of current occupancy, so evicting an unrelated node cannot inflate the rate.',
   }
 };
 
 const getInitialLang = () => (typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().includes('zh') ? 'zh' : 'en');
 
-// ==========================================
-// Strict Ratio: 4 Tokens = 1 Block
-// ==========================================
-const PREFIX_TOKENS = '[1, 93, 24, 15, 8, 304, 11, 42'; // 8 tokens (2 Blocks)
-const SUFFIX_A_TOKENS = ', 19, 7, 501, 8]'; // 4 tokens (1 Block)
-const SUFFIX_B_TOKENS = ', 66, 31, 9, 102]'; // 4 tokens (1 Block)
-const REQC_TOKENS = '[55, 91, 19, 23, 77, 88, 12, 34]'; // 8 tokens (2 Blocks)
-
-const REQS = {
-  A: { full: PREFIX_TOKENS + SUFFIX_A_TOKENS, color: 'emerald', blocks: 3, prefixBlocks: 2, suffixBlocks: 1, tkCount: 12 },
-  B: { full: PREFIX_TOKENS + SUFFIX_B_TOKENS, color: 'amber', blocks: 3, prefixBlocks: 2, suffixBlocks: 1, tkCount: 12 },
-  C: { full: REQC_TOKENS, color: 'rose', blocks: 2, prefixBlocks: 0, suffixBlocks: 2, tkCount: 8 }
-};
-
-const TOTAL_BLOCKS = 10;
-
 const App = () => {
-  const [modelType, setModelType] = useState('radix'); 
-  const [step, setStep] = useState(0); 
+  const [modelType, setModelType] = useState('radix');
+  const [phase, setPhase] = useState('idle');
+  const [step, setStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [lang, setLang] = useState(getInitialLang());
   const t = (k) => i18n[lang][k] ?? k;
+  const snapshot = useMemo(
+    () => deriveRadixCacheState({ mode: modelType, step, phase }),
+    [modelType, phase, step],
+  );
+  const pState = snapshot.pool;
+  const treeData = snapshot.tree;
 
-  // Derive block states from current step and modelType
-  const getBlockStates = () => {
-    let blocks = Array(TOTAL_BLOCKS).fill({ status: 'empty' });
-    let usedCount = 0;
-    let savedCount = 0;
+  const reset = useCallback(() => {
+    setStep(0);
+    setPhase('idle');
+    setIsPlaying(false);
+  }, []);
 
-    if (modelType === 'standard') {
-      let cursor = 0;
-      if (step >= 1) { // Req A (3 blocks)
-        for(let i=0; i<REQS.A.blocks; i++) {
-          blocks[cursor] = { status: 'used', color: i < REQS.A.prefixBlocks ? 'indigo' : REQS.A.color, seq: 'A', locked: step === 1, idx: cursor };
-          cursor++;
-        }
-      }
-      if (step >= 3) { // Req B (3 blocks)
-        for(let i=0; i<REQS.B.blocks; i++) {
-          if (cursor < TOTAL_BLOCKS) {
-             blocks[cursor] = { status: 'used', color: i < REQS.B.prefixBlocks ? 'indigo' : REQS.B.color, seq: 'B', locked: true, isDup: i < REQS.B.prefixBlocks, idx: cursor };
-             cursor++;
-          }
-        }
-      }
-      if (step >= 6) { // Req C (2 blocks)
-        for(let i=0; i<REQS.C.blocks; i++) {
-          if (cursor < TOTAL_BLOCKS) {
-            blocks[cursor] = { status: 'used', color: REQS.C.color, seq: 'C', locked: true, idx: cursor };
-            cursor++;
-          }
-        }
-      }
-      usedCount = cursor;
-    } else {
-      // Radix Model
-      let cursor = 0;
-      if (step >= 1) {
-        // Prefix (2 blocks)
-        for(let i=0; i<REQS.A.prefixBlocks; i++) {
-          const isLocked = step === 1 || step >= 5; 
-          blocks[cursor] = { status: 'used', color: 'indigo', seq: 'P', locked: isLocked, idx: cursor };
-          cursor++;
-        }
-        // Req A Suffix (1 block)
-        for(let i=0; i<REQS.A.suffixBlocks; i++) {
-           if (step < 8) { // if not evicted
-             blocks[cursor] = { status: step === 7 ? 'targeted' : 'used', color: REQS.A.color, seq: 'A', locked: step === 1, idx: cursor };
-           }
-           cursor++; 
-        }
-      }
-      if (step >= 5) { // Req B Suffix (1 block)
-        for(let i=0; i<REQS.B.suffixBlocks; i++) {
-          blocks[cursor] = { status: 'used', color: REQS.B.color, seq: 'B', locked: true, idx: cursor };
-          cursor++;
-        }
-        savedCount = REQS.B.prefixBlocks; // Saved 2 blocks
-      }
-      if (step >= 6) { // Req C (2 blocks)
-        for(let i=0; i<REQS.C.blocks; i++) {
-          if (cursor < TOTAL_BLOCKS) {
-             blocks[cursor] = { status: 'used', color: REQS.C.color, seq: 'C', locked: true, idx: cursor };
-             cursor++;
-          }
-        }
-      }
-      
-      usedCount = blocks.filter(b => b.status === 'used' || b.status === 'targeted').length;
+  const handleNextStep = useCallback(() => {
+    const maxStep = MODE_MAX_STEPS[modelType];
+    const nextStep = Math.min(step + 1, maxStep);
+    setStep(nextStep);
+    setPhase(nextStep === maxStep ? 'done' : 'running');
+    if (nextStep === maxStep) setIsPlaying(false);
+  }, [modelType, step]);
+
+  const togglePlay = useCallback(() => {
+    if (phase === 'done') {
+      setStep(0);
+      setPhase('running');
+      setIsPlaying(true);
+      return;
     }
+    setPhase((currentPhase) => currentPhase === 'idle' ? 'running' : currentPhase);
+    setIsPlaying((playing) => !playing);
+  }, [phase]);
 
-    const hitRate = savedCount > 0 ? ((savedCount / (usedCount + savedCount)) * 100).toFixed(1) + '%' : '0.0%';
-
-    return { blocks, usedCount, savedCount, hitRate };
-  };
-
-  const pState = getBlockStates();
-
-  // Define Tree Structure Data depending on step
-  const getRadixTreeData = () => {
-    if (step === 0) return { root: [] };
-    
-    if (step === 1 || step === 2) {
-      return {
-        root: [
-          { 
-            id: 'n1', 
-            tokens: REQS.A.full, 
-            label: t('reqA'),
-            lock: step === 1 ? 1 : 0,
-            active: step === 1,
-            isNew: step === 1,
-            color: 'indigo',
-            blockRefs: [0, 1, 2]
-          }
-        ]
-      };
-    }
-
-    if (step === 3) {
-      return {
-        root: [
-          { 
-            id: 'n1', 
-            tokens: REQS.A.full, 
-            label: t('reqA'),
-            lock: 0,
-            active: true, 
-            highlightPrefix: true,
-            color: 'indigo',
-            blockRefs: [0, 1, 2]
-          }
-        ]
-      };
-    }
-
-    if (step === 4 || step === 5) {
-      return {
-        root: [
-          {
-            id: 'n1a',
-            tokens: PREFIX_TOKENS + ']',
-            label: t('prefixNode'),
-            lock: step === 5 ? 2 : 1, 
-            active: true,
-            splitAnim: step === 4,
-            color: 'indigo',
-            blockRefs: [0, 1],
-            children: [
-              { 
-                id: 'n1b', 
-                tokens: '[' + SUFFIX_A_TOKENS.substring(2),
-                label: t('reqASuffix'),
-                lock: 0, 
-                active: false,
-                color: REQS.A.color,
-                blockRefs: [2]
-              },
-              ...(step === 5 ? [{
-                id: 'n2',
-                tokens: '[' + SUFFIX_B_TOKENS.substring(2),
-                label: t('reqBSuffix'),
-                lock: 1,
-                active: true,
-                isNew: true,
-                color: REQS.B.color,
-                blockRefs: [3]
-              }] : [])
-            ]
-          }
-        ]
-      };
-    }
-
-    if (step >= 6 && step <= 8) {
-      return {
-        root: [
-          {
-            id: 'n1a',
-            tokens: PREFIX_TOKENS + ']',
-            label: t('prefixNode'),
-            lock: 1, 
-            active: false,
-            color: 'indigo',
-            blockRefs: [0, 1],
-            children: [
-              ...(step < 8 ? [{ 
-                id: 'n1b', 
-                tokens: '[' + SUFFIX_A_TOKENS.substring(2),
-                label: t('reqASuffix'),
-                lock: 0, 
-                active: false,
-                evictWarning: step === 7,
-                color: REQS.A.color,
-                blockRefs: [2]
-              }] : []),
-              {
-                id: 'n2',
-                tokens: '[' + SUFFIX_B_TOKENS.substring(2),
-                label: t('reqBSuffix'),
-                lock: 1,
-                active: false,
-                color: REQS.B.color,
-                blockRefs: [3]
-              }
-            ]
-          },
-          {
-            id: 'n3',
-            tokens: REQS.C.full,
-            label: t('reqC'),
-            lock: 1,
-            active: step === 6,
-            isNew: step === 6,
-            color: REQS.C.color,
-            blockRefs: [4, 5]
-          }
-        ]
-      };
-    }
-
-    if (step >= 9) {
-      return {
-        root: [
-          {
-            id: 'n1a',
-            tokens: PREFIX_TOKENS + ']',
-            label: t('prefixNode'),
-            lock: 1, 
-            active: true,
-            color: 'indigo',
-            blockRefs: [0, 1],
-            children: [
-              {
-                id: 'n2',
-                tokens: '[' + SUFFIX_B_TOKENS.substring(2),
-                label: t('reqBSuffix'),
-                lock: 1,
-                active: true,
-                color: REQS.B.color,
-                blockRefs: [3]
-              }
-            ]
-          },
-          {
-            id: 'n3',
-            tokens: REQS.C.full,
-            label: t('reqC'),
-            lock: 1,
-            active: false,
-            color: 'rose',
-            blockRefs: [4, 5]
-          }
-        ]
-      };
-    }
-
-    return { root: [] };
-  };
-
-  const treeData = getRadixTreeData();
-
-  // Auto playback logic
   useEffect(() => {
-    let timer;
-    if (isPlaying) {
-      const maxSteps = modelType === 'standard' ? 6 : 9;
-      if (step < maxSteps) {
-        let delay = 3500;
-        if (step === 4 || step === 7 || step === 8) delay = 2500; 
-        timer = setTimeout(() => setStep(s => s + 1), delay);
-      } else {
-        setIsPlaying(false);
-      }
-    }
+    if (!isPlaying || phase === 'done') return undefined;
+    const delay = ['split', 'capacity', 'evict'].includes(snapshot.activeCode) ? 2400 : 3200;
+    const timer = setTimeout(handleNextStep, delay);
     return () => clearTimeout(timer);
-  }, [isPlaying, step, modelType]);
+  }, [handleNextStep, isPlaying, phase, snapshot.activeCode]);
 
   const handleModelTypeChange = (type) => {
     if (type !== modelType) {
       setModelType(type);
       setStep(0);
+      setPhase('idle');
       setIsPlaying(false);
     }
   };
 
-  const getStepText = () => t(`step${Math.min(step, modelType === 'standard' && step > 6 ? 6 : 9)}`);
+  const getStepText = () => t(snapshot.stepKey);
+
+  const requestStatusKey = {
+    waiting: 'requestWaiting',
+    running: 'requestRunning',
+    done: 'requestDone',
+    matching: 'requestMatching',
+    splitting: 'requestSplitting',
+    queued: 'requestQueued',
+    checking: 'requestChecking',
+    evicting: 'requestEvicting',
+    blocked: 'requestBlocked',
+  };
+  const requestTone = {
+    A: 'bg-emerald-900/50 text-emerald-300 border-emerald-700/50',
+    B: 'bg-amber-900/50 text-amber-300 border-amber-700/50',
+    C: 'bg-rose-900/50 text-rose-300 border-rose-700/50',
+    D: 'bg-sky-900/50 text-sky-300 border-sky-700/50',
+  };
+  const requestById = Object.fromEntries(snapshot.requests.map((request) => [request.id, request]));
 
   // Vertical Tree Node Renderer
   const TreeNode = ({ node, isFirst = false, isLast = false, hasSiblings = false }) => {
@@ -426,10 +324,11 @@ const App = () => {
       emerald: 'bg-emerald-50 border-emerald-300 text-emerald-800',
       amber: 'bg-amber-50 border-amber-300 text-amber-800',
       rose: 'bg-rose-50 border-rose-300 text-rose-800',
+      sky: 'bg-sky-50 border-sky-300 text-sky-800',
     };
     
     return (
-      <div className="flex flex-col items-center relative group animate-fade-in-fast">
+      <div className="flex flex-col items-center relative group animate-radix-fade-in-fast">
         {/* Vertical line from horizontal branch to this node */}
         {!isRoot(node) && <div className="w-px h-6 bg-slate-300 absolute -top-6 left-1/2 -translate-x-1/2 z-0"></div>}
         
@@ -466,17 +365,17 @@ const App = () => {
             <span className={`font-mono text-xs font-bold leading-relaxed break-all ${node.highlightPrefix ? 'text-indigo-600' : ''}`}>
                {node.highlightPrefix ? (
                  <>
-                   <span className="bg-indigo-100 px-1 py-0.5 rounded inline-block mb-1 border border-indigo-200">{PREFIX_TOKENS}</span>
-                   <span className="opacity-40">{SUFFIX_A_TOKENS}</span>
+                   <span className="bg-indigo-100 px-1 py-0.5 rounded inline-block mb-1 border border-indigo-200">{RADIX_PREFIX_TOKENS}</span>
+                   <span className="opacity-40">{RADIX_SUFFIX_A_TOKENS}</span>
                  </>
                ) : node.tokens}
             </span>
-            {node.evictWarning && <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-rose-200 text-rose-800 font-bold border border-rose-400 absolute -top-3 right-2 shadow-sm z-20"><Trash2 size={10}/> TARGET</span>}
+            {node.evictWarning && <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded bg-rose-200 text-rose-800 font-bold border border-rose-400 absolute -top-3 right-2 shadow-sm z-20"><Trash2 size={10}/> {t('target')}</span>}
           </div>
           
           <div className="flex justify-between items-end mt-1 pt-1.5 border-t border-black/10">
              <div className="flex flex-col">
-               <span className="text-[10px] font-bold opacity-70 uppercase tracking-widest">{node.label}</span>
+               <span className="text-[10px] font-bold opacity-70 uppercase tracking-widest">{t(node.labelKey)}</span>
                <span className="text-[9px] font-mono font-bold text-slate-500 flex items-center gap-1 mt-0.5"><Database size={10}/> {t('blks')}: [{node.blockRefs.join(', ')}]</span>
              </div>
              {/* Lock Indicator Badge */}
@@ -512,8 +411,7 @@ const App = () => {
   };
 
   const isRoot = (node) => {
-    // A simplistic check based on id to avoid passing it deeply
-    return node.id === 'n1' || node.id === 'n1a' || node.id === 'n_merged' || node.id === 'n3';
+    return ['a-full', 'shared-prefix', 'c-root', 'd-root'].includes(node.id);
   };
 
   return (
@@ -530,23 +428,26 @@ const App = () => {
             <p className="text-slate-500 text-[12px] md:text-sm mt-1">
               {t('subtitle')}
             </p>
+            <span className="mt-2 w-fit self-center xl:self-start rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700">
+              {t('simplifiedScope')}
+            </span>
           </div>
           
           <div className="flex flex-wrap items-center justify-center gap-3">
             <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-              <button onClick={() => handleModelTypeChange('standard')} className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] md:text-sm font-semibold rounded-md transition-all ${modelType === 'standard' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-500 hover:text-slate-700'}`}>
+              <button aria-pressed={modelType === 'standard'} onClick={() => handleModelTypeChange('standard')} className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] md:text-sm font-semibold rounded-md transition-all ${modelType === 'standard' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-500 hover:text-slate-700'}`}>
                 <Database size={14} /> {t('standard')}
               </button>
-              <button onClick={() => handleModelTypeChange('radix')} className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] md:text-sm font-semibold rounded-md transition-all ${modelType === 'radix' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>
+              <button aria-pressed={modelType === 'radix'} onClick={() => handleModelTypeChange('radix')} className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] md:text-sm font-semibold rounded-md transition-all ${modelType === 'radix' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>
                 <Network size={14} /> {t('radix')}
               </button>
             </div>
-            <button onClick={() => setLang((prev) => (prev === 'zh' ? 'en' : 'zh'))} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition text-sm font-bold w-10 text-center">{t('langToggle')}</button>
-            <button onClick={() => {setStep(0); setIsPlaying(false)}} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition" title={t('reset')}><RotateCcw size={18} /></button>
-            <button onClick={() => {if(step >= (modelType==='standard'?6:9)) setStep(0); setIsPlaying(!isPlaying);}} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white transition shadow-sm bg-indigo-600 hover:bg-indigo-700`}>
-              {isPlaying ? <Pause size={16} /> : <Play size={16} />} {t('play')}
+            <button aria-label={t('langToggle')} onClick={() => setLang((prev) => (prev === 'zh' ? 'en' : 'zh'))} className="min-w-10 whitespace-nowrap rounded-lg bg-slate-100 px-2 py-2 text-center text-sm font-bold text-slate-600 transition hover:bg-slate-200">{t('langToggle')}</button>
+            <button aria-label={t('reset')} onClick={reset} className="p-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition" title={t('reset')}><RotateCcw size={18} /></button>
+            <button aria-label={isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')} onClick={togglePlay} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white transition shadow-sm bg-indigo-600 hover:bg-indigo-700">
+              {isPlaying ? <Pause size={16} /> : <Play size={16} />} {isPlaying ? t('pause') : phase === 'done' ? t('replay') : t('play')}
             </button>
-            <button onClick={() => { setIsPlaying(false); if(step < (modelType==='standard'?6:9)) setStep(s=>s+1); }} disabled={isPlaying || step >= (modelType==='standard'?6:9)} className="flex items-center gap-2 px-4 py-2 w-32 md:w-48 justify-center rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 text-sm font-bold disabled:opacity-50 transition shadow-sm">
+            <button aria-label={t('next')} onClick={() => { setIsPlaying(false); handleNextStep(); }} disabled={isPlaying || phase === 'done'} className="flex items-center gap-2 px-4 py-2 w-32 md:w-48 justify-center rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 text-sm font-bold disabled:opacity-50 transition shadow-sm">
               <SkipForward size={16} /> <span className="truncate">{t('next')}</span>
             </button>
           </div>
@@ -556,18 +457,18 @@ const App = () => {
         <div className="w-full bg-slate-900 rounded-xl p-4 border border-slate-800 shadow-inner flex flex-col gap-3 relative overflow-hidden">
            <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1.5"><ArrowDownToLine size={14}/> {t('incomingReq')}</div>
            <div className="flex flex-col gap-2">
-             <div className={`text-xs md:text-sm font-mono px-3 py-2 rounded border flex items-center justify-between transition-all ${step >= 1 ? 'bg-emerald-900/50 text-emerald-300 border-emerald-700/50' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
-                <span><strong className="text-white mr-2">{t('reqA')}:</strong> {REQS.A.full}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded ${step >= 1 ? 'bg-emerald-800/50 text-emerald-200' : 'bg-slate-700 text-slate-400'}`}>12 {t('tokens')} | 3 {t('blks')}</span>
-             </div>
-             <div className={`text-xs md:text-sm font-mono px-3 py-2 rounded border flex items-center justify-between transition-all ${step >= 3 ? 'bg-amber-900/50 text-amber-300 border-amber-700/50' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
-                <span><strong className="text-white mr-2">{t('reqB')}:</strong> {REQS.B.full}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded ${step >= 3 ? 'bg-amber-800/50 text-amber-200' : 'bg-slate-700 text-slate-400'}`}>12 {t('tokens')} | 3 {t('blks')}</span>
-             </div>
-             <div className={`text-xs md:text-sm font-mono px-3 py-2 rounded border flex items-center justify-between transition-all ${step >= 6 ? 'bg-rose-900/50 text-rose-300 border-rose-700/50' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
-                <span><strong className="text-white mr-2">{t('reqC')}:</strong> {REQS.C.full}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded ${step >= 6 ? 'bg-rose-800/50 text-rose-200' : 'bg-slate-700 text-slate-400'}`}>8 {t('tokens')} | 2 {t('blks')}</span>
-             </div>
+             {snapshot.requests.map((request) => {
+               const isWaiting = request.status === 'waiting';
+               return (
+                 <div key={request.id} className={`text-xs md:text-sm font-mono px-3 py-2 rounded border flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${isWaiting ? 'bg-slate-800 text-slate-500 border-slate-700' : requestTone[request.id]}`}>
+                   <span className="min-w-0 break-all"><strong className="text-white mr-2">{t(`req${request.id}`)}:</strong> {request.full}</span>
+                   <div className="flex shrink-0 items-center gap-2">
+                     <span className="rounded bg-black/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide">{t(requestStatusKey[request.status])}</span>
+                     <span className={`text-[10px] px-2 py-0.5 rounded ${isWaiting ? 'bg-slate-700 text-slate-400' : 'bg-black/20 text-current'}`}>{request.tokenCount} {t('tokens')} | {request.blocks} {t('blks')}</span>
+                   </div>
+                 </div>
+               );
+             })}
            </div>
         </div>
 
@@ -594,15 +495,15 @@ const App = () => {
                 </div>
 
                 {/* KPI Metrics */}
-                <div className="flex gap-3 mt-2 md:mt-0">
+                <div className="flex flex-wrap justify-end gap-3 mt-2 md:mt-0">
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col items-end min-w-[120px]">
                     <span className="text-[10px] text-slate-500 font-bold uppercase">{t('memUsage')}</span>
-                    <span className={`text-2xl font-black font-mono transition-all ${pState.usedCount > TOTAL_BLOCKS * 0.8 ? 'text-rose-600' : 'text-slate-800'}`}>
-                      {pState.usedCount} <span className="text-xs text-slate-400 font-sans font-normal">/ {TOTAL_BLOCKS}</span>
+                    <span className={`text-2xl font-black font-mono transition-all ${pState.shortage > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                      {pState.usedCount} <span className="text-xs text-slate-400 font-sans font-normal">/ {TOTAL_KV_SLOTS}</span>
                     </span>
                     {/* Progress Bar */}
                     <div className="w-full h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${pState.usedCount > TOTAL_BLOCKS * 0.8 ? 'bg-rose-500' : 'bg-indigo-500'}`} style={{width: `${Math.min(100, (pState.usedCount / TOTAL_BLOCKS) * 100)}%`}}></div>
+                      <div className={`h-full rounded-full transition-all duration-500 ${pState.shortage > 0 ? 'bg-rose-500' : 'bg-indigo-500'}`} style={{width: `${Math.min(100, (pState.usedCount / TOTAL_KV_SLOTS) * 100)}%`}}></div>
                     </div>
                   </div>
                   
@@ -610,13 +511,22 @@ const App = () => {
                     <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex flex-col items-end min-w-[120px] transition-all">
                       <span className="text-[10px] text-emerald-700 font-bold uppercase">{t('hitRate')}</span>
                       <span className="text-2xl font-black font-mono text-emerald-600 flex items-baseline gap-1">
-                        {pState.hitRate}
+                        {pState.prefixReuseRate.toFixed(1)}%
                       </span>
-                      <span className="text-[10px] text-emerald-600 font-bold mt-1">{t('savedMem')}: {pState.savedCount}</span>
+                      <span className="text-[10px] text-emerald-600 font-bold mt-1">{pState.matchedTokens}/{pState.promptTokens} {t('tokens')} · {t('savedMem')}: {pState.savedCount}</span>
                     </div>
                   )}
                 </div>
               </div>
+
+              {pState.allocationNeed > 0 && (
+                <div className={`mb-4 grid grid-cols-2 gap-2 rounded-xl border px-3 py-2 text-center text-[11px] font-bold sm:grid-cols-4 ${pState.shortage > 0 ? 'border-rose-300 bg-rose-50 text-rose-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800'}`}>
+                  <span>{t('needs')}: {pState.allocationNeed}</span>
+                  <span>{t('free')}: {pState.freeCount}</span>
+                  <span>{t('shortage')}: {pState.shortage}</span>
+                  <span>{t('evicted')}: {pState.evictedCount}</span>
+                </div>
+              )}
 
               {/* The Tree / Linear View Container */}
               <div className="bg-slate-50/50 rounded-xl border-2 border-dashed border-slate-200 p-6 overflow-x-auto flex items-start justify-center relative min-h-[350px] scrollbar-thin">
@@ -657,48 +567,61 @@ const App = () => {
                          <span>{t('reqA')}</span>
                          <div className="flex gap-2">
                            <span className="text-[11px] font-mono text-slate-500 border px-1.5 py-0.5 rounded bg-slate-50 flex items-center gap-1"><Database size={10}/> {t('blks')}: [0, 1, 2]</span>
-                           <span className="text-[11px] font-mono text-slate-400 border px-1.5 py-0.5 rounded bg-slate-50">Lock=1</span>
+                           <span className="text-[11px] font-mono text-slate-400 border px-1.5 py-0.5 rounded bg-slate-50">{t('lockRef')}={requestById.A.status === 'running' ? 1 : 0}</span>
                          </div>
                       </div>
                       <div className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-mono px-3 py-2 rounded break-all leading-relaxed">
-                        <span className="bg-indigo-100 text-indigo-800 px-1 rounded border border-indigo-200 font-bold">{PREFIX_TOKENS}</span>
-                        <span className="font-bold">{SUFFIX_A_TOKENS}</span>
+                        <span className="bg-indigo-100 text-indigo-800 px-1 rounded border border-indigo-200 font-bold">{RADIX_PREFIX_TOKENS}</span>
+                        <span className="font-bold">{RADIX_SUFFIX_A_TOKENS}</span>
                       </div>
                     </div>
                     
                     {step >= 3 && (
-                      <div className="flex flex-col gap-2 w-full bg-white p-4 rounded-xl border shadow-sm animate-fade-in-fast relative">
+                      <div className="flex flex-col gap-2 w-full bg-white p-4 rounded-xl border shadow-sm animate-radix-fade-in-fast relative">
                         {/* Redundancy Warning */}
                         <div className="absolute -top-3 right-4 bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded border border-rose-300 flex items-center gap-1 shadow-sm"><Info size={12}/> {t('pyComment2')}</div>
                         <div className="font-bold text-slate-700 text-sm border-b pb-2 flex justify-between items-center">
                            <span>{t('reqB')}</span>
                            <div className="flex gap-2">
                              <span className="text-[11px] font-mono text-slate-500 border px-1.5 py-0.5 rounded bg-slate-50 flex items-center gap-1"><Database size={10}/> {t('blks')}: [3, 4, 5]</span>
-                             <span className="text-[11px] font-mono text-slate-400 border px-1.5 py-0.5 rounded bg-slate-50">Lock=1</span>
+                             <span className="text-[11px] font-mono text-slate-400 border px-1.5 py-0.5 rounded bg-slate-50">{t('lockRef')}={requestById.B.status === 'running' ? 1 : 0}</span>
                            </div>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-mono px-3 py-2 rounded break-all leading-relaxed relative">
                            <span className="bg-rose-100 text-rose-800 px-1 rounded border border-rose-300 relative font-bold">
-                             {PREFIX_TOKENS}
+                             {RADIX_PREFIX_TOKENS}
                              <span className="absolute -top-2 -right-1 flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span></span>
                            </span>
-                           <span className="font-bold">{SUFFIX_B_TOKENS}</span>
+                           <span className="font-bold">{RADIX_REQUESTS.B.full.slice(RADIX_PREFIX_TOKENS.length)}</span>
                         </div>
                       </div>
                     )}
 
-                    {step >= 6 && (
-                      <div className="flex flex-col gap-2 w-full bg-white p-4 rounded-xl border shadow-sm animate-fade-in-fast relative">
-                        {pState.usedCount >= TOTAL_BLOCKS && <div className="absolute inset-0 bg-rose-500/10 border-2 border-rose-500 rounded-xl z-20 pointer-events-none"></div>}
+                    {step >= 5 && (
+                      <div className="flex flex-col gap-2 w-full bg-white p-4 rounded-xl border shadow-sm animate-radix-fade-in-fast relative">
                         <div className="font-bold text-slate-700 text-sm border-b pb-2 flex justify-between items-center">
                            <span>{t('reqC')}</span>
                            <div className="flex gap-2">
                              <span className="text-[11px] font-mono text-slate-500 border px-1.5 py-0.5 rounded bg-slate-50 flex items-center gap-1"><Database size={10}/> {t('blks')}: [6, 7]</span>
-                             <span className="text-[11px] font-mono text-slate-400 border px-1.5 py-0.5 rounded bg-slate-50">Lock=1</span>
+                             <span className="text-[11px] font-mono text-slate-400 border px-1.5 py-0.5 rounded bg-slate-50">{t('lockRef')}={requestById.C.status === 'running' ? 1 : 0}</span>
                            </div>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-mono px-3 py-2 rounded break-all leading-relaxed font-bold">
-                           {REQS.C.full}
+                           {RADIX_REQUESTS.C.full}
+                        </div>
+                      </div>
+                    )}
+
+                    {step >= 7 && (
+                      <div className="relative flex w-full flex-col gap-2 rounded-xl border-2 border-rose-400 bg-rose-50 p-4 shadow-sm animate-radix-fade-in-fast">
+                        <div className="flex items-center justify-between border-b border-rose-200 pb-2 text-sm font-bold text-rose-800">
+                          <span>{t('reqD')}</span>
+                          <span className="rounded bg-rose-200 px-2 py-0.5 text-[10px]">{t('requestBlocked')}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-bold text-rose-800">
+                          <span>{t('needs')}: {RADIX_REQUESTS.D.blocks}</span>
+                          <span>{t('free')}: {pState.freeCount}</span>
+                          <span>{t('shortage')}: {pState.shortage}</span>
                         </div>
                       </div>
                     )}
@@ -712,25 +635,27 @@ const App = () => {
                   <div className="flex items-center gap-2">
                     <Grid2X2 className="text-indigo-500" size={16} /> {t('physicalPool')}
                   </div>
-                  <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Capacity: {TOTAL_BLOCKS} {t('blks')}</span>
+                  <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded border border-slate-200">{t('capacity')}: {TOTAL_KV_SLOTS} {t('pairedSlots')}</span>
                 </h2>
                 
                 <div className="flex flex-col justify-center items-center w-full">
+                    <div className="mb-3 w-full rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-center text-[10px] font-medium text-indigo-700">{t('slotPairNote')}</div>
                     <div className="flex flex-col gap-4 w-full">
                       {[
-                        { label: 'K Cache Pool', icon: '🔑' },
-                        { label: 'V Cache Pool', icon: '📦' }
+                        { labelKey: 'kPool', icon: 'K' },
+                        { labelKey: 'vPool', icon: 'V' }
                       ].map(pool => (
-                        <div key={pool.label} className="flex flex-col gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-inner w-full">
-                          <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5 px-1"><span className="text-sm">{pool.icon}</span> {pool.label}</div>
+                        <div key={pool.labelKey} className="flex flex-col gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-inner w-full">
+                          <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5 px-1"><span className="flex h-5 w-5 items-center justify-center rounded bg-slate-800 text-[10px] text-white">{pool.icon}</span> {t(pool.labelKey)}</div>
                           <div className="flex w-full overflow-x-auto scrollbar-thin scrollbar-thumb-slate-300 gap-3 pb-4 pt-1 px-1 relative items-center justify-start">
-                             {pState.blocks.map((b, idx) => {
+                             {pState.slots.map((b, idx) => {
                                let colorClasses = 'bg-white border-slate-200 text-transparent'; // empty
                                if (b.status === 'used') {
                                   if (b.color === 'indigo') colorClasses = 'bg-indigo-500 border-indigo-600 text-white shadow-sm';
                                   if (b.color === 'emerald') colorClasses = 'bg-emerald-500 border-emerald-600 text-white shadow-sm';
                                   if (b.color === 'amber') colorClasses = 'bg-amber-500 border-amber-600 text-white shadow-sm';
                                   if (b.color === 'rose') colorClasses = 'bg-rose-500 border-rose-600 text-white shadow-sm';
+                                  if (b.color === 'sky') colorClasses = 'bg-sky-500 border-sky-600 text-white shadow-sm';
                                   if (b.isDup) colorClasses += ' ring-2 ring-rose-400 ring-offset-1 ring-inset border-dashed';
                                } else if (b.status === 'targeted') {
                                   colorClasses = 'bg-rose-50 border-rose-400 text-rose-800 border-dashed animate-pulse ring-2 ring-rose-300 ring-offset-1';
@@ -766,12 +691,13 @@ const App = () => {
                   {/* Legend */}
                   {step > 0 && (
                     <div className="flex flex-wrap gap-3 mt-4 justify-center items-center text-[10px] text-slate-600 font-mono w-full px-2">
-                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-indigo-500 border border-indigo-600"></div> Prefix (P)</div>
-                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-emerald-500 border border-emerald-600"></div> Req A</div>
-                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-amber-500 border border-amber-600"></div> Req B</div>
-                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-rose-500 border border-rose-600"></div> Req C</div>
-                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-slate-100 border-2 border-slate-200"></div> Empty</div>
-                      <div className="flex items-center gap-1"><Lock size={10} className="text-slate-700"/> Locked</div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-indigo-500 border border-indigo-600"></div> {t('legendPrefix')}</div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-emerald-500 border border-emerald-600"></div> {t('legendA')}</div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-amber-500 border border-amber-600"></div> {t('legendB')}</div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-rose-500 border border-rose-600"></div> {t('legendC')}</div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-sky-500 border border-sky-600"></div> {t('legendD')}</div>
+                      <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-slate-100 border-2 border-slate-200"></div> {t('legendEmpty')}</div>
+                      <div className="flex items-center gap-1"><Lock size={10} className="text-slate-700"/> {t('legendLocked')}</div>
                     </div>
                   )}
                 </div>
@@ -804,50 +730,72 @@ const App = () => {
                     <div>        self.allocator = TokenPoolAllocator()</div>
                     <br/>
                     <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">schedule_req</span>(self, req):</div>
-                    <div className={step === 1 || step === 3 ? "bg-slate-800/80 px-1 -mx-1 border-l-2 border-slate-500 text-slate-200" : "text-slate-500"}>
+                    <div className={snapshot.activeCode === 'allocate' ? "bg-slate-800/80 px-1 -mx-1 border-l-2 border-slate-500 text-slate-200" : "text-slate-500"}>
                       <div>        <span className="text-slate-600">{step === 3 ? t('pyComment2') : t('pyComment1')}</span></div>
                       <div>        kv_indices = self.allocator.alloc(req.tokens.length)</div>
                       <div>        req.kv_indices = kv_indices</div>
+                    </div>
+                    <div className={snapshot.activeCode === 'finish' ? "bg-emerald-900/40 px-1 -mx-1 border-l-2 border-emerald-400 text-emerald-100" : "text-slate-500"}>
+                      <div>        <span className="text-slate-600">{t('pyCommentFinish')}</span></div>
+                      <div>        req.lock_ref = 0</div>
+                    </div>
+                    <div className={snapshot.activeCode === 'capacity' ? "bg-rose-900/40 px-1 -mx-1 border-l-2 border-rose-400 text-rose-100" : "text-slate-500"}>
+                      <div>        <span className="text-slate-600">{t('pyCommentCapacity')}</span></div>
+                      <div>        deficit = max(0, req.num_slots - allocator.available_size())</div>
+                      <div>        <span className="text-emerald-400">if</span> deficit: scheduler.defer(req)</div>
                     </div>
                   </div>
                 ) : (
                   <div className="whitespace-pre">
                     <div><span className="text-blue-400">class</span> <span className="text-amber-300">TreeNode</span>:</div>
                     <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">__init__</span>(self):</div>
-                    <div>        self.key = []              <span className="text-slate-600"># 节点对应的 Token 序列</span></div>
-                    <div>        self.value = []            <span className="text-slate-600"># 底层物理 Block 索引</span></div>
-                    <div>        self.children = {'{}'}             <span className="text-slate-600"># 子节点字典</span></div>
-                    <div>        self.parent = <span className="text-purple-400">None</span>           <span className="text-slate-600"># 父节点指针</span></div>
-                    <div>        self.lock_ref = <span className="text-purple-400">0</span>          <span className="text-slate-600"># 引用计数锁</span></div>
+                    <div>        self.key = []              <span className="text-slate-600">{t('nodeKeyComment')}</span></div>
+                    <div>        self.value = []            <span className="text-slate-600">{t('nodeValueComment')}</span></div>
+                    <div>        self.children = {'{}'}             <span className="text-slate-600">{t('nodeChildrenComment')}</span></div>
+                    <div>        self.parent = <span className="text-purple-400">None</span>           <span className="text-slate-600">{t('nodeParentComment')}</span></div>
+                    <div>        self.lock_ref = <span className="text-purple-400">0</span>          <span className="text-slate-600">{t('nodeLockComment')}</span></div>
                     <br/>
                     <div><span className="text-blue-400">class</span> <span className="text-amber-300">RadixCache</span>:</div>
                     <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">match_prefix</span>(self, tokens):</div>
-                    <div className={step === 3 ? "bg-indigo-900/40 px-1 -mx-1 border-l-2 border-indigo-400 text-indigo-100" : "text-slate-500"}>
+                    <div className={snapshot.activeCode === 'match' ? "bg-indigo-900/40 px-1 -mx-1 border-l-2 border-indigo-400 text-indigo-100" : "text-slate-500"}>
                       <div>        <span className="text-slate-600">{t('pyComment3')}</span></div>
                       <div>        prefix_len = key_match_fn(child.key, tokens)</div>
                       <div>        <span className="text-emerald-400">return</span> prefix_len, node</div>
                     </div>
                     <br/>
                     <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">insert</span>(self, tokens, prefix_len, node):</div>
-                    <div className={step === 4 ? "bg-amber-900/40 px-1 -mx-1 border-l-2 border-amber-400 text-amber-100" : "text-slate-500"}>
+                    <div className={snapshot.activeCode === 'split' ? "bg-amber-900/40 px-1 -mx-1 border-l-2 border-amber-400 text-amber-100" : "text-slate-500"}>
                       <div>        <span className="text-emerald-400">if</span> prefix_len &lt; <span className="text-blue-300">len</span>(node.key):</div>
                       <div>            <span className="text-slate-600">{t('pyComment4')}</span></div>
                       <div>            node = self._split_node(node, prefix_len)</div>
                     </div>
-                    <div className={step === 5 || step === 1 || step === 6 ? "bg-emerald-900/40 px-1 -mx-1 border-l-2 border-emerald-400 text-emerald-100" : "text-slate-500"}>
+                    <div className={snapshot.activeCode === 'insert' ? "bg-emerald-900/40 px-1 -mx-1 border-l-2 border-emerald-400 text-emerald-100" : "text-slate-500"}>
                       <div>        <span className="text-slate-600">{t('pyComment5')}</span></div>
                       <div>        self._insert_suffix(node, tokens[prefix_len:])</div>
                       <div>        self.inc_lock_ref(node)</div>
                     </div>
                     <br/>
+                    <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">cache_finished_req</span>(self, req):</div>
+                    <div className={snapshot.activeCode === 'finish' ? "bg-emerald-900/40 px-1 -mx-1 border-l-2 border-emerald-400 text-emerald-100" : "text-slate-500"}>
+                      <div>        <span className="text-slate-600">{t('pyCommentFinish')}</span></div>
+                      <div>        self.dec_lock_ref(req.last_node)</div>
+                    </div>
+                    <br/>
+                    <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">ensure_capacity</span>(self, req):</div>
+                    <div className={snapshot.activeCode === 'capacity' ? "bg-rose-900/40 px-1 -mx-1 border-l-2 border-rose-400 text-rose-100" : "text-slate-500"}>
+                      <div>        <span className="text-slate-600">{t('pyCommentCapacity')}</span></div>
+                      <div>        deficit = <span className="text-blue-300">max</span>(0, req.num_slots - allocator.available_size())</div>
+                      <div>        <span className="text-emerald-400">if</span> deficit: self.evict(deficit)</div>
+                    </div>
+                    <br/>
                     <div>    <span className="text-emerald-400">def</span> <span className="text-blue-400">evict</span>(self, num_blocks):</div>
-                    <div className={step >= 7 && step < 9 ? "bg-rose-900/40 px-1 -mx-1 border-l-2 border-rose-400 text-rose-100" : "text-slate-500"}>
+                    <div className={snapshot.activeCode === 'evict' ? "bg-rose-900/40 px-1 -mx-1 border-l-2 border-rose-400 text-rose-100" : "text-slate-500"}>
                       <div>        <span className="text-slate-600">{t('pyComment6')}</span></div>
                       <div>        _, node = heapq.heappop(self.evictable_leaves)</div>
-                      <div>        self.allocator.free(node.value) <span className="text-slate-600"># 释放物理块</span></div>
+                      <div>        self.allocator.free(node.value) <span className="text-slate-600">{t('freeSlotComment')}</span></div>
                       <div>        self._delete_leaf(node)</div>
                     </div>
-                    <div className={step >= 9 ? "bg-amber-900/40 px-1 -mx-1 border-l-2 border-amber-400 text-amber-100" : "text-slate-500"}>
+                    <div className={snapshot.activeCode === 'evict' ? "bg-amber-900/40 px-1 -mx-1 border-l-2 border-amber-400 text-amber-100" : "text-slate-500"}>
                       <div>        <span className="text-slate-600">{t('pyComment9')}</span></div>
                       <div>        <span className="text-emerald-400">if</span> <span className="text-blue-300">len</span>(node.parent.children) == <span className="text-purple-400">0</span> \</div>
                       <div>           <span className="text-emerald-400">and</span> node.parent.lock_ref == <span className="text-purple-400">0</span>:</div>
@@ -888,6 +836,13 @@ const App = () => {
                 <p className="text-xs text-slate-600 leading-relaxed mt-1">{t('evictDesc')}</p>
               </div>
             </div>
+            <div className="relative z-10 mt-5 flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950 md:flex-row md:items-center">
+              <div className="shrink-0 text-sm font-bold">{t('metricTitle')}</div>
+              <div className="overflow-x-auto rounded-lg bg-white px-3 py-2 text-sm shadow-sm">
+                <MathFormula>{String.raw`r_{\mathrm{prefix}}=\frac{N_{\mathrm{reused\ prompt\ tokens}}}{N_{\mathrm{arrived\ prompt\ tokens}}}`}</MathFormula>
+              </div>
+              <p className="text-xs leading-relaxed text-emerald-800">{t('metricDesc')}</p>
+            </div>
           </div>
         </div>
 
@@ -895,26 +850,5 @@ const App = () => {
     </div>
   );
 };
-
-// Required Tailwind Keyframes for smooth animations
-const customStyles = `
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes fade-in-fast {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
-  }
-  .animate-fade-in { animation: fade-in 0.6s ease-out forwards; }
-  .animate-fade-in-fast { animation: fade-in-fast 0.3s ease-out forwards; }
-`;
-
-// Inject custom styles safely
-if (typeof document !== 'undefined') {
-  const styleSheet = document.createElement("style");
-  styleSheet.innerText = customStyles;
-  document.head.appendChild(styleSheet);
-}
 
 export default App;

@@ -1,0 +1,46 @@
+{
+  "dimensions": {
+    "mode": ["standard", "radix"],
+    "language": ["zh", "en"],
+    "viewport": ["desktop", "tablet", "mobile"],
+    "state": ["initial", "pressure", "final"]
+  },
+  "requiredCrossProducts": [
+    ["mode", "language"],
+    ["mode", "viewport"],
+    ["mode", "state"]
+  ],
+  "cases": [
+    {
+      "name": "standard zh desktop initial",
+      "state": { "mode": "standard", "language": "zh", "viewport": "desktop", "state": "initial" },
+      "checks": ["empty paired-slot pool", "controls preserve layout"]
+    },
+    {
+      "name": "standard en tablet pressure",
+      "state": { "mode": "standard", "language": "en", "viewport": "tablet", "state": "pressure" },
+      "checks": ["8 used, 2 free, 5 needed, deficit 3", "D admission blocked"]
+    },
+    {
+      "name": "standard zh mobile final",
+      "state": { "mode": "standard", "language": "zh", "viewport": "mobile", "state": "final" },
+      "checks": ["no page overflow", "all completed requests unlocked"]
+    },
+    {
+      "name": "radix zh tablet final",
+      "state": { "mode": "radix", "language": "zh", "viewport": "tablet", "state": "final" },
+      "checks": ["10 used paired slots", "D unlocked", "tree and pool agree"]
+    },
+    {
+      "name": "radix en mobile pressure",
+      "state": { "mode": "radix", "language": "en", "viewport": "mobile", "state": "pressure" },
+      "checks": ["6 used, 4 free, 5 needed, deficit 1", "A is the unlocked LRU candidate"]
+    },
+    {
+      "name": "radix en desktop initial",
+      "state": { "mode": "radix", "language": "en", "viewport": "desktop", "state": "initial" },
+      "checks": ["scope boundary visible", "no hardcoded Chinese pseudocode"]
+    }
+  ]
+}
+
