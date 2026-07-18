@@ -26,6 +26,8 @@ const snapshot = deriveModuleState(normalizedInput, lifecycleState);
 
 The snapshot should contain every fact needed by the views: structure, dimensions, ownership, resource values, current operation, status, and capability boundaries. Compute matrices, counters, memory use, code highlights, and explanatory copy from this snapshot rather than storing duplicate state.
 
+For objects shown in several views, assign stable semantic identities in the model. Derive location, residency, selection, activity, and visibility from that identity so a user can follow the same object across canvases instead of interpreting unrelated lookalikes.
+
 ## Classify controls and dependencies
 
 For each control, record whether it is:
@@ -57,6 +59,8 @@ For a `timeline` capability, include `phase`, `step`, `isPlaying`, and the relev
 ## Validate large state spaces outside the UI
 
 When controls create many legal combinations, expose pure derivation functions and test invariants without rendering every case. Use browser tests for representative control paths, coupled transitions, and visual evidence rather than as the only correctness mechanism.
+
+Declare only the state dimensions affected by the current change. Test each declared value and every cross-product where dimensions can influence one another; do not multiply unrelated dimensions merely to produce an exhaustive-looking matrix.
 
 ## Interaction acceptance questions
 

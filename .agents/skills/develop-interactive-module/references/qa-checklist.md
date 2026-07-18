@@ -2,12 +2,24 @@
 
 Apply common checks to every module, then apply only the capability sections declared in the design brief.
 
+## Contents
+
+- Change-contract integrity
+- Technical and interaction truth
+- Visual, content, and responsive QA
+- Regression and runtime verification
+- Optional QA matrix
+
 ## Change-contract integrity
 
 - [ ] The work is classified as repair, extension, or structural redesign.
 - [ ] Existing controls, views, interactions, and responsive states were captured before editing.
+- [ ] A rendered baseline exists for every major region that might be affected.
 - [ ] Preserved behavior still works after the change.
 - [ ] Any information-architecture change was explicitly in scope.
+- [ ] Repairs and extensions preserve major-region order, relative prominence, control placement, split ratios, and responsive reading order unless the user explicitly authorized a redesign.
+- [ ] New technical evidence was embedded in existing semantic regions before any new panel or page-wide composition was introduced.
+- [ ] The affected dimensions, views, and preserved behavior were declared before editing.
 
 ## Technical and model truth
 
@@ -67,14 +79,54 @@ Apply common checks to every module, then apply only the capability sections dec
 - [ ] Dense components have no unintended internal overflow in sparse, representative, and maximum-content states.
 - [ ] Both languages preserve readable proportions and control labels.
 - [ ] Controls remain keyboard reachable and have labels.
+- [ ] Important region proportions, unused space, wrapping, and overflow were compared against the baseline with measurable evidence.
 
 ## Regression and runtime verification
 
 - [ ] Run the convention checker with the declared capabilities and review warnings.
 - [ ] Pure-model tests cover formulas, constraints, invariants, and large legal state spaces where relevant.
 - [ ] Browser tests cover single-control changes, important coupled controls, representative modes, and boundary states.
+- [ ] Every value in each affected dimension is covered; coupled dimensions have explicit cross-product coverage.
 - [ ] Run `npm run build` successfully.
 - [ ] Inspect representative initial, intermediate, boundary, and final states where they exist.
 - [ ] Check browser console output.
 - [ ] Convert every confirmed defect into a model assertion, browser case, or checklist item.
 - [ ] Record P0-P3 findings, current result, evidence, contract impact, and unresolved limitations in `design-qa.md`.
+
+## Optional QA matrix
+
+Use a module-owned JSON matrix when a change spans several values or coupled dimensions. Keep only affected dimensions in the file:
+
+```json
+{
+  "dimensions": {
+    "mode": ["baseline", "alternative"],
+    "viewport": ["wide", "narrow"]
+  },
+  "requiredCrossProducts": [["mode", "viewport"]],
+  "cases": [
+    {
+      "name": "baseline wide",
+      "state": { "mode": "baseline", "viewport": "wide" },
+      "checks": ["model invariant", "rendered evidence"]
+    },
+    {
+      "name": "baseline narrow",
+      "state": { "mode": "baseline", "viewport": "narrow" },
+      "checks": ["model invariant", "rendered evidence"]
+    },
+    {
+      "name": "alternative wide",
+      "state": { "mode": "alternative", "viewport": "wide" },
+      "checks": ["model invariant", "rendered evidence"]
+    },
+    {
+      "name": "alternative narrow",
+      "state": { "mode": "alternative", "viewport": "narrow" },
+      "checks": ["model invariant", "rendered evidence"]
+    }
+  ]
+}
+```
+
+Run `check-qa-matrix.mjs` to verify dimension values and required combinations are represented. The helper validates coverage structure; module tests and rendered QA still determine whether the assertions are true.

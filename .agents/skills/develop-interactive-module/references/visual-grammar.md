@@ -44,6 +44,8 @@ Change all affected layers, not merely the label, color, or explanatory paragrap
 
 Add secondary explanations such as movement, ownership, warnings, or communication to the primary objects they describe. Draw paths between the existing source and destination components instead of duplicating a second disconnected row of nodes. Keep direction, endpoints, local versus remote scope, and current selection visible.
 
+Preserve semantic identity across synchronized views. Use a shared label, position cue, shape, or stable identity color, then reserve transient styling for activity or status. If an object changes location or representation, make the correspondence observable.
+
 ## Compose the canvas
 
 - Show the full pipeline in one canvas when sequence is the teaching object.
@@ -64,6 +66,7 @@ Do not force every chapter into the same panel count. Choose the smallest layout
 - Test component-level overflow as well as page overflow. Dense cards, labels, tracks, formulas, and code blocks must keep `clientWidth` and `scrollWidth` compatible with the intended scrolling behavior.
 - Check representative sparse and dense states. A layout that works for one item may fail at maximum count or with longer translated labels.
 - Preserve the main teaching region when space tightens; compress secondary controls and metadata before shrinking the core evidence below readability.
+- Compare layout with measurable signals such as region-height ratios, unused space, active-object count, wrapping, and overflow. Use thresholds as regression guards, not as universal design targets.
 
 ## Separate identity colors from action colors
 

@@ -32,7 +32,7 @@
 | LLMInference | 8/8 | 无告警；共享 KaTeX、i18n、canonical state 均通过 |
 | ParallelStrategies | 2/8 | 缺 `MathFormula`、phase/step/playback/next/togglePlay |
 | FlashAttention | 9/9 | 无告警；共享 KaTeX、版本化 canonical model、timeline 与资源指标均通过 |
-| FlashDecode | 6/8 | 缺 `MathFormula`、`handleNextStep`；缺纯快照模型 |
+| FlashDecode | 9/9 | 已接入 `MathFormula`、canonical snapshot、完整播放状态机与资源模型；0 warning |
 | Engram | 6/8 | 缺 `MathFormula`、phase；缺纯快照模型 |
 | RadixCache | 4/8 | 缺 `MathFormula`、phase、next/togglePlay；硬编码 JSX 文案 |
 | DpAttention | 4/8 | 缺 `MathFormula`、phase、规范 step/next；缺纯快照模型 |
@@ -331,3 +331,27 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - HBM 正确性：标准 backward 细分输入读取与梯度生命周期。dV 只在 `dv` 生成，dQ 只在 `dq` 生成，dK 只在 `dk` 生成；之前已生成但尚未写回的梯度显示 buffered，`writeGrads` 时三者统一显示 writing。P 在所需 kernel 中读取，S 保持驻留但不作为 backward 依赖。
 - 浏览器证据：标准前向第 5 步仅激活 `softmax`，三阶段为单行 `97/180/97px`，HBM/片上内容高度为 `475/396px`。标准反向 `dv` 阶段显示 `dV=producing`、`dQ/dK=pending`；`dq` 阶段显示 `dQ=producing`、`dV=buffered`、K 正在读取；最终写回时 dQ/dK/dV 均为 writing。中英文卡片与页面无横向溢出，无 Vite error overlay。
 - 工程回归：新增标准 backward 独立梯度状态断言；`npm run check:flash`、模块 convention checker、i18n 对称检查、`git diff --check` 与生产构建均通过。
+
+### 2026-07-18 — FlashDecode：恢复原版布局并局部修正 Split-K 语义
+
+- 范围纠正：上一版把修复任务扩大成未经授权的结构性重构，替换了挑战区、主画布、控制结构和底部 inspector；该方案已撤销。本版严格恢复原有“顶部控制栏 → 单一挑战横幅 → 左 7 / 右 5 数据流与伪代码 → 底部逐步解析”信息架构、区域顺序、相对比例与交互路径。
+- 局部修改面：保留原有 6 个代表性 KV 分块、两批工作调度、HBM Workspace、两种顶部模式、六步单步/播放和逐步说明。只在原执行区域内把四张固定 `SM` 卡改为代表性 `CTA` 卡，并在同一区域底部增加一条独立归约 Kernel；没有增加新的页面级区域、指标带、阶段轨或配置面板。
+- 执行正确性：逻辑 Split 明确为 KV view/metadata，不表示 HBM 数据复制；CTA 到物理 SM 的映射由运行时决定。第二个归约 Kernel 不再被画成固定 `SM3`，所有 Kernel 1 CTA 完成后才读取 Workspace。删除“无限长上下文”等过度断言，并标明六 Split / 四 CTA 仅是代表性教学调度。
+- 数学正确性：累加器表示保存 `\widetilde O_i,m_i,ℓ_i`，按 `m=max_i m_i`、`ℓ=Σ_i exp(m_i-m)ℓ_i`、`O=Σ_i exp(m_i-m)\widetilde O_i/ℓ` 合并，补回原画布遗漏的局部分母；O+LSE 表示保存 `O_i,L_i`，按 `L=LSE_i(L_i)`、`O=Σ_i exp(L_i-L)O_i` 合并。两套公式均通过与直接 Softmax 的数值对照。
+- canonical 状态：`flash-decode/model.js` 只建模原页面已有的 2 种 Workspace 表示与 7 个生命周期状态，纯派生两批 CTA 分配、Workspace 写入数、独立归约和最终写回；没有保留上一版新增的 Unsplit/Paged/GQA/Auto Split 等扩张范围。
+- 浏览器证据：桌面恢复为两列主区且页面 `clientWidth=scrollWidth=1504`；O+LSE 与累加器模式均逐步验证到归约阶段，累加器 DOM 公式明确包含 `ℓ_i`。`768×900` 下主画布/伪代码按原阅读顺序上下堆叠、页面 `753/753`；`390×844` 下为 `375/375`，同样无页面横向溢出。中英文、播放/暂停、模式重置均通过；新建干净标签页无 Vite error overlay，控制台无 warning/error。
+- 工程回归：`npm run check:flashdecode` 通过（2 algorithms × 7 lifecycle states，73 个 i18n 键一致）；QA matrix helper 通过（6 cases，3 个受影响维度）；模块 convention checker 9/9、0 warning；`git diff --check` 通过；Vite 5.4.21 生产构建通过（1891 modules transformed）。
+
+### 2026-07-18 — FlashDecode：在原布局内补齐 Unsplit、Paged KV、GQA/MQA 与 Auto Split
+
+- 变更分类与结构契约：本轮是原模块的扩展，不是结构性重构。继续保留“顶部全局控制 → 挑战横幅 → 左 7 / 右 5 主画布与伪代码 → 底部检查器”的区域顺序、相对比例和响应式阅读顺序；新增能力只进入原顶部卡、HBM 对象、CTA 区、伪代码和检查器，没有新增页面级面板。
+- 独立控制边界：执行方式（Unsplit / Split-K）、KV 布局（Contiguous / Paged）、头配置（MHA / GQA / MQA）、Split 设置（Auto / 2 / 4 / 6 / 8）和 Workspace 表示均由一个 canonical snapshot 派生。Paged 不强制 Split-K，GQA/MQA 不改变序列是否切分；Unsplit 下 Split 数与 Workspace 表示保留但明确禁用。
+- Unsplit / Split-K：Unsplit 只有 `resolve KV → fused online attention → write output`，不创建局部 Workspace 或归约 kernel；Split-K 继续显示局部结果和独立 LSE 归约。有效 Split≤4 时只派生一批 CTA 并直接进入归约，>4 时才出现第二批，避免手动选 2/4 后播放空批次。
+- Paged KV：复用原 HBM K/V 对象，在其内部附加 Block Table。Contiguous 显示逻辑页与物理页顺序一致；Paged 使用代表性非连续 `L0→P4, L1→P1, …` 映射。页面明确把 KV page 与 Split-K 的逻辑 split 作为两种独立划分，不把 page 数等同于 split 数。
+- GQA/MQA：Q/KV 形状改为 `Q[1,H_q,d]` 与 `K/V[N,H_kv,d]`；原 Query 行内显示八个 Q head 到 KV head 的分组映射。MHA 为 8→8、GQA 为 8→2、MQA 为 8→1，并动态更新每 KV head 的复用数和 KV 读取元素数；这些指标只表达元素规模，不冒充字节数或性能保证。
+- Auto Split 边界：Auto 采用“目标约 2048 tokens/split，限制到 2–8 个偶数 split”的教学启发式，当前 `N=12288` 派生 6。界面和模型均明确真实后端会根据形状、批量和硬件选择 kernel / split 数，不把该规则描述为 FlashAttention、xFormers 或 vLLM 的固定实现。
+- 技术依据：Flash-Decoding 原始说明确认沿 KV 序列增加并行维度、局部写入 O+LSE 并由第二个 kernel 合并；PagedAttention 论文/实现确认 Block Table 将逻辑 KV block 映射到非连续物理 block；GQA 原论文确认它使用介于 MHA 与 MQA 之间数量的 KV heads。对应参考为 Princeton Flash-Decoding、vLLM PagedAttention 论文/官方设计文档与 EMNLP 2023 GQA 论文。
+- 模型回归：`npm run check:flashdecode` 枚举并通过 636 个合法生命周期状态，覆盖 2 Workspace × 2 execution × 2 KV layout × 3 head mode × 5 split setting 及派生步数；同时验证两种局部合并与直接 Softmax 数值一致、Paged/Contiguous 映射、MHA/GQA/MQA KV 读取规模和中英文 113 个 i18n 键一致。
+- 浏览器证据：`Paged + MQA + 4 splits` 显示 1 个 CTA 批次、4 个 Workspace 条目和非连续 Block Table，第三步直接进入归约且没有空的第二批；`Unsplit + Paged + MQA` 禁用 Split/Workspace 控件、显示 1 个 active CTA 和“无局部 Workspace / 无归约 kernel”；英文移动端 `8 splits` 的第二批显示 4 个 active CTA。
+- 响应式与契约影响：桌面主区仍为约 `597/420px` 的 7:5 两列；`768×900` 与 `390×844` 均按主画布→伪代码顺序堆叠。页面宽度分别为 `1265/1265`、`753/753`、`375/375`；中英文技术控件、派生指标与页面均无非预期横向溢出。密集 K/V、CTA 和 Block Table 在窄屏保留原画布内部的有意横向滚动；完成修改后新建干净标签页，无 Vite overlay，console warning/error 为空。
+- 当前结论：未发现 P0/P1。保留的限制是固定代表性 `N=12288, H_q=8, d=128`、六个代表性 KV pages、最多八个教学 splits，以及不估算真实延迟/带宽。QA matrix helper 通过（7 cases、8 个受影响维度），模块 convention checker 9/9、0 warning；Vite 5.4.21 生产构建通过（1891 modules transformed）。

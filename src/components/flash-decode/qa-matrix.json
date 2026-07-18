@@ -1,0 +1,54 @@
+{
+  "dimensions": {
+    "execution": ["unsplit", "split"],
+    "workspace": ["simple", "optimized"],
+    "kvLayout": ["contiguous", "paged"],
+    "headMode": ["mha", "gqa", "mqa"],
+    "splitSetting": ["auto", "2", "4", "6", "8"],
+    "language": ["zh", "en"],
+    "viewport": ["desktop", "tablet", "mobile"],
+    "path": ["idle", "resolve", "local", "second-batch", "reduce", "done"]
+  },
+  "requiredCrossProducts": [
+    ["execution", "headMode"],
+    ["kvLayout", "headMode"],
+    ["workspace", "language"]
+  ],
+  "cases": [
+    {
+      "name": "split auto GQA contiguous desktop",
+      "state": { "execution": "split", "workspace": "optimized", "kvLayout": "contiguous", "headMode": "gqa", "splitSetting": "auto", "language": "zh", "viewport": "desktop", "path": "idle" },
+      "checks": ["original 7/5 canvas-code layout remains", "Auto derives six effective splits", "four Q heads visibly share each KV head"]
+    },
+    {
+      "name": "split eight MHA paged tablet",
+      "state": { "execution": "split", "workspace": "simple", "kvLayout": "paged", "headMode": "mha", "splitSetting": "8", "language": "en", "viewport": "tablet", "path": "second-batch" },
+      "checks": ["block table maps logical pages to non-contiguous physical pages", "second CTA batch exists", "eight Q heads map one-to-one to eight KV heads"]
+    },
+    {
+      "name": "unsplit MQA contiguous mobile done",
+      "state": { "execution": "unsplit", "workspace": "optimized", "kvLayout": "contiguous", "headMode": "mqa", "splitSetting": "auto", "language": "zh", "viewport": "mobile", "path": "done" },
+      "checks": ["one KV head is shared by all query heads", "no local workspace or reduction kernel appears", "output is written after the fused kernel"]
+    },
+    {
+      "name": "unsplit GQA paged English resolve",
+      "state": { "execution": "unsplit", "workspace": "simple", "kvLayout": "paged", "headMode": "gqa", "splitSetting": "2", "language": "en", "viewport": "desktop", "path": "resolve" },
+      "checks": ["paged addressing changes independently of execution", "split control is inactive", "pseudocode resolves the block table before the fused kernel"]
+    },
+    {
+      "name": "split four MQA paged single batch",
+      "state": { "execution": "split", "workspace": "optimized", "kvLayout": "paged", "headMode": "mqa", "splitSetting": "4", "language": "zh", "viewport": "tablet", "path": "reduce" },
+      "checks": ["only one CTA batch is derived", "timeline skips the empty second batch", "reduction still merges four partials"]
+    },
+    {
+      "name": "unsplit MHA contiguous Chinese local",
+      "state": { "execution": "unsplit", "workspace": "simple", "kvLayout": "contiguous", "headMode": "mha", "splitSetting": "6", "language": "zh", "viewport": "mobile", "path": "local" },
+      "checks": ["one representative CTA scans the full sequence", "head mapping is one-to-one", "main canvas keeps intentional internal scrolling without page overflow"]
+    },
+    {
+      "name": "split two GQA contiguous English done",
+      "state": { "execution": "split", "workspace": "optimized", "kvLayout": "contiguous", "headMode": "gqa", "splitSetting": "2", "language": "en", "viewport": "desktop", "path": "done" },
+      "checks": ["optimized English mode is covered", "two partials use exact LSE merge", "playback stops at the five-step boundary"]
+    }
+  ]
+}

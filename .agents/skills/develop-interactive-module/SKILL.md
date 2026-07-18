@@ -18,6 +18,18 @@ Read `AGENTS.md`, neighboring modules, routing, shared components, and the curre
 
 Classify the work as a repair, extension, or structural redesign. Default to the smallest change that satisfies the request. Do not replace the information architecture during a repair or extension unless the user authorizes that scope.
 
+For a repair or extension, treat the existing layout as an acceptance constraint, not as optional inspiration. Unless the user explicitly authorizes a structural redesign or large-scale refactor:
+
+- preserve the order, relative prominence, and spatial relationships of major regions;
+- preserve control placement, primary canvases, inspectors, and established interaction paths;
+- add or correct evidence inside the existing regions before introducing new panels or moving content;
+- do not replace a page-wide composition, split ratio, navigation pattern, or responsive reading order merely to make implementation cleaner;
+- stop and explain the required structural tradeoff before editing if the requested behavior cannot fit the existing contract.
+
+Capture a rendered baseline before the first layout-affecting edit. After implementation, compare the same states and widths against that baseline; a technically correct result still fails the change contract if it unnecessarily destroys the accepted layout or interaction structure.
+
+Declare the change surface before editing: list the dimensions that can alter behavior (for example mode, lifecycle state, language, or viewport), the affected views, and the behavior that must remain unchanged. Include only dimensions relevant to this iteration.
+
 ## 2. Declare the teaching capabilities
 
 State which capabilities the module actually needs:
@@ -76,5 +88,13 @@ Use three complementary verification layers:
 - pure-model tests for formulas, constraints, invariants, and large combination spaces;
 - browser interaction tests for key controls, coupled state, and representative paths;
 - rendered QA for visual evidence, responsive density, both languages, accessibility, and console output.
+
+When the change surface contains several values or coupled dimensions, create a small module-owned QA matrix and validate it with:
+
+```bash
+node .agents/skills/develop-interactive-module/scripts/check-qa-matrix.mjs path/to/qa-matrix.json
+```
+
+The matrix declares arbitrary dimensions and required cross-products; keep domain-specific values and assertions in the module, not in this skill.
 
 Turn every confirmed defect into a reusable regression assertion, browser case, or checklist item. Update `design-qa.md` with the current result, evidence, unresolved limitations, and change-contract impact. Do not declare completion from source inspection or a successful build alone.
