@@ -1,6 +1,6 @@
 # 全章节交互模块设计与正确性 QA
 
-审计日期：2026-07-15（更新至 2026-07-16）
+审计日期：2026-07-15（更新至 2026-07-18）
 
 审计范围：`LLMInference`、`ParallelStrategies`、`FlashAttention`、`FlashDecode`、`Engram`、`RadixCache`、`DpAttention`、`LinearAttention`
 
@@ -11,8 +11,8 @@
 **最终结果：failed。** 八章均能完成生产构建并在桌面浏览器中打开，但目前不能把整站视为已经通过“设计语言一致性 + 技术正确性”验收。
 
 - 未发现 P0（完全不可用或构建阻塞）。
-- 当前剩余 6 项 P1；Linear Attention、LLMInference 与 ParallelStrategies 的已知 P1 正确性问题已修复。ParallelStrategies 仍保留原交互结构及其 convention 缺口，不报告为整章通过。
-- 除 `LinearAttention` 与 `LLMInference` 外，其余 6 章没有使用共享 KaTeX `MathFormula`；大量公式仍由普通文本、`sub/sup` 或 HTML 拼接。
+- 当前剩余 4 项 P1；Linear Attention、LLMInference、ParallelStrategies 与 FlashAttention 的已知 P1 正确性问题已修复。ParallelStrategies 仍保留原交互结构及其 convention 缺口，不报告为整章通过。
+- `LinearAttention`、`LLMInference` 与 `FlashAttention` 已使用共享 KaTeX `MathFormula`；其余 5 章仍有普通文本、`sub/sup` 或 HTML 拼接的公式。
 - `LinearAttention` 与 `LLMInference` 已采用 skill 的完整交互范式；`ParallelStrategies` 与 `RadixCache` 的状态模型缺口最大。
 - 已开始按项修复；每次修改的验证证据记录在“已修复记录”中。
 
@@ -21,9 +21,9 @@
 - 静态检查：逐章阅读组件、状态机、i18n、公式、伪代码和动态指标来源。
 - 自动检查：运行 skill 自带的 convention checker，随后运行 `npm run build`。
 - 渲染检查：八章均在本地 Vite 页面完成桌面端首屏/代表性中间态检查；重点推进了 LLM、Flash Attention、Engram 与 Radix Cache 的状态。
-- 关键可见证据：Radix Cache 第 7 步页面同时显示“显存告急”与 `6 / 10` 块占用；Linear Attention 与 LLMInference 在 `390×844` 下无页面级横向溢出。
-- 响应式边界：本轮完成桌面全章与 Linear Attention、LLMInference 移动端实测；其余章节的平板/移动端逐状态遍历未完成，因此不报告为通过。
-- Linear Attention 与 LLMInference 浏览器控制台已复核为 clean；其余章节尚未逐章抓取日志，因此不报告整站为 clean。
+- 关键可见证据：Radix Cache 第 7 步页面同时显示“显存告急”与 `6 / 10` 块占用；Linear Attention、LLMInference 与 FlashAttention 在 `390×844` 下无页面级横向溢出。
+- 响应式边界：本轮完成桌面全章与 Linear Attention、LLMInference、FlashAttention 移动端实测；其余章节的平板/移动端逐状态遍历未完成，因此不报告为通过。
+- Linear Attention、LLMInference 与 FlashAttention 浏览器控制台已复核为 clean；其余章节尚未逐章抓取日志，因此不报告整站为 clean。
 
 ## 自动检查
 
@@ -31,7 +31,7 @@
 |---|---:|---|
 | LLMInference | 8/8 | 无告警；共享 KaTeX、i18n、canonical state 均通过 |
 | ParallelStrategies | 2/8 | 缺 `MathFormula`、phase/step/playback/next/togglePlay |
-| FlashAttention | 7/8 | 缺 `MathFormula`；Unicode 数学告警 |
+| FlashAttention | 9/9 | 无告警；共享 KaTeX、版本化 canonical model、timeline 与资源指标均通过 |
 | FlashDecode | 6/8 | 缺 `MathFormula`、`handleNextStep`；缺纯快照模型 |
 | Engram | 6/8 | 缺 `MathFormula`、phase；缺纯快照模型 |
 | RadixCache | 4/8 | 缺 `MathFormula`、phase、next/togglePlay；硬编码 JSX 文案 |
@@ -42,7 +42,7 @@
 Convention checker: warnings / fail（LinearAttention 与 LLMInference 为 8/8）
 Production build:    pass（Vite 5.4.21，1888 modules transformed）
 Desktop rendering:   all 8 chapters opened successfully
-Responsive rendering: LinearAttention and LLMInference verified at desktop, tablet and 390×844; remaining chapters unverified
+Responsive rendering: LinearAttention, LLMInference and FlashAttention verified at desktop, tablet and 390×844; remaining chapters unverified
 Browser console:     LinearAttention and LLMInference clean; remaining chapters unverified
 ```
 
@@ -104,19 +104,53 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 后续范围：Helix 将沿用同一组 GPU 卡，在 Attention 与 FFN 区域切换 rank 解释；DWDP 将保留 DP 执行器和 Expert 所有权，改画远端权重预取方向及无 layer-wise collective 的边界。两者在第一批完成并回归后继续推进。
 - 权威边界：Wide-EP/P-D 第一批以 SGLang 公开的大规模 EP 部署为依据；P/D 卡数采用对称 1:1 教学简化，并明确真实部署可使用不同 P:D 容量比和不同并行配置。
 
+## 2026-07-18 — FlashAttention V1–V4 版本化流水线改造
+
+- 变更分类：在原有 Standard/Flash 顶部控制、HBM↔片上主画布、流水线/伪代码和底部原理 inspector 的结构上做功能扩展；没有改造成另一套信息架构。
+- 教学问题：V1–V4 都计算同一个精确 Attention 时，循环顺序、CTA/warp 分工、片上驻留与硬件流水线分别如何演进，性能收益为什么不能只用“减少 HBM”一条解释？
+- 能力声明：`timeline`、`multiple-modes`、`resource-metrics`、`structural-comparison`、`data-movement`、`dense-layout`、`math`。
+
+### Claim ledger
+
+| Claim | 权威依据 | 领域模型与可见证据 | 边界 |
+|---|---|---|---|
+| V1 用 tiling + online softmax 避免完整 S/P 在 HBM 物化 | FlashAttention v1 论文 Algorithm 1 与 IO 分析 | `v1.outerLoop=kv`；画布显示 KV 外循环、Q/O/统计量反复读写；S/P 标为逻辑中间量 | tile shape 与寄存器/SMEM 分配是教学模型，不冒充某个编译产物 |
+| V2 把前向工作沿 Q-row/序列维并行，并用 split-Q 降低 warp 通信 | FlashAttention-2 §3.1–3.3 | `v2.outerLoop=q`；CTA 调度 lane、split-Q warp slices、Q 常驻与 KV stream 同步变化 | 流量接近不代表吞吐接近；收益还来自 occupancy、非矩阵 FLOPs 和同步减少 |
+| V3 在 Hopper 上通过 TMA/WGMMA/warp specialization 重叠搬运、GEMM 与 Softmax | FlashAttention-3 论文及作者技术说明 | H100 profile；TMA producer、WGMMA 与 Softmax lanes 的时间区间真实重叠 | 主画布锚定 BF16；FP8 incoherent processing 作为能力边界说明，不混入主流程 |
+| V4 针对 Blackwell 的指数吞吐/SMEM 瓶颈重做前后向流水线 | FlashAttention-4 论文与作者 2026 技术说明 | B200 profile；前向 high/low Q ping-pong + correction，反向 TMEM + 2-CTA MMA + DSMEM | 画布锚定论文 B200 BF16 设计；官方 CuTeDSL 设备/shape 支持会继续变化 |
+| Standard/Flash 流量必须在同一 byte model 下比较 | Q/K/V/O、S/P shape 与读写次数 | `estimateForwardResources()` 由 N、d、dtype width、causal tile count 与 tile shape 推导；共享比例尺同时显示基线和当前实现 | Standard 明确限定为未融合三-kernel 教学基线；数值不是 profiler benchmark |
+
+### 已修复问题与交互证据
+
+- 两项 P1 已关闭：删除“O(N) IO”和“上下文指数级扩展”错误结论；删除固定 `210/610/820 MB` 与 `deltaIo` 伪量纲，改为统一 bytes model。
+- 发现并修复版本边界混淆：旧页面的 Q 外循环更接近 V2，现已把 V1 固定为 KV 外循环、V2 固定为 Q 外循环，并加入模型断言。
+- 版本开关会同时改变目标硬件、片上组件、循环语义、流水 lane、engine pseudocode、bottleneck 和 inspector；不是只改颜色或文案。
+- Forward/Backward 会改变 HBM 张量、资源指标和完整 stage map。Flash backward 显示 5 个分块 MMA 与 S/P 重计算；Standard backward 显示 4 个梯度 matmul 且使用保存的 S/P。
+- Causal 开关会重新计算有效/跳过 tile pairs、HBM 流量与当前 mask；N/d 控件会同步改变矩阵维度、tile 数、live set 与流量。
+- 公式全部通过共享 `MathFormula`/KaTeX；代码面板改为 tile scheduling、TMA/WGMMA/UMMA、barrier/cluster、TMEM/DSMEM 与 write-back 级别的 engine pseudocode。
+
+### 回归证据
+
+- 纯模型：`node scripts/check-flash-attention.mjs` 通过；覆盖 192 个 Standard/Flash × V1–V4 × Forward/Backward × N × d × causal 合法组合的 idle/mid/done 快照，以及 loop order、mask、bytes、pipeline overlap、V4 2-CTA/DSMEM 与 clean done-state 断言。
+- 规范：convention checker 9/9，`timeline,math,multiple-modes,resource-metrics,structural-comparison,data-movement,dense-layout` 全部通过，0 warning。
+- 构建：`npm run build` 通过（Vite 5.4.21，1890 modules transformed）。
+- 浏览器：Standard、V1/V2/V3/V4、前后向、causal/non-causal、N=8192、d=64、中文/英文、单步、重置与自动播放完成态均通过；done 状态为 0 active / 全部 passed。
+- 响应式：桌面 1265px 无页面级溢出；真实 768×900 与 390×844 iframe viewport 中 `documentElement/body scrollWidth == clientWidth`，主区域交互控件/标题均无越界；流水线仅在确有需要的窄宽下保留局部横向滚动。
+- 运行时：浏览器日志无 error/warn；只存在 Vite connect/hot-update debug 与 React DevTools info。
+
 ## P1：优先修复
 
-### 1. FlashAttention：错误宣称 O(N) IO 与“指数级扩展上下文”
+### 1. FlashAttention：错误宣称 O(N) IO 与“指数级扩展上下文” — 已修复（2026-07-18）
 
 - 证据：中英文文案直接写“`O(N) IO Complexity`”及“上下文长度指数级扩展”（`src/components/FlashAttention.jsx:62-63,126`）。
 - 问题：FlashAttention 是 exact attention，通过 tiling 降低 HBM 与 SRAM 间的读写并实现 IO-aware/IO-optimal；它没有把 attention 的一般 IO 或计算复杂度简单变成 O(N)，也不推出上下文长度“指数级扩展”。
-- 修复方向：改为“避免物化 N×N 中间矩阵、按 SRAM 容量降低 HBM accesses”，并把计算复杂度与额外显存复杂度分开说明。
+- 修复结果：页面只宣称避免完整二次方 S/P 中间量的 HBM 物化、降低算法级 HBM traffic，并明确仍是 exact attention；不再推导计算复杂度变为 O(N) 或上下文指数扩展。
 
-### 2. FlashAttention：HBM 流量指标没有量纲基础
+### 2. FlashAttention：HBM 流量指标没有量纲基础 — 已修复（2026-07-18）
 
 - 证据：标准模式使用固定 `210/610/820 MB`，Flash 模式把每步 `deltaIo: 1/2` 直接累加成 MB（`src/components/FlashAttention.jsx:159-193`）。
 - 问题：两种模式没有由 N、d、dtype、tile shape 推导到共同字节尺度，当前柱状/数字比较不具定量意义。
-- 修复方向：用同一个 bytes model 计算 Q/K/V/O、S/P 与重读写流量；若只表达事件数，单位改成“tile transfers”，不要标 MB。
+- 修复结果：`estimateForwardResources()` 用同一套 N、d、2-byte input、FP32 S/P baseline、tile shape 与 causal active-pair 规则推导两种实现的 bytes；页面把假设和非-profiler 边界直接显示在共享流量尺下。
 
 ### 3. FlashDecode：Simple 模式画布的归约公式缺少局部分母
 
@@ -156,7 +190,7 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 
 - **LLMInference**：已完成 KaTeX、i18n、可访问控件标签、唯一 active stage 与逐层 canonical state；后续可补充 reduced-motion 偏好和屏幕阅读器 live-region。
 - **ParallelStrategies**：是静态配置浏览器而非执行流水线；没有通信事件、训练 microbatch、all-reduce/all-to-all 或 prefill/decode 上下文。桌面首屏右侧 GPU 区在低卡数时留有大面积空白，教学主次失衡。
-- **FlashAttention**：tile 因果跳过逻辑基本正确，但 `Br=64/Bc=96` 能否驻留 SRAM 没有按 dtype 和工作集字节证明。
+- **FlashAttention**：已改为 V1–V4 canonical model、共享 KaTeX、算法级 bytes/live-set 推导和版本化前后向流水线；不再宣称固定 tile “完美驻留”。仍刻意不提供脱离具体 GPU/shape/kernel 的通用 TFLOPS benchmark。
 - **FlashDecode**：核心“切 KV + 局部 attention + 二次归约”正确；“通常只用一个 SM”应改成示例实现，不要写成算法固有属性。
 - **Engram**：英文词典中的 `play`、`next` 仍为中文（`src/components/Engram.jsx:92,94`）；“前置 Block 完全掩盖 PCIe 延迟”应改成可重叠/在条件满足时隐藏。
 - **RadixCache**：`hitRate = saved/(used+saved)` 更像累计块节省比例，不是请求级 prefix hit rate；“传统 KV 必须连续分配”和“零额外开销”都需要限定。`lock_ref` 在 B 复用前缀后的数值变化也缺少对应 acquire/release 事件。
@@ -252,3 +286,48 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - KV Cache 增加统一标尺的单 Token 相对容量，并同步改变主体几何：MHA 为 32 单位、`176×48`；GQA 为 8 单位、`112×32`；MLA 为 4 单位、`64×24`。在 DP Attention 下三者仍保持各自权重/KV 结构，但 KV 所有权切为 Worker 私有。
 - 真实页面验证 `TP4 + DP Attention`：MHA 三段等宽投影与 32 单位 KV；GQA 投影宽度约 `162/40/40` 与 8 单位 KV；MLA 投影宽度约 `139/35/69` 与 4 单位 KV。中英文均无投影、卡片、网格或页面溢出，控制台无 error/warn。
 - 回归：并行拓扑检查加入 MHA/GQA/MLA KV 相对容量断言并通过（721/2916 合法拓扑、14884 GPU 卡）；模块 convention checker 8/8 通过；Vite 生产构建通过（1889 modules transformed）。
+
+### 2026-07-18 — FlashAttention：恢复标准 Softmax 与 HBM 中间量生命周期
+
+- 变更分类：针对标准模式可观察性回退的局部修复；保留 Standard/Flash 顶部模式、HBM↔片上主画布、流水线、伪代码和 inspector 的既有信息架构。
+- Softmax 证据：标准前向明确显示 `Score GEMM → row-wise Softmax → Output GEMM` 三个 kernel。Softmax 卡复用主画布中的 HBM `S/P` 对象，逐行展示 logits、稳定化最大值、指数归一化和概率行；不是新增一张与主对象脱节的说明图。
+- HBM 生命周期：纯模型新增 `S/P/O` 的 `pending → producing → writing → ready/reading → consumed` 状态。标准时间线分解为写 S、读 S、逐行 Softmax、写 P、读 P，HBM 矩阵通过已填充地址块、读写光晕、方向和容量显示动态生成与消费；Flash 模式继续显示 `Sᵢⱼ/Pᵢⱼ` 只在片上短暂存在且 HBM 分配为 0 B。
+- 回归缺陷：浏览器初始态曾发现没有读取阶段的 `O` 因空 `readId` 被误判为“正在读取”；已修复为 `readId` 存在时才匹配，并增加空闲态 `O.status=pending`、`O.access=idle` 断言。
+- 浏览器证据：逐步验证第 3 步 S 正在写入、第 4 步 S 正在读取、第 5 步 P 片上生成/逐行 Softmax、第 6 步 P 正在写入、第 7 步 P 正在读取；自动播放完成后 S/P 完整驻留、无 active timeline bar。Flash 对照仍为 0 B HBM 中间量。中英文无页面横向溢出；`390×844` 下页面 `clientWidth=scrollWidth=375`，S/P 工作区切为单列后各宽 289px。
+- 工程回归：`npm run check:flash` 通过；模块 convention checker 9/9、0 warning；Vite 5.4.21 生产构建通过（1890 modules transformed）；浏览器控制台无 error/warn。
+
+### 2026-07-18 — FlashAttention：统一标题与增强 Flash HBM / 片上工作区
+
+- 命名与头部：模式名从“未融合标准实现 / Unfused Baseline”恢复为“标准 Softmax / Standard Softmax”；章节标题缩为 `FlashAttention`，副标题承担 V1–V4 教学范围。头部改用与 Linear Attention 相同的左侧图标块、左对齐标题/副标题和可换行全局控件，V1–V4 并入同一控制组，不再单独占据第二行。
+- Flash HBM：主画布只保留一套 HBM 语义对象。Q/K/V 显示完整输入及当前读取 tile，O/LSE 显示 `pending / producing / writing / ready` 生命周期；独立的空地址网格明确显示完整 S/P 没有 HBM 分配，score/probability tile 转移到片上主对象中表达。
+- 版本化片上阶段：纯模型为每个 Flash 版本和前/反向建立专属 stage map，并要求每个 pipeline operation 恰好归属一个片上阶段。V1 为 KV staging、Q/O 状态重载、score、在线更新和状态回写；V2 为 CTA ownership、KV streaming、split-Q、warp-local output update 和 O/LSE commit；V3 为 TMA producer、WGMMA score、Softmax warpgroup、WGMMA output 和提交；V4 为 high/low Q 双流水线与 correction warpgroup。反向同样覆盖重算、梯度 MMA、Softmax 梯度、TMEM/2-CTA/DSMEM 与提交。
+- 浏览器证据：V1/V2/V3/V4 分别渲染 `5/5/5/3` 个不同 stage id，且每个版本仅有一套 Q/K/V/O/LSE HBM 对象和一个零二次方工作区。V3 第 4 步只激活 `v3Softmax`，O/LSE 同步为片上生成状态；标准模式仍显示逐行 Softmax 卡且 Flash stage 数为 0。
+- 响应式与语言：桌面标题与副标题左边界一致，header 高 152px，页面无横向溢出。`390×844` 下 V4 三阶段和所有 HBM 卡均 `clientWidth=scrollWidth=287`，页面 `clientWidth=scrollWidth=375`；中英文的 Standard Softmax、零工作区和 V4 阶段文案均完整显示。浏览器控制台无 error/warn。
+
+### 2026-07-18 — FlashAttention：区分完整矩阵与算法级 tile
+
+- 变更分类：局部视觉语义修复；保留顶部控制、HBM↔片上三栏主画布、时间线与 inspector，不改变现有交互结构。
+- 标准路径：Q/K/V/O 改为 6×4 连续微单元网格，同一矩阵的已驻留单元只使用一种填充样式，不再用三个大色块暗示 Flash 风格的算法级切分。画布同时注明这表示逻辑完整矩阵，底层 GEMM kernel 仍可能采用物理 tiling，避免把教学抽象泛化为实现断言。
+- Flash 路径：Q/K/V/O/LSE 的 HBM 对象显示四个带 `t0–t3` 编号的代表性 tile；颜色由 tile 身份决定而非张量身份。片上 `Q_i/K_j/V_j` 直接读取 canonical snapshot 的 q/kv tile 索引，使用相同颜色、编号和发光边框，因此可以从 HBM 位置追踪到当前片上副本。K 与 V 始终共享同一个 kv tile 索引。
+- 模型回归：`displayTiles` 由代表性 tile 坐标纯派生，并断言 idle/active 状态、索引范围及 q/kv 映射；全量合法配置检查通过。
+- 浏览器证据：标准 Q/K/V 各有 24 个微单元、每个矩阵的 filled class 只有 1 种、内部 `data-tile-index=0`；Flash V1–V4 第 3 步均满足 HBM/片上 `Q=[0,0]`、`K=[2,2]`、`V=[2,2]`。V3 第 4 步激活 `v3Softmax`，HBM/片上 `Q=[1,1]`、`KV=[0,0]`，页面无 Vite error overlay 和横向溢出。中文与英文图例均完成渲染，密集对象没有内部溢出。
+- 工程回归：`npm run check:flash` 通过；模块 convention checker 9/9、0 warning；中英文 i18n 253 个键一致；`git diff --check` 通过；Vite 5.4.21 生产构建通过（1890 modules transformed）。
+
+### 2026-07-18 — FlashAttention：补齐反向 tile 语义并压缩片上区域
+
+- 修复遗漏：上一轮 tile 身份编码只覆盖前向。反向现在由 canonical `backwardHbm` 快照驱动输入读取、梯度生成与写回；V1–V4 不再落回旧的三段色块。
+- Flash 反向：HBM 显式显示 `Q/K/V/O/dO/LSE` 与 `dQ/dK/dV` 九个对象。Q 行相关张量和 dQ 使用 q tile，K/V/dK/dV 使用 kv tile；片上顶部同步显示 Q 行保存量、KV 输入以及带双 tile 身份的梯度组。S/P 仍只在片上重算，HBM 分配为 0 B。
+- 标准反向：Q/K/V/O/dO 与 dQ/dK/dV 使用完整矩阵的统一编码；S/P 作为前向保存的二次方中间量继续驻留 HBM，不再错误显示“无完整二次方工作区”。反向循环文案也改为各版本真实的重算、CTA 所有权、warp specialization 或 2-CTA/TMEM 组织。
+- 模型回归：全量合法状态断言 backward HBM 必须存在，dQ/dK/dV 在 done 状态完整驻留，且只有标准反向具有二次方 HBM 工作区。`npm run check:flash` 通过。
+- 浏览器证据：Flash V1–V4 反向均渲染 9 个 HBM 张量，第 4 步均满足 HBM/片上 `q=[1,1]`、`kv=[0,0]`。V3 梯度阶段进一步验证 `dQ=[1,1]`、`dK/dV=[0,0]`；标准反向显示 Q/K/V/dO 与 dQ/dK/dV 七个完整矩阵及独立 S/P HBM 卡，完整矩阵内部没有 tile 边界。P 在加载保存量时被读取，S 保持驻留但不被误标为 backward 依赖。
+- 比例修复：片上 tile 卡、stage 卡、公式、资源标签、循环说明与最终公式均做纵向压缩；五阶段在桌面改为三列两行。`1280px` 下 Flash 前向 HBM/片上内容高度为 `513/476px`，V4 反向为 `553/556px`；stage 卡、密集 HBM 卡和页面均无横向溢出。中英文均完成验证，无 Vite error overlay。
+- 工程回归：模块 convention checker 9/9、0 warning；中英文 i18n 266 个键一致；`git diff --check` 与 Vite 生产构建通过（1890 modules transformed）。
+
+### 2026-07-18 — FlashAttention：补齐标准 Softmax 前反向片上画布
+
+- 修复遗漏：上一轮主要压缩了 Flash 路径，标准 Softmax 仍保留旧的纵向前向卡和反向资源条。本轮不改信息架构，只将同一批矩阵语义、真实阶段和比例要求落实到标准模式。
+- 标准前向：Score GEMM、row-wise Softmax、Output GEMM 在桌面恢复为同一行的真实执行顺序；卡片、公式、矩阵格和间距采用紧凑尺寸。Softmax 阶段仍显示 S 行、稳定化 max/exp/sum/normalize 与 P 行，横向细节可滚动但隐藏装饰性滚动条。
+- 标准反向：资源条替换为四个 canonical stage：加载 P/Q/K/V/dO、计算 dV/dP、逐行 Softmax backward、计算 dQ/dK 并写回 HBM。每个阶段由真实 pipeline operation 激活，不与 Flash 的 tile 流程混用。
+- HBM 正确性：标准 backward 细分输入读取与梯度生命周期。dV 只在 `dv` 生成，dQ 只在 `dq` 生成，dK 只在 `dk` 生成；之前已生成但尚未写回的梯度显示 buffered，`writeGrads` 时三者统一显示 writing。P 在所需 kernel 中读取，S 保持驻留但不作为 backward 依赖。
+- 浏览器证据：标准前向第 5 步仅激活 `softmax`，三阶段为单行 `97/180/97px`，HBM/片上内容高度为 `475/396px`。标准反向 `dv` 阶段显示 `dV=producing`、`dQ/dK=pending`；`dq` 阶段显示 `dQ=producing`、`dV=buffered`、K 正在读取；最终写回时 dQ/dK/dV 均为 writing。中英文卡片与页面无横向溢出，无 Vite error overlay。
+- 工程回归：新增标准 backward 独立梯度状态断言；`npm run check:flash`、模块 convention checker、i18n 对称检查、`git diff --check` 与生产构建均通过。
