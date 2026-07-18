@@ -10,6 +10,7 @@
     "check:parallel": "node scripts/check-parallel-strategies.mjs",
     "check:flash": "node scripts/check-flash-attention.mjs",
     "check:flashdecode": "node scripts/check-flash-decode.mjs",
+    "check:engram": "node scripts/check-engram.mjs",
     "check:visual": "node scripts/visual-check.js",
     "check:visual:module": "node scripts/visual-check.js --module"
   },

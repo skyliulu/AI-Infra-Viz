@@ -11,8 +11,8 @@
 **最终结果：failed。** 八章均能完成生产构建并在桌面浏览器中打开，但目前不能把整站视为已经通过“设计语言一致性 + 技术正确性”验收。
 
 - 未发现 P0（完全不可用或构建阻塞）。
-- 当前剩余 4 项 P1；Linear Attention、LLMInference、ParallelStrategies 与 FlashAttention 的已知 P1 正确性问题已修复。ParallelStrategies 仍保留原交互结构及其 convention 缺口，不报告为整章通过。
-- `LinearAttention`、`LLMInference` 与 `FlashAttention` 已使用共享 KaTeX `MathFormula`；其余 5 章仍有普通文本、`sub/sup` 或 HTML 拼接的公式。
+- 当前剩余 2 项 P1；Linear Attention、LLMInference、ParallelStrategies、FlashAttention、FlashDecode 与 Engram 的已知 P1 正确性问题已修复。ParallelStrategies 仍保留原交互结构及其 convention 缺口，不报告为整章通过。
+- `LinearAttention`、`LLMInference`、`FlashAttention`、`FlashDecode` 与 `Engram` 已使用共享 KaTeX `MathFormula`；其余 3 章仍有普通文本、`sub/sup` 或 HTML 拼接的公式。
 - `LinearAttention` 与 `LLMInference` 已采用 skill 的完整交互范式；`ParallelStrategies` 与 `RadixCache` 的状态模型缺口最大。
 - 已开始按项修复；每次修改的验证证据记录在“已修复记录”中。
 
@@ -22,8 +22,8 @@
 - 自动检查：运行 skill 自带的 convention checker，随后运行 `npm run build`。
 - 渲染检查：八章均在本地 Vite 页面完成桌面端首屏/代表性中间态检查；重点推进了 LLM、Flash Attention、Engram 与 Radix Cache 的状态。
 - 关键可见证据：Radix Cache 第 7 步页面同时显示“显存告急”与 `6 / 10` 块占用；Linear Attention、LLMInference 与 FlashAttention 在 `390×844` 下无页面级横向溢出。
-- 响应式边界：本轮完成桌面全章与 Linear Attention、LLMInference、FlashAttention 移动端实测；其余章节的平板/移动端逐状态遍历未完成，因此不报告为通过。
-- Linear Attention、LLMInference 与 FlashAttention 浏览器控制台已复核为 clean；其余章节尚未逐章抓取日志，因此不报告整站为 clean。
+- 响应式边界：本轮完成桌面全章与 Linear Attention、LLMInference、FlashAttention、FlashDecode、Engram 移动端实测；其余章节的平板/移动端逐状态遍历未完成，因此不报告为通过。
+- Linear Attention、LLMInference、FlashAttention、FlashDecode 与 Engram 浏览器控制台已复核为 clean；其余章节尚未逐章抓取日志，因此不报告整站为 clean。
 
 ## 自动检查
 
@@ -33,7 +33,7 @@
 | ParallelStrategies | 2/8 | 缺 `MathFormula`、phase/step/playback/next/togglePlay |
 | FlashAttention | 9/9 | 无告警；共享 KaTeX、版本化 canonical model、timeline 与资源指标均通过 |
 | FlashDecode | 9/9 | 已接入 `MathFormula`、canonical snapshot、完整播放状态机与资源模型；0 warning |
-| Engram | 6/8 | 缺 `MathFormula`、phase；缺纯快照模型 |
+| Engram | 9/9 | 共享 KaTeX、canonical snapshot、推理/训练系统模式与完整播放状态机均通过；0 warning |
 | RadixCache | 4/8 | 缺 `MathFormula`、phase、next/togglePlay；硬编码 JSX 文案 |
 | DpAttention | 4/8 | 缺 `MathFormula`、phase、规范 step/next；缺纯快照模型 |
 | LinearAttention | 8/8 | 仅 Unicode 数学告警；KaTeX 实际渲染正常 |
@@ -158,11 +158,11 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 问题：Simple 模式中的 `O_i` 是未归一化分子，因此分母必须包含每块的 `l_i/block_sum_exp[i]`；画布公式与本章自己的伪代码矛盾。
 - 修复方向：显示 `Σ O_i exp(m_i-m_g) / Σ l_i exp(m_i-m_g)`，或把 `O_i` 明确定义为已归一化局部输出并同步修改伪代码。
 
-### 4. Engram：伪代码的 hash_idx 会越界
+### 4. Engram：伪代码的 hash_idx 会越界 — 已修复（2026-07-18）
 
 - 证据：分配 `zeros(B,L,max_n,num_heads)` 后，循环 `n=2..max_n` 并写 `hash_idx[:,:,n,k]`（`src/components/Engram.jsx:869,893`）。
 - 问题：最后一次访问索引 `max_n`，超出长度为 `max_n` 的维度；展示的伪代码不可运行，也与官方 demo 的堆叠布局不一致。
-- 修复方向：使用 `n-2` 索引或按 `(max_n-1)×num_heads` 展平/堆叠，并让表索引和张量 shape 一致。
+- 修复结果：`hash_idx` 改为 `[B,L,max_n-1,num_heads]`，所有写入与查询统一使用 `ngram_idx=n-2`；独立模型回归覆盖官方 Demo 的 `max_n=3`、8 heads 和第 1/15 层配置。
 
 ### 5. RadixCache：未满容量却触发 Evict
 
@@ -192,7 +192,7 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - **ParallelStrategies**：是静态配置浏览器而非执行流水线；没有通信事件、训练 microbatch、all-reduce/all-to-all 或 prefill/decode 上下文。桌面首屏右侧 GPU 区在低卡数时留有大面积空白，教学主次失衡。
 - **FlashAttention**：已改为 V1–V4 canonical model、共享 KaTeX、算法级 bytes/live-set 推导和版本化前后向流水线；不再宣称固定 tile “完美驻留”。仍刻意不提供脱离具体 GPU/shape/kernel 的通用 TFLOPS benchmark。
 - **FlashDecode**：核心“切 KV + 局部 attention + 二次归约”正确；“通常只用一个 SM”应改成示例实现，不要写成算法固有属性。
-- **Engram**：英文词典中的 `play`、`next` 仍为中文（`src/components/Engram.jsx:92,94`）；“前置 Block 完全掩盖 PCIe 延迟”应改成可重叠/在条件满足时隐藏。
+- **Engram**：英文控件、canonical phase/step、共享 KaTeX 与条件性 latency hiding 边界已修复；训练态额外显示 GPU 表分片、All-to-All 活跃行获取与反向梯度分发，不把推理 CPU offload 路径冒充通用实现。
 - **RadixCache**：`hitRate = saved/(used+saved)` 更像累计块节省比例，不是请求级 prefix hit rate；“传统 KV 必须连续分配”和“零额外开销”都需要限定。`lock_ref` 在 B 复用前缀后的数值变化也缺少对应 acquire/release 事件。
 - **DpAttention**：空闲态就显示 `0%（完美分割）`，而尚未分配 KV；百分比基线不清晰。应把“全局 footprint”“单卡占用”“相对 TP 冗余倍率”拆成不同指标。
 - **LinearAttention**：设计语言、KaTeX、i18n、唯一 active stage、prefill/decode 区分和 runtime pseudocode 最完整；完成态的 Next 可进一步 disabled，并补充键盘/焦点验收。
@@ -201,7 +201,7 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 
 - 桌面端八章均无 body 级横向溢出；但 Parallel、Engram、DpAttention 使用高密度多列小字，视觉上“能放下”不等于可读。
 - Linear Attention 与 LLMInference 已在桌面、平板与 `390×844` 下复核；均无页面级横向溢出，控制条在窄屏折行后仍保持清晰阅读顺序。
-- 其余章节仍需在 `768×900` 与 `390×844` 逐章检查早/中/末状态；尤其关注 `min-w-*`、固定 GPU/SM 列数、伪代码宽度和侧栏覆盖。
+- FlashAttention、FlashDecode 与 Engram 也已在 `768×900` 与 `390×844` 检查早/中/末状态；其余章节仍需逐章检查，尤其关注固定 GPU/SM 列数、伪代码宽度和侧栏覆盖。
 - 图标按钮应统一提供稳定 aria-label；当前多章依赖 `title` 或视觉图标。
 - 颜色大体遵循算法身份色与 active/done/alert 色，但多个阶段同时使用同一 active 光晕，不能仅靠颜色区分“active”与“passed”。
 
@@ -355,3 +355,44 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 浏览器证据：`Paged + MQA + 4 splits` 显示 1 个 CTA 批次、4 个 Workspace 条目和非连续 Block Table，第三步直接进入归约且没有空的第二批；`Unsplit + Paged + MQA` 禁用 Split/Workspace 控件、显示 1 个 active CTA 和“无局部 Workspace / 无归约 kernel”；英文移动端 `8 splits` 的第二批显示 4 个 active CTA。
 - 响应式与契约影响：桌面主区仍为约 `597/420px` 的 7:5 两列；`768×900` 与 `390×844` 均按主画布→伪代码顺序堆叠。页面宽度分别为 `1265/1265`、`753/753`、`375/375`；中英文技术控件、派生指标与页面均无非预期横向溢出。密集 K/V、CTA 和 Block Table 在窄屏保留原画布内部的有意横向滚动；完成修改后新建干净标签页，无 Vite overlay，console warning/error 为空。
 - 当前结论：未发现 P0/P1。保留的限制是固定代表性 `N=12288, H_q=8, d=128`、六个代表性 KV pages、最多八个教学 splits，以及不估算真实延迟/带宽。QA matrix helper 通过（7 cases、8 个受影响维度），模块 convention checker 9/9、0 warning；Vite 5.4.21 生产构建通过（1891 modules transformed）。
+
+### 2026-07-18 — Engram：在原 2/7/3 结构内完成正确性与系统语义修复
+
+- 变更分类与结构契约：本轮为局部修正与能力扩展。继续保留“顶部控制 → 左 2 网络拓扑 / 中 7 微观张量流 / 右 3 Demo 对齐伪代码 → 满宽系统时间轴 → 数学推导”的区域顺序、相对比例与响应式阅读顺序；没有替换原主画布或增加新的页面级信息架构。
+- canonical 状态：新增纯 `normalizeEngramState()`、`deriveEngramSnapshot()` 与 `advanceEngramState()`。同一 `systemMode × tokenIndex × step` 快照驱动拓扑、张量流、伪代码、时间轴和完成态；操作严格按 `extract → hash → lookup → retrieve → concatenate → project → gate → shortConv → integrate` 推进，idle/done 为 0 active，其余状态恰好 1 active。
+- 拓扑顺序：标准 Block 明确为 Attention → MoE；含 Engram 的 Block 为 Engram 模块 → Attention → MoE。页面使用官方 Demo 的代表性 `max_n=3`、8 个 hash heads、Engram 位于第 1/15 层配置，并将它标为示例而非通用层位约束。
+
+#### Claim ledger
+
+| Claim | 领域模型与可见证据 | 边界 |
+|---|---|---|
+| N-gram hash 的存储轴只有 `max_n-1` 个槽位 | `hash_idx[B,L,max_n-1,num_heads]`，以 `ngram_idx=n-2` 写入和查询；模型检查覆盖所有索引 | 展示使用官方 Demo 的 2-gram/3-gram 与 8 heads，不暗示任意部署都采用相同表数 |
+| `W_V` 在 hyper-connection 分支间共享，`W_K` 按分支独立 | 张量流先生成共享 `V_t=W_VE_t`，再为各分支生成 `K_t^(c)=W_K^(c)E_t`；伪代码把共享投影移出分支循环 | 这是官方 Demo 对齐结构，不声称所有 Engram 后续实现必须保持相同参数化 |
+| Engram 输出先经过门控与 short convolution，再进入 Block 残差 | gate、shortConv 和 integrate 是三个独立 canonical 操作；最终显示 `H_block=H_in+Y` | 画布使用代表性 shape，不展示某个编译器的真实 kernel fusion |
+| 推理与训练的数据移动路径不同 | 推理显示 CPU Host lookup、PCIe transfer 与 GPU compute window；训练显示 GPU table shards、All-to-All active-row fetch 和 backward gradient dispatch | 推理侧只声明在足够前置计算、带宽与调度条件下可隐藏部分延迟，不承诺“完全掩盖” |
+| Tokenizer compression 会让等价形式共享规范化 ID | 可见示例 `" Alexander"` / `"ALEXANDER"` → `alexander`，同时标注 NFKC、去重音、小写与空白归一化 | 示例用于解释压缩语义，不等同于复刻完整 tokenizer 词表或精确 ID |
+
+- 伪代码正确性：修复原 `hash_idx[:,:,n,k]` 越界；引入 `ngram_idx=n-2`、逐头 prime 取模和共享/分支投影边界；门控归一化在开方前 clamp，并把 Engram 增量 `Y` 与外层 Block 残差 `H_block` 分开表示。
+- 内容与数学：全部公式切换到共享 `MathFormula`/KaTeX；有符号平方根写为 `sign(x)√|x|`；中英文键完全对齐，Play/Next/Completed 语义一致。Tokenizer compression 增加直接可见的输入→规范化证据，不再只用说明文字暗示变化。
+- 响应式：桌面保持 2/7/3 主结构；`768×900` 与 `390×844` 自动按原阅读顺序堆叠。三种宽度均无页面级横向溢出；窄屏张量流和系统时间轴仅保留带显式提示的局部横向滚动。移动端控制条可换行且标题、播放、重置、完成态均可见。
+- 模型与工程回归：`npm run check:engram` 覆盖推理/训练 × 5 token × 10 step，共 100 个 canonical 生命周期状态；QA matrix 覆盖 2 system modes × 2 languages × 3 viewports 共 12 例。模块 convention checker 9/9、0 warning；`git diff --check` 与 Vite 5.4.21 生产构建通过（1892 modules transformed）。
+- 浏览器证据：代表性单步依次得到 `extract/hash/lookup/retrieve/concatenate/project/gate/shortConv/integrate`；完整 45 次推进后为 `phase=done`、Next 显示 Completed 且禁用。推理/训练切换、中英文状态保持、1280+ 桌面、`768×900`、`390×844` 均通过；控制台仅有 Vite debug 与 React DevTools info，无 warning/error。
+- 已知限制：页面固定使用代表性 token 序列、2/3-gram、8 heads 与第 1/15 层；逻辑嵌入表按 channel 分开展示，而官方 Demo 可通过 offset 打包底层表；训练反向只标注梯度分发边界，没有把参数更新过程扩展成第二条动画时间线。
+
+### 2026-07-18 — Engram：压缩 Context-aware Gating 并修复 E_t 连线
+
+- 变更契约：仅调整中间张量流内部 `Multi-Head Hash Retrieval → Context-aware Gating` 的桥接区和门控区；顶部控制、2/7/3 主结构、左右面板、时间轴、数学区、状态机与响应式阅读顺序均保持不变。
+- 数据依赖：2-gram 与 3-gram 的 `E_{t,2}` / `E_{t,3}` 不再以两条重合线直接落入门控区，而是在现有两块 channel 卡下方汇聚成唯一 `E_t=Concat(E_{t,2},E_{t,3})`，随后由同一 `E_t` 扇出到 per-branch `W_K` 与 shared `W_V`。桥接公式、汇合节点与下行箭头在 concat 及后续状态保持连续可见。
+- 信息密度：门控画布从 560px 压缩到 480px，并在同一画布内用“投影 / 依赖门控 / 卷积融合与残差”三条轻量语义带组织原有节点；没有复制第二套解释图。17 个核心张量/算子在桌面激活态的两两交叠数为 0。
+- 标签与路由：长门控说明改成紧凑的 `〈·,·〉 → sgn(x)√|x| → σ` 公式，避开 `K_t`、RMSNorm 与 `α_t`；`E_t`、权重、门控、Conv1D、residual 与 `H_block` 的维度标签均贴近对应对象。桌面截图中从两个 channel 到 `E_t`、两路投影、门控广播和 residual 的方向均可连续追踪。
+- 响应式：桌面无页面级横向溢出；`768×900` 与 `390×844` 的页面 `scrollWidth==clientWidth`，门控画布继续使用原张量流内部的有意横向滚动。移动端分别检查左侧 `H_in/W_K/K_t/α_t/residual` 和右侧 `E_t/W_V/V_t/广播/Ṽ_t` 路径，节点与标签无非预期重叠。
+- 回归：`npm run check:engram` 增加 bridge、唯一 `E_t` 汇聚公式、紧凑画布及核心语义节点断言并通过；convention checker 9/9、0 warning，QA matrix 12/12，`git diff --check` 与 Vite 5.4.21 生产构建通过（1892 modules transformed）。
+
+### 2026-07-18 — Engram：降低门控节点视觉重量并分离汇聚边缘
+
+- 问题复核：上一版虽将门控画布从 560px 压到 480px 并消除节点几何相交，但继续沿用原大号张量框、40px 算子圆和 144×48px Conv1D，形成视觉拥挤；汇聚框顶边与上层 Hash Retrieval 卡底边实际重叠约 2.4px。
+- 局部修复：画布高度、三条语义带、全部节点、连线与执行状态保持不变；只按内容缩小 `H_in/E_t/W_K/W_V/K_t/V_t/α_t/Ṽ_t/H_block`、矩阵乘/门控/广播/residual 算子及 Conv1D 的几何和符号字号。Conv1D 从 144×48px 调整为 112×40px，圆形算子从 40px 调整为 32px。
+- 密度量测：18 个语义节点的桌面激活态占用面积从约 51,756px² 降至 37,698px²，减少约 27%；两两交叠仍为 0。技术对象、维度标签、三条语义带及数据依赖均未删除。
+- 汇聚间距：桥接区由 64px 增至 80px，`E_t=Concat(E_{t,2},E_{t,3})` 汇聚框下移；其顶边与上层检索卡底边从 −2.4px 重叠改为 +13.6px 间隔，双 channel 连线仍从两侧汇入并连续下行至 `E_t`。
+- 响应式与语言：`768×900` 和 `390×844` 页面均无页面级横向溢出；移动端分别检查左右半幅，内部滚动范围维持 399px，紧凑节点没有产生新的裁切或碰撞。中英文标题及语义带文案均完成复核。
+- 回归：`check:engram` 增加 80px bridge、32px 核心算子和紧凑 Conv1D 的源断言；canonical 生命周期、convention checker、QA matrix、生产构建与浏览器 console 继续作为交付门槛。

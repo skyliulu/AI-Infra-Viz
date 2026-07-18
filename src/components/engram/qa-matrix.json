@@ -1,0 +1,25 @@
+{
+  "dimensions": {
+    "systemMode": ["inference", "training"],
+    "language": ["zh", "en"],
+    "viewport": ["desktop", "tablet", "mobile"]
+  },
+  "requiredCrossProducts": [
+    ["systemMode", "viewport"],
+    ["language", "viewport"]
+  ],
+  "cases": [
+    { "name": "inference zh desktop", "state": { "systemMode": "inference", "language": "zh", "viewport": "desktop" }, "checks": ["desktop contract", "prefetch condition"] },
+    { "name": "inference en desktop", "state": { "systemMode": "inference", "language": "en", "viewport": "desktop" }, "checks": ["english controls", "formula layout"] },
+    { "name": "training zh desktop", "state": { "systemMode": "training", "language": "zh", "viewport": "desktop" }, "checks": ["all-to-all lanes", "demo boundary"] },
+    { "name": "training en desktop", "state": { "systemMode": "training", "language": "en", "viewport": "desktop" }, "checks": ["all-to-all lanes", "english boundary"] },
+    { "name": "inference zh tablet", "state": { "systemMode": "inference", "language": "zh", "viewport": "tablet" }, "checks": ["header wraps", "no page overflow"] },
+    { "name": "inference en tablet", "state": { "systemMode": "inference", "language": "en", "viewport": "tablet" }, "checks": ["header wraps", "controls readable"] },
+    { "name": "training zh tablet", "state": { "systemMode": "training", "language": "zh", "viewport": "tablet" }, "checks": ["mode control", "timeline scroll"] },
+    { "name": "training en tablet", "state": { "systemMode": "training", "language": "en", "viewport": "tablet" }, "checks": ["mode control", "timeline scroll"] },
+    { "name": "inference zh mobile", "state": { "systemMode": "inference", "language": "zh", "viewport": "mobile" }, "checks": ["control wrap", "dense canvas cue"] },
+    { "name": "inference en mobile", "state": { "systemMode": "inference", "language": "en", "viewport": "mobile" }, "checks": ["english controls", "dense canvas cue"] },
+    { "name": "training zh mobile", "state": { "systemMode": "training", "language": "zh", "viewport": "mobile" }, "checks": ["mode control", "all-to-all lanes"] },
+    { "name": "training en mobile", "state": { "systemMode": "training", "language": "en", "viewport": "mobile" }, "checks": ["mode control", "english boundary"] }
+  ]
+}
