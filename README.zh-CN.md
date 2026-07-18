@@ -24,25 +24,63 @@
 ---
 
 ## 🧠 可以探索哪些内容
-- 🖥️ **LLM 推理可视化** — 逐步动画展示 Prefill/Decode 阶段、KV Cache 生命周期，支持 MoE 与 Dense 架构切换及温度采样控制
-- 🔀 **6D 并行策略探索器** — 交互式 DP / TP / PP / CP / EP / ETP 拓扑，实时查看张量切分方式与 GPU 资源映射
-- ⚡ **Flash Attention 深度讲解** — 标准 Attention 与 Flash Attention 对比，SRAM/HBM IO 流量追踪，以及带因果掩码跳过机制的分块计算可视化
-- 🚀 **Flash Decode** — KV Cache 跨 SM 计算单元切分、并行两步归约，直观展示突破显存墙的解码优化路径
-- 🧬 **Engram（DeepSeek）** — N-gram 条件记忆检索增强 Transformer 层，附微观张量流图与硬件级异步预取时间轴
-- 🌲 **Radix Cache** — SGLang 基于基数树的全局 KV Cache 共享机制，可视化惰性前缀分裂、LRU 驱逐与物理显存块复用全流程
-- 🔁 **DP Attention** — 可视化展示 DP/TP 混合并行 Attention 流程、KV Cache 按行切分策略与跨卡通信权衡
+
+- 🖥️ **LLM 推理全景** — 从 Token Embedding 依次观察 Attention、Dense FFN 或 MoE Expert、逐层 KV Cache、LM Head，以及 Temperature / Top-K / Top-P 采样
+- 🔀 **并行策略探索器** — 组合 DP / TP / PP / CP / EP / ETP，查看矩阵切分与 GPU Rank 映射，并对比 DP Attention、Wide-EP、P/D 分离和 Runtime 通信设计
+- ⚡ **Flash Attention** — 对比 Standard Softmax 与 FlashAttention V1–V4 的前向/反向分块流水线、片上 SRAM Tile、HBM 中间产物和 IO 流量
+- 🚀 **Flash Decode** — 对比 Unsplit / Split-K、Contiguous / Paged KV、MHA/GQA/MQA Head 共享、CTA 调度、Workspace 写入与最终归约
+- 🧬 **Engram（DeepSeek）** — 追踪 Tokenizer Compression、多头 N-gram 检索、Context-aware Gating、Short Convolution，以及推理/训练的数据移动
+- 🌲 **Radix Cache** — 探索基数树前缀复用、请求引用锁、容量缺口、LRU 叶节点驱逐和成对 K/V Page 分配
+- 📈 **Linear Attention** — 从 Standard Softmax 推进到核函数 Linear Attention、递归状态更新与 Gated Linear Attention（GLA）
+- 🔁 **DP Attention** — 对比标准 TP Attention 与面向 MLA 的 DP Attention，包括 KV 所有权和 TP-FFN / EP-MoE 通信路径
+
+---
+
+## 🧭 后续计划
+
+后续章节将继续把算法层的张量流，与 Runtime 调度、显存所有权和物理通信联系起来。以下是候选方向，不代表固定的开发顺序。
+
+### 推理算法
+
+- **Speculative Decoding** — 展示 Draft/Verify 流水线、接受率、树状候选，以及推测解码真正降低时延所需的条件
+- **量化与低精度推理** — 展示 W8A8、W4A16、FP8、KV Cache 量化、缩放粒度，以及反量化与融合 Kernel 的边界
+
+### Serving Runtime 与显存
+
+- **Continuous Batching 与 Scheduler** — 展示请求生命周期、Chunked Prefill、Decode Batching、抢占、准入控制和时延/吞吐权衡
+- **KV 显存层级** — 展示 GPU/CPU/NVMe Offload、分层 KV Cache、迁移、前缀复用和 P/D 分离下的 KV 所有权
+
+### 分布式系统
+
+- **MoE Serving 与负载均衡** — 展示 Expert 放置、Token Dispatch、容量压力、Expert Parallelism、All-to-All 和动态 Expert 再平衡
+- **互连拓扑与集合通信** — 展示 NVLink、PCIe、InfiniBand/RDMA、NCCL，以及分层 All-Reduce、Reduce-Scatter 和 All-to-All
+- **推理性能模型** — 拆解 TTFT/TPOT、计算与访存瓶颈、Roofline 直觉、利用率和端到端 Profiling 证据
+
+欢迎通过 GitHub Issues 提交章节建议和可参考的实现资料。
 
 ---
 
 ## 🖼️ 项目预览
 
-![Engram 演示](./media/engram.gif)
+### LLM 推理：张量、KV Cache 与采样
 
-[直接打开视频](./media/engram.mp4)
+![LLM 推理演示](./media/llm-inference.gif)
+
+[直接打开视频](./media/llm-inference.mp4)
+
+### 并行策略：切分、Rank 与 Runtime 拓扑
 
 ![并行策略演示](./media/parallel.gif)
 
 [直接打开视频](./media/parallel.mp4)
+
+### Engram：检索、门控与系统数据移动
+
+![Engram 演示](./media/engram.gif)
+
+[直接打开视频](./media/engram.mp4)
+
+以上动画展示代表性交互路径；完整模式与参数组合请进入[在线体验](https://skyliulu.github.io/LLM-Infra-Explorer/)探索。
 
 ---
 
