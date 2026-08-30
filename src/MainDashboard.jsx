@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useState } from 'react';
-import { Github, Cpu, Zap, FastForward, Network, Database, GitBranch, Activity, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Github, Cpu, Zap, FastForward, Network, Database, GitBranch, Activity, Sparkles, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -11,6 +11,7 @@ const LLMInference = lazy(() => import('./components/LLMInference.jsx'));
 const DpAttention = lazy(() => import('./components/DpAttention.jsx'));
 const FlashAttention = lazy(() => import('./components/FlashAttention.jsx'));
 const FlashDecode = lazy(() => import('./components/FlashDecode.jsx'));
+const SpeculativeDecoding = lazy(() => import('./components/SpeculativeDecoding.jsx'));
 const ParallelStrategies = lazy(() => import('./components/ParallelStrategies.jsx'));
 const Engram = lazy(() => import('./components/Engram.jsx'));
 const RadixCache = lazy(() => import('./components/RadixCache.jsx'));
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'parallel', label: 'Parallel Strategy', icon: Network, component: ParallelStrategies },
   { id: 'flash', label: 'Flash Attention', icon: Zap, component: FlashAttention },
   { id: 'flashdecode', label: 'Flash Decode', icon: FastForward, component: FlashDecode },
+  { id: 'speculative', label: 'Spec Decode', fullLabel: 'Speculative Decoding', icon: Sparkles, component: SpeculativeDecoding },
   { id: 'engram', label: 'Engram', icon: Database, component: Engram },
   { id: 'radixcache', label: 'Radix Cache', icon: GitBranch, component: RadixCache },
   { id: 'dpattention', label: 'DP Attention', icon: Network, component: DpAttention },
@@ -130,10 +132,11 @@ export default function MainDashboard() {
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 )}
-                title={sidebarCollapsed ? tab.label : undefined}
+                aria-label={tab.fullLabel || tab.label}
+                title={sidebarCollapsed || tab.fullLabel ? tab.fullLabel || tab.label : undefined}
               >
-                <Icon size={16} />
-                {!sidebarCollapsed && tab.label}
+                <Icon size={16} className="shrink-0" />
+                {!sidebarCollapsed && <span className="min-w-0 whitespace-nowrap">{tab.label}</span>}
               </button>
             );
           })}

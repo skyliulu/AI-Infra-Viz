@@ -71,6 +71,16 @@ const featureCards = [
     iconClass: 'text-amber-300',
   },
   {
+    id: 'speculative',
+    title: { en: 'Speculative Decoding', zh: '推测解码' },
+    description: {
+      en: 'See why Draft–Verify reduces serial Target work, then compare EAGLE-2 dynamic trees with DSpark confidence scheduling.',
+      zh: '先理解 Draft–Verify 如何减少 Target 串行前向，再比较 EAGLE-2 动态树与 DSpark 置信度调度。',
+    },
+    icon: Sparkles,
+    iconClass: 'text-blue-300',
+  },
+  {
     id: 'engram',
     title: { en: 'Engram', zh: 'Engram' },
     description: {

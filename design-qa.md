@@ -509,3 +509,153 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 顶部控制保留原位置并扩展为温度、Top-K、Top-P 三个紧凑滑块；伪代码同步显示 `top_k_filter → top_p_filter → renormalize → sample`，避免控件与主画布语义脱节。
 - 浏览器实测：MoE 画布存在 `router weight / router / expert up / expert hidden / expert down` 五个对象；Dense 切换后存在 `input / up weight / hidden / down weight / output` 五个对象。推进到 LM Head 后曲线出现；`T=0.9,K=3,P=1.0` 保留 3 个候选，切到 `K=1` 后立即只保留 1 个，证明曲线由控件实时驱动。
 - 回归：`npm run check:llm` 通过 96 个代表状态，并新增 FFN/MoE 权重形状、温度上限、Top-K/Top-P 截断和概率归一化断言；convention checker 9/9、QA matrix 通过，Vite 5.4.21 生产构建通过（1896 modules transformed）。
+## 2026-07-19 — SpeculativeDecoding：Draft–Verify、顺序接受与树形候选
+
+- 变更分类与结构契约：新增独立章节，不改造既有章节。首页卡片和侧栏在 Flash Decode 后加入 Speculative Decoding；顶栏沿用仓库统一的标题/模式/局部参数/语言/重置/播放/下一步结构，主区采用 7:5 的执行画布与检查器关系。README/README.zh-CN 保持内容介绍后立即展示 Preview，再把 Roadmap 放在 Preview 之后。
+- 教学问题：一次 Target Forward 为什么能够安全提交多个 Token；候选何时接受、拒绝、修正和回滚，何时 Draft 成本会抵消收益？
+- 能力声明：`timeline`、`multiple-modes`、`resource-metrics`、`data-movement`、`dense-layout`、`math`。
+- canonical model：`mode × profile × draftLength × phase × step` 统一派生真实操作序列、Draft/Target 概率、固定随机数、接受前缀、修正/Bonus Token、树形祖先 Mask、KV 槽位状态和共享成本指标。Baseline、Chain 与 Tree 使用各自真实 stage map；idle/done 无伪 active，running 始终只有一个 active operation。
+
+### Claim ledger
+
+| Claim | 依据与可视证据 | 边界 |
+|---|---|---|
+| 经典推测采样可以在不改变 Target 分布的前提下并行验证多个 Draft Token | Leviathan et al. ICML 2023 与 Chen et al. 2023；Chain 画布逐位置显示 `q_i(x_i)`、`p_i(x_i)`、固定 `u_i` 和 `min(1,p/q)`，检查器使用 KaTeX | 只对页面展示的经典修正拒绝采样声明精确分布，不泛化到宽松接受策略 |
+| 接受判定必须按位置顺序进行；首拒后的 Draft 后缀不能提交 | canonical model 先定位 first rejected index，再只生成连续接受操作；浏览器 hard/K=4 场景最终提交 `the, future, technology`，原 `of` 与后续 `AI` 均保持 discarded | Target logits 可在一个因果块中并行产生，不等于接受决策可以乱序 |
+| 首拒位置的替代 Token 来自归一化正残差，而不是直接重采样 Target | 修正阶段显示 `p'(x) ∝ max(0,p(x)-q(x))`，独立的 correction token 承担新语义身份 | 页面使用确定性代表样本解释机制，不是全词表数值模拟 |
+| 全部 K 个候选通过时可以额外产生一个 Target Bonus Token | easy/K=4 浏览器路径完成后提交 5 个 Token，Bonus `is` 与四个 Draft Token 分开显示 | Bonus 只在 all-accepted 分支出现 |
+| 树形候选需要祖先可见的注意力关系，并在验证后提交一条路径、裁剪其余分支 | Medusa 与 EAGLE-2；树图复用候选节点，8×8 Mask 由模型祖先关系派生，done 状态 3 个 selected 节点 committed、5 个非选节点 discarded | 本页展示代表性 tree verification，不把所有树构造/接受规则视为同一个算法 |
+| 加速依赖接受率、Draft 成本和负载形态 | vLLM 0.17 官方边界；页面用同一刻度比较 baseline-equivalent cost 和教学估算 cost，并显式标注非硬件实测 | 不展示保证倍数；高 batch/低接受率/重 Draft 可能缩小收益 |
+
+- 权威依据：[Fast Inference from Transformers via Speculative Decoding](https://proceedings.mlr.press/v202/leviathan23a.html)、[Accelerating Large Language Model Decoding with Speculative Sampling](https://arxiv.org/abs/2302.01318)、[Medusa](https://arxiv.org/abs/2401.10774)、[EAGLE-2](https://arxiv.org/abs/2406.16858)、[vLLM Speculative Decoding](https://docs.vllm.ai/en/v0.17.0/features/speculative_decoding/)。
+- 模型与规范回归：`npm run check:speculative` 覆盖 3 modes × 2 profiles × K={1,4,6} 的全部合法步骤，验证接受概率范围、首拒前缀、Bonus、Tree Mask 自可见与 selected-path commit；QA matrix 9 cases 覆盖 mode×outcome、mode×viewport、language×viewport；模块 convention checker 9/9、0 warning；Vite production build 通过（1898 modules）。
+- 浏览器证据：1280×720 桌面中 Chain 初态、hard done、easy done 和 Tree done 均无 body overflow；hard 场景最初发现原拒绝 Token 被错误标成 committed，修正后新增断言要求 rejected token 与后缀都保持 discarded。Tree 在主区过早并排导致右分支滚动的问题已把并排断点推迟到 2xl，复核桌面 tree scroller `clientWidth == scrollWidth`。390×844 的中英文页面 body overflow 为 0、顶栏控制重叠为 0；Tree 保留明确的组件内横向 scroller 以维持节点可读尺寸。
+- 已知边界：成本数值是固定 Draft-cost 系数的教学模型，不是 profiler；Tree 使用代表性静态节点与置信度，Roadmap 保留 EAGLE-family feature drafting、MTP、multi-round serving trace 和具体引擎调度作为后续扩展。
+
+## 2026-08-30 — SpeculativeDecoding：从抽象 Chain/Tree 重构为 EAGLE-2 / DSpark 架构对照
+
+- 变更分类与契约：用户明确授权结构性重构。顶层从 `baseline / chain / tree` 改为 `EAGLE-2 / DSpark`，Baseline 不再是隐藏的独立页，而是在第一教学区始终与当前算法同屏；语言、重置、播放、下一步、单一 active stage、浅色工作台和移动端阅读顺序保留。Chain、Tree 与 Block 退回候选拓扑/调度维度。
+- 教学问题：为什么便宜的 Draft 工作能够减少昂贵的 Target 串行 Decode；EAGLE-2 与 DSpark 分别如何在 Draft 架构、候选拓扑和验证调度上实现这一共同骨架？
+- 能力声明：`timeline`、`multiple-modes`、`resource-metrics`、`structural-comparison`、`data-movement`、`dense-layout`、`math`。
+- canonical model：`algorithm × scenario × phase × step` 统一派生候选结构、验证预算、接受/修正结果、Baseline 与推测 Target 前向数、权重流式读取轮次、Draft/Verify/Runtime 成本、KV 提交/回收和伪代码高亮。`representative / lowAcceptance` 改变接受长度与 DSpark 验证前缀，切换算法或场景确定性重置时间线。
+
+### Claim ledger
+
+| Claim | 权威依据与可视证据 | 边界 |
+|---|---|---|
+| 推测解码以便宜 Draft 工作换取更少的 Target 串行 Decode | Leviathan et al. ICML 2023；第一教学区对同一提交 Token 数并排绘制 Baseline 的 N 次 Target Forward 与推测路径的 1 次 Target 块验证，并在共享成本刻度上拆出 Draft、Verify、Runtime | 块验证成本高于单 Token Decode；页面只建模权重带宽受限的低到中等并发 Decode |
+| EAGLE-2 使用特征级 Drafter 与上下文感知动态候选树 | EAGLE 与 EAGLE-2 论文；EAGLE 模式显示 Target 倒数第二层特征复用、置信度扩树、祖先可见验证、接受路径和分支回收 | 页面是代表性确定轨迹，不复现论文训练、全词表采样或真实 kernel 时延 |
+| DSpark 通过半自回归 Drafter 与置信度调度减少后缀衰减和无效验证 | DSpark 论文与 vLLM Speculators 官方实现文档；DSpark 模式显示并行候选块、低秩 Markov Head、Confidence Head、代表性 4/6 与低接受率 2/6 验证预算 | 验证长度使用教学化 engine profile，不声称复现 DeepSeek-V4 线上策略或 60–85% 实测数字 |
+| Target 仍验证候选，经典修正拒绝采样可保持 Target 分布 | Leviathan et al. 与 Chen et al.；页面使用 KaTeX 显示 `min(1,p/q)`，并在 Target KV 条中分别编码接受前缀、修正 Token、已验证后缀与未分配槽位 | 只对经典修正拒绝采样声明精确分布；具体树形/宽松接受是否无损取决于实现 |
+| 加速取决于接受长度、验证位置数与额外开销 | 纯模型使用 `A`、`V`、Draft、Verify、Runtime 共同派生估算；低接受率切换同步减少提交数、降低估算加速，并使 DSpark 缩短验证前缀 | 所有成本为归一化教学值，不是硬件 Benchmark |
+
+- 权威依据：[Fast Inference from Transformers via Speculative Decoding](https://proceedings.mlr.press/v202/leviathan23a.html)、[Accelerating Large Language Model Decoding with Speculative Sampling](https://arxiv.org/abs/2302.01318)、[EAGLE](https://arxiv.org/abs/2401.15077)、[EAGLE-2](https://arxiv.org/abs/2406.16858)、[DSpark](https://arxiv.org/abs/2607.05147)、[vLLM Speculators DSpark](https://github.com/vllm-project/speculators/blob/main/docs/user_guide/algorithms/dspark.md)。
+- 自动验证：`npm run check:speculative` 覆盖 2 algorithms × 2 scenarios × 全部合法 timeline steps，并断言 Target 调用差异、EAGLE 接受路径、DSpark 验证裁剪、成本敏感性和 clean done；convention checker 9/9、0 warning；QA matrix 8 cases 覆盖 algorithm×scenario、algorithm×outcome、algorithm×viewport、language×viewport；Vite 5.4.21 production build 成功（1898 modules transformed）。
+- 浏览器证据：1517×911 桌面首屏 Baseline/EAGLE-2 为 616px/616px 同屏列，推测子流程为 `192.5px / 24px / 357.5px`；body `clientWidth == scrollWidth == 1502`。DSpark 第 3 步只有一个 active stage，代表性场景 4/6 进入验证；低接受率切换重置到 0/6 并改为 2/6。完成态无 active stage。390×844 中英文 body overflow 均为 0，四个主区 `clientWidth == scrollWidth == 341`；EAGLE 树使用组件内 `307px / 584px` 横向 scroller，不产生页面级溢出。干净新标签页控制台 error/warn 为 0。
+- QA 修正：首次 HMR 因删除后重建组件未重扫 Tailwind，重启 Vite 后桌面响应式类生效；DSpark 低接受率完成态最初只画接受候选 KV，补充修正 Token 槽后 Target KV committed 槽数从 1 与输出 2 不一致修正为 2。
+- 已知边界：示例 Token、置信度与归一化成本为确定性教学轨迹；没有复现真实模型权重、硬件 profiler、连续批处理或多请求调度。后续可加入 EAGLE-3、原生 MTP 与有实测依据的硬件配置，但不应把论文倍数直接作为通用结论。
+
+### 动态顶层竞速二次重构
+
+- 信息架构：按用户反馈改成“共同加速原理竞速 → EAGLE-2 / DSpark 真实机制轨迹 → 算法架构 → 数学原理、KV 与伪代码”。原静态左右卡片被同一时间轴上的两条执行轨道替换；两条时间线各自使用就近的重置、播放和单步控制，算法/场景/语言仍保留在全局顶栏。
+- canonical model：在原 `algorithm × scenario × phase × step` 上增加独立、受约束的 `raceStep∈[0,12]`。`deriveRaceModel` 统一派生归一化时间、Baseline 已提交数、当前 Target pass、候选可见数、Draft/Verify/Commit 阶段、推测提交数和实时领先 Token；渲染层不自行复制进度计算。
+- 共同原理口径：首屏只抽象为“低成本候选工作 + 一次 Target 块验证 + 按序接受/提交”，没有宣称两种 Drafter 都一次前向完成多步。EAGLE-2 的特征级自回归扩树与 DSpark 的并行主干/Markov Head 继续只在下一节各自真实画面中呈现。该边界分别与 [EAGLE-2](https://arxiv.org/abs/2406.16858) 的 context-aware dynamic draft tree 和 [DSpark](https://arxiv.org/abs/2607.05147) 的 semi-autoregressive generation / confidence-scheduled verification 对齐。
+- 可见证据：代表性 EAGLE-2 在 `t=2.00` 时推测轨道已经提交 `4/4`，Baseline 为 `2/4`，实时状态显示领先 `+2 Token`；DSpark 同一状态也为 `4/4 vs 2/4`。播放继续到 `t=4.00` 后两路以相同输出数收尾，避免把更早完成误画成不同生成结果。低接受率场景继续由更少提交 Token 和更低估算收益表达边界。
+- 自动回归：`npm run check:speculative` 新增 2 algorithms × 2 scenarios × 13 race steps 的单调性、合法 active pass、候选增长、代表性提前完成和最终同输出断言；convention checker 9/9、0 warning；QA matrix 扩为 6 个受影响维度，并覆盖 `raceOutcome × viewport`；Vite production build 通过（1898 modules）。
+- 浏览器 QA：1517px 中文 EAGLE-2 初态、`t=2.00` 领先态与最终态均完成实页检查；390×844 英文 DSpark 在 `t=2.00` 显示 `4/4 vs 2/4`。桌面 `bodyScrollWidth=1502 < innerWidth=1517`，移动端 `bodyScrollWidth=375 < innerWidth=390`；竞速画布在移动端保留 `307/744px` 的有意内部时间轴滚动，不产生页面级横向溢出。干净新标签页只有 Vite debug 和 React DevTools info，warning/error 为 0。
+- 当前结果：P0–P3 未发现未解决问题。已知限制仍是归一化教学成本而非硬件实测；竞速展示代表性单请求 Decode，不外推到高 batch 连续调度。
+
+### 固定时间预算竞速与论文机制复核
+
+- 缺陷与改动范围：用户确认原“固定 4 Token 输出目标”会让 Baseline 在动画终点追平，最终“未拉开差距”与竞速心智模型冲突；静态执行代价框重复表达同一结论。此次属于顶层比较模型修复和两种算法主画布的正确性扩展，保留算法/场景/语言开关、两套局部时间线、公式、KV 与伪代码区域。
+- 顶层模型：竞速改为固定 `6` 个归一化 Target 时间单位。Baseline 每单位完成一次 Target Forward 并提交 1 Token；推测路径按当前 Drafter/Verify/Runtime 成本重复多个周期，每个完成周期一次性追加该场景的 accepted output。代表性 EAGLE-2 与 DSpark 最终均显示 `12 vs 6`、多输出 `+6 Token`；EAGLE-2 低接受率边界显示 `6 vs 6`，并明确写成“低接受率抵消收益”，不再把追平伪装成加速。
+- 冗余移除：删除 `CostBars` 与 `speculative-cost-bars`，第一教学区不再出现静态归一化成本条或孤立估算倍数；Draft/Verify/Commit 成本只作为每个循环在共享时间轴上的实际宽度，输出 Token 直接在两条轨道下增长。
+
+#### 论文 Claim ledger
+
+| Claim | 原论文依据 | canonical model 与可见证据 | 边界 |
+|---|---|---|---|
+| EAGLE-2 用路径上 Draft confidence 的乘积近似节点全局接受概率 | [EAGLE-2 §4.1](https://arxiv.org/html/2406.16858) | 每个节点派生 `value`，画布以 KaTeX 显示路径乘积公式和实时数值 | confidence 是 acceptance proxy，不是 Target 已验证概率 |
+| 扩树选当前层 Top-k，但最终验证候选需要对全树 Top-m 重排 | [EAGLE-2 §4.1–4.2 / Figure 7](https://arxiv.org/html/2406.16858) | 论文 Figure 7 的 `It/is/has/a/the/good/nice/to/be/do` 代表树；第二阶段橙色标出两个扩展父节点，第三阶段全树选 8/10 并裁剪两个低 Value 节点 | 固定 Top-2/Top-8 是论文图示代表参数，不声称是所有部署配置 |
+| Top-m 连通树需压平为一维序列，并用祖先可见 Mask 隔离不同分支 | [EAGLE-2 §4.2 / Figure 7](https://arxiv.org/html/2406.16858) | 模型派生 `flattenedCandidates` 与 8 by 8 Boolean mask；画布同步显示一维 Target 输入和 Mask | 不展开真实 kernel 的位置重映射与稀疏实现 |
+| DSpark 先用重型并行 Backbone 一次产生整个块的 Hidden/Base Logits，再用轻量顺序模块注入块内依赖 | [DSpark §3.1 / Figure 1](https://arxiv.org/html/2607.05147) | 画布按 `D + Mask → Parallel Backbone → all base logits` 和 `previous token → low-rank Markov bias → left-to-right sample` 两行分开；KaTeX 显示二者相加后的条件分布 | 页面采用论文默认 Markov-head 代表变体，不展开 RNN-head |
+| DSpark confidence 是给定前缀已接受时的条件存活率；Scheduler 使用累计乘积与硬件 SPS 曲线选择连续验证前缀 | [DSpark §3.2 / Algorithm 1](https://arxiv.org/html/2607.05147) | 模型为 E/F/G/H 派生 `0.91/0.75/0.41/0.13` 累计存活率；画布把 3 个位置保留、H 丢弃，并显示 throughput curve | SPS 曲线是确定性教学 profile，不复现 DeepSeek-V4 线上负载 |
+| DSpark 论文 Figure 1 的本轮结果为接受 E、F，拒绝 G 并产生 G* | [DSpark Figure 1](https://arxiv.org/html/2607.05147) | Target Verify 行逐 Token 编码 E/F 绿色、G 红色、H 未验证、G* 橙色；KV 与 metrics 同步为 3/4 验证、3 Token 提交 | 字母 Token 保留论文抽象，目的是对应原图而非自然语言样本 |
+
+- 自动回归：`check:speculative` 遍历 2 algorithms × 2 scenarios × 13 race steps，验证两路输出单调、周期边界、最终领先/边界追平、EAGLE path value 单调、Top-k/Top-m、8 by 8 ancestor mask 和 DSpark cumulative survival/3-of-4 scheduling；convention checker 9/9、0 warning；QA matrix 8 cases 覆盖 6 dimensions，并补齐 `raceOutcome × viewport` 的 idle/multi-cycle/final-lead/boundary-tie。
+- 浏览器证据：1517px 中文 EAGLE-2 代表性终点显示 Baseline 6、推测 12、`+6 Token`，`CostBars` DOM 数为 0；EAGLE flatten 阶段显示 8 个一维候选和 8 by 8 Mask，主画布 `clientWidth == scrollWidth == 1242`。DSpark 完成态完整显示并行 Backbone、Markov 左到右链、累计 survival、硬件曲线、3/4 verify 和 G* correction，主画布同样无内部溢出。
+- 响应式：390×844 英文 DSpark 主画布 `307/307px`，各结构按纵向阅读顺序重排；竞速保持有意的 `307/744px` 内部共享时间轴，页面 `bodyScrollWidth=375 < innerWidth=390`。代表性竞速终点仍显示 `12 vs 6`；EAGLE 低接受率终点显示明确边界解释。
+- 当前结果：未发现 P0–P3 遗留问题。固定时间、成本和 SPS 曲线仍是确定性教学模型；算法结构与依赖按论文复现，但不声称对应某个真实权重或硬件 profiler。
+
+### 统一示例、模型位置与机制可读性复核
+
+- 教学连续性：顶层竞速、EAGLE-2 树与 DSpark 块统一使用 `Large models can predict the future of ...`。EAGLE-2 代表性路径提交 `predict / the / future / of`；DSpark 明示 Target 先产生锚点 `predict`，再接受 `the / future` 并把错误候选 `tokens` 修正为 `of`。低接受率分支也沿用同一句上下文。
+- 宏观位置：在竞速和算法轨迹之间加入完整推理路径。画面明确区分一次性 Target Prefill 与 Decode 循环，并把 Draft 画成 Decode 外侧的 proposal sidecar；原 Target Transformer、权重、训练与采样目标保持不变。Baseline 与推测路径共用同一个 Target，后者只是把多次串行单 Token forward 改成候选生成、一次因果块验证和连续提交。
+- 加速与精确性：同一区域并列解释权重带宽受限 Decode 下的 weight-stream amortization，以及经典修正拒绝采样的逐位置接受率和正残差修正分布。只对经典 modified rejection sampling 声明 Target 分布保持不变；树形或宽松接受策略仍以具体算法证明为准。
+- EAGLE-2：候选树改用更宽的确定性节点位置，紧凑 Token chip 和 `items-start` 避免左右列等高造成空白；8 行 / 8 列 Mask 改为固定 20px 单元。用途文字明确说明压平后普通因果 Mask 会污染兄弟分支，而祖先可见 Mask 允许 `of` 只读取 `predict → the → future → of`，从而在一次 Target forward 中并行验证且保持分支隔离。
+- DSpark：先画“已提交前缀 → Target 锚点”，再画 `anchor + [MASK]` 输入。基础分数卡把公式符号放在次级位置，主要文案先解释“只看已提交上下文的并行基础猜测”；Markov 行逐卡显示前一个 Draft Token 与修正后候选；Confidence 行同时显示条件存活率和累计前缀存活率，Scheduler 直接说明保留前三个、丢弃最后一个的吞吐理由。
+- 初始态与动态：idle 状态完整显示机制，避免用户在未播放时只能看到低透明度结构；进入 running 后才按真实 stage map 逐步压暗未来阶段并高亮 active stage。底部删除重复的速度与精确性大卡，只保留当前阶段、Engine 伪代码、KV 生命周期和适用边界。
+- 自动验证：`npm run check:speculative` 通过，并新增统一例子、EAGLE Mask 示例和 DSpark 锚点断言；convention checker 在 `timeline / multiple-modes / resource-metrics / structural-comparison / dense-layout / math` 能力下 9/9、0 warning；QA matrix 8 cases 覆盖 6 dimensions；Vite 5.4.21 production build 通过（1898 modules transformed）。
+- 浏览器 QA：1517×902 中文桌面下宏观位置图、EAGLE 动态 Top-m 高亮、紧凑 Mask 和 DSpark 全链路均完成截图核查；390×844 下 DSpark 基础猜测与 Markov 卡变为两列，EAGLE 树保持组件内横向 scroller、Mask 无需横向滚动。两算法手机端均为 `bodyScrollWidth=375 == bodyClientWidth=375 < innerWidth=390`，英文新增文案无 i18n key 泄漏。最终恢复到 1517×902、中文、EAGLE-2、代表性轨迹、两条时间线 idle、页面顶部。
+
+### 静态权重拓扑与运行时激活拆分
+
+- 变更分类与契约：这是对既有“模型位置”区域的结构性修复，不改变顶层竞速、算法轨迹、KV、公式与伪代码的顺序和控制契约。受影响维度为 `algorithm × phase × language × viewport`；算法切换只改变 Draft checkpoint，Target checkpoint 必须保持完全相同；轨迹步骤同步改变静态参数和运行时阶段的激活态。
+- Target 静态权重：画面展开原始完整 Decoder-only Transformer：`Token Embedding → L_T × [RMSNorm → Causal Self-Attention(W_Q,W_K,W_V,W_O) → RMSNorm → SwiGLU/MLP(W_gate,W_up,W_down)] → Final RMSNorm → LM Head`。该行属于 `θ_T`，推测解码不删除、不插入或重训练其中任何层。
+- EAGLE-2 Draft 权重：单独的 `θ_D` 行读取每请求的 Target 顶层特征/LM-Head 输入和冻结 Token Embedding，新增可训练融合投影与一层 Draft Decoder，并复用冻结 LM Head；动态树 Top-k/Top-m 与 Tree Mask 被明确标成无学习参数的运行时控制逻辑。依据 [EAGLE 原论文 Figure 6](https://proceedings.mlr.press/v235/li24bt.html) 与 [EAGLE-2](https://arxiv.org/abs/2406.16858)。
+- DSpark Draft 权重：单独显示冻结 Target `embed_tokens` / `lm_head`、每请求 Target 隐状态、可训练 Feature Projection、Block-parallel Backbone、低秩 Markov Head 和 Confidence Head；存活率累计与硬件吞吐 Scheduler 属于无学习参数的运行时逻辑。依据 [DSpark 原论文](https://arxiv.org/abs/2607.05147)、[vLLM Speculators DSpark 文档](https://docs.vllm.ai/projects/speculators/en/latest/user_guide/algorithms/dspark/) 与 [NVIDIA NeMo AutoModel DSpark 实现说明](https://github.com/NVIDIA-NeMo/Automodel/blob/main/docs/guides/speculative/dspark.mdx)。逻辑共享是固定事实，Embedding/LM Head 在具体引擎中是否物理别名复用标为实现边界。
+- 运行时拓扑：单请求阶段被拆为 `Prefill(Target-only) → Decode seed(Target) → Draft proposal(θ_D) → Target block verification(全部 θ_T 层) → Target KV commit/reclaim → loop`。Prefill 明确关闭 Draft；进入 Draft 阶段时只高亮 Draft 行与运行时张量；进入 Verify 时高亮会从 Draft 行切换到 Target 的 Embedding、全部 Decoder Layers、Final Norm 与 LM Head。
+- canonical model 与回归：`deriveArchitectureModel` 统一派生 Target/shared/Draft/runtime-only 权重组、算法特定 checkpoint、五阶段运行时状态及 active owner。模型测试新增 EAGLE 两组与 DSpark 四组可训练权重、共享权重身份、idle 无 active、Draft 阶段只激活 `θ_D`、Verify 阶段只激活全部 `θ_T` 的断言。
+- 浏览器 QA：1517×902 中文桌面完成 EAGLE-2 与 DSpark 静态图对照；DSpark step 1 显示 Target 行不激活、Target 隐状态/冻结共享权重/四组 Draft 权重出现红色 active ring，step 5 切换为完整 Target 行 active、Draft 行静止，运行时阶段同步从 Draft 变为 Target Verify。390×844 下 Target 层内部 Attention/MLP 保持可读，DSpark 权重组按单列堆叠，`bodyScrollWidth=375 == bodyClientWidth=375 < innerWidth=390`；英文标题与新增键无泄漏。
+
+### 模型关系总览与算法工作台收敛
+
+- 用户反馈与修复：完整矩阵形状、代表层展开和多层权重卡虽然技术上正确，但把辅助背景提升成主任务，造成页面密度和高度失控。实际渲染已撤下该详细视图，左列压缩为约 330px 的关系总览，只保留 Target、算法特定 Draft sidecar、输入/输出接口、共享/独立 checkpoint 身份、Target 验证和 KV commit/reclaim 闭环。
+- 教学主次：Target 仅用 `Embedding → Transformer layer stack → LM Head` 三段式轮廓提示用户已知架构；EAGLE-2 左卡强调 `Target feature + shared embedding → fusion → one Draft decoder → shared LM head`，DSpark 左卡强调 `selected Target features → projection → block-parallel backbone → Markov/confidence heads`。不再把 Q/K/V/MLP 矩阵维度作为主画面内容。
+- 算法融合：右列直接承载算法真实轨迹和局部播放控制。EAGLE-2 把 feature-level Draft、Top-k/Top-m 动态树、flatten 与 ancestor mask 串成一条轨迹；DSpark 把 anchor、并行 base logits、低秩 Markov 顺序修正、confidence survival、硬件曲线与 Target correction 串成一条轨迹。左卡 active owner 与右列 active stage 均由同一 canonical snapshot 派生。
+- 去重：原独立横向运行时大条、泛化权重矩阵塔、下方重复算法轨迹与重复 KV 卡均退出实际渲染。底部只保留 Engine 风格伪代码与适用边界。
+- 自动验证：`npm run check:speculative` 通过；convention checker 9/9、0 warning；QA matrix 8 cases 覆盖 6 dimensions；Vite production build 通过（1898 modules transformed）。
+- 浏览器 QA：1517px 中文桌面中左列 Target/EAGLE-2 或 Target/DSpark 保持紧凑，右列同屏显示局部控制、6 个真实阶段和算法主画布；EAGLE step 1 的 Draft 卡与特征级 Draft stage 同步出现 active ring。390×844 下左列关系卡和右列算法工作台按纵向顺序堆叠，DSpark 控制、阶段卡和机制标题均无重叠；顶层竞速仅保留已有的组件内横向时间轴滚动。最终恢复为桌面、中文、EAGLE-2、代表性轨迹、idle。
+
+### Draft 渐进展开与三对象运行时交互
+
+- 变更分类：在用户认可的左右分栏结构内做局部扩展，不改变顶层竞速、右侧算法工作台、控制位置或响应式阅读顺序。受影响维度是 `algorithm × phase × language × viewport × draftExpanded`。
+- 信息架构：移除左侧单独占块的五阶段“Decode 运行时闭环”。Target、Draft、KV 三个既有语义对象现在直接承载自己的阶段状态；Target/Draft 之间用向下的特征/Token 端口与向上的候选端口表示双向依赖，Target verdict 到 KV 的提交线独立标注。
+- 渐进披露：Draft 默认继续保持紧凑摘要；显式“展开 Draft 内部”后才显示权重与张量流。青色虚线表示每请求 Target activation，紫色表示新增可训练 Draft 权重，黄色表示复用的冻结 Target Embedding/LM Head，灰色虚线表示无学习参数的树或调度控制逻辑。
+- EAGLE-2 可见路径：`h_t^T + E_T[x_t] → W_fuse[(2d)×d] → one Draft Decoder{W_QKV^D,W_O^D,W_gate/up^D,W_down^D} → W_vocab[d×V] → tree controller`。DSpark 可见路径：`selected Target hiddens + E_T → W_proj[(Md)×d] → L_D block-parallel backbone → {W_vocab, W_1[V×r]W_2[r×V]} → w_c[(d+r)×1] → scheduler`。
+- 同步证据：EAGLE step 1 时 Draft 外框、Target→Draft 特征端口、activation、共享 Embedding、fusion、Draft Decoder 与共享 LM Head 同时出现 active ring；进入 Target verify 后这些 Draft 权重退出 active，Target 卡和候选返回端口接管状态。DSpark 使用同一 canonical ownership 状态。
+- 验证：模型回归通过；convention checker 9/9、0 warning；QA matrix 8 cases 覆盖 6 dimensions；Vite production build 通过（1898 modules）。1517px 中文 EAGLE/DSpark 展开态与 step 1 高亮完成浏览器核查；390×844 英文 DSpark 展开态中长按钮、图例、内部矩阵与两路 head 均保持单列阅读，无可见页面级横向溢出。最终恢复到桌面、中文、EAGLE-2、代表性轨迹、idle、Draft 折叠态。
+
+### Draft 默认展开与横向密度压缩
+
+- 默认状态：Draft 内部由默认折叠改为默认展开，首次进入页面即可看到权重和张量流；“收起 Draft 内部”仍保留为 presentation-only 控制，不改变 canonical 技术状态。
+- 宽度约束：模型关系与算法工作台的内部画布增加 `1240px` 最大宽度，桌面分栏收敛为 `310px + 920px`，不再随 1600px 外层容器无限拉宽。外层章节标题和顶层竞速保持原宽度，避免影响已经认可的页面层级。
+- 密度调整：Draft 展开卡的外边距、内边距、图例高度和双列 gap 均缩小；Target、Draft 与 KV 主卡也同步减少内边距。公式字号和矩阵两列结构保持不变，没有用缩小核心证据换空间。
+- EAGLE 主画布：树与 Mask 的桌面最小列宽由原 `600 + 320` 降为 `560 + 260`，间距降为 `10px`，因此在 920px 工作台内可并排且不需要宽横向滚动；树高从 300px 收敛为 280px，节点仍保持分层和可读间隔。
+- 验证：模型回归、QA matrix 与 convention checker 全部通过，Vite production build 通过（1898 modules）。1517px 中文 EAGLE 初态确认 Draft 默认展开，树与 Mask 并排且宽度受限；390×844 中文默认展开态中图例、双输入、融合层、Decoder 矩阵与共享 LM Head 保持单列阅读。最终恢复为桌面、中文、EAGLE-2、代表性轨迹、idle、Draft 默认展开。
+
+### Draft 内联化与纵向压缩（取代展开/收起方案）
+
+- 反馈修正：用户所说的“默认展开”不是保留一个很长的详情抽屉并默认打开，而是让必要的 Draft 内部结构从一开始就属于主卡，同时删除会重复占高的辅助内容。本节取代上两节中关于 `draftExpanded` 和展开/收起按钮的交互结论。
+- 去重：删除 Draft 的展开按钮、结构摘要、结构 chips、checkpoint badge、输入/输出复述、图例、逐节点纵向箭头、“内部权重矩阵”小标题、逐节点“当前激活”文字和候选输出副本。算法身份、`\theta_D`、当前 Draft stage、关键权重组、张量形状和运行时控制仍保留。
+- 紧凑拓扑：EAGLE-2 固定为三排：`Target activation + shared embedding`、`fusion projection + one Draft decoder`、`shared LM head + tree controller`。DSpark 固定为四排：共同输入、`feature projection + parallel backbone`、`shared LM head + Markov head`、`confidence head + scheduler`。节点的激活态改用红色 ring 与小圆点，不再增加行高。
+- 预期空间：Draft 卡不再因为披露状态改变高度；EAGLE-2 内部流从长单列压缩为三层网格，DSpark 为四层网格。移动端沿用同一双列微拓扑，信息顺序与桌面一致，不再出现“先读摘要、再读相同结构详情”的二次滚动。
+- 自动验证：`npm run check:speculative`、convention checker（9/9、0 warning）、8-case QA matrix 与 Vite production build（1898 modules）全部通过。
+- 浏览器证据：1517px 中文桌面下 EAGLE-2 Draft 卡为 `288×201px`、内部流 `264×147px`；DSpark Draft 卡为 `288×259px`、内部流 `264×205px`。展开/收起按钮 DOM 数为 0，内部流始终为 1。390×844 DSpark 保持 `287×259px`，`bodyScrollWidth=375 == clientWidth=375 < innerWidth=390`，无页面级横向溢出。最终恢复为 1517×911、中文、EAGLE-2、代表性轨迹、idle、页面顶部。
+
+### Target KV 生命周期动态修复
+
+- 确认缺陷：左侧 Target KV 卡直接读取候选的最终 `accepted` 布尔值，因此 idle 状态已经出现绿色“已接受”槽；右上角还始终写着“接受 / KV Commit”。它没有表达时间线，是结果预览而非真实生命周期。
+- 正确边界：已有 Prefix KV 是请求的持久运行时状态，所以 Decode 期间持续存在；本轮候选 KV 不是。真实引擎会为 speculative/lookahead token 分配临时槽，并只把 finalized / verified token 变成可缓存状态，排除可能被拒绝的 non-committable draft token。依据 [vLLM KV cache manager](https://github.com/vllm-project/vllm/blob/main/vllm/v1/core/kv_cache_manager.py)。
+- canonical model：新增 `kvLifecycle`，由 `algorithm × scenario × phase × activeOperation` 纯派生 `prefix → reserved → verifying → committing → stable`。EAGLE 在 flatten/mask 阶段预留 8 个槽，DSpark 在 scheduler 选定验证前缀后预留 2 或 3 个槽；Target verify 把它们标为 temporary；commit 阶段只把连续接受的 Draft Token KV 转为常驻，其余进入 reclaiming；done 后回收槽变为 reusable free。
+- 修正 Token 边界：首拒位置采样出的 correction token 是最终输出 Token，但本次 Target verify 写入的是被拒 Draft token 对应的临时 KV；不能把该槽伪装成 correction token 的 KV。页面用独立橙色提示说明 correction-token KV 将在下一次 Target forward 生成。
+- 可见编码：灰色实体块表示持续存在的 Prefix KV；灰色虚线为未分配/已释放，蓝色虚线为已预留，青色脉冲为 Target 临时写入，绿色为提交，红色斜线为回收。状态 badge 和说明文字与同一模型同步，不再固定显示 commit。
+- 自动验证：模型回归逐算法、场景和 6 个 timeline step 断言 `prefix / reserved / verifying / committing / stable`、临时槽数、接受 KV 数、回收数与 correction pending；convention checker 9/9、0 warning，8-case QA matrix 和 Vite production build（1898 modules）通过。
+- 浏览器证据：EAGLE-2 代表性轨迹从 idle 的 `8×empty`，到 step 4 的 `8×reserved`、step 5 的 `8×temporary`，再到 step 6 的 `4×committing + 4×reclaiming`，done 为 `4×committed + 4×free`。DSpark 代表性 commit 为 `2×committing + 1×reclaiming`，并显示 `of` 的 KV 待下一轮；done 为 `2×committed + 1×free`。390×844 英文 correction 状态卡为 `287×129px`，页面 `bodyScrollWidth=375 == clientWidth=375 < innerWidth=390`。干净新标签页只有 Vite debug 与 React DevTools info，error/warning 为 0；最终恢复为 1517×911、中文、EAGLE-2、代表性、idle、页面顶部。
+
+### 章节标题与目录单行对齐
+
+- 标题层级：章节主标题从泛化的“推测解码”调整为“推测解码原理可视化” / “Speculative Decoding Visualization”，与 `LLM 推理全景可视化`、`Flash Decoding 原理可视化`、`Radix Cache 原理全景可视化` 的仓库命名习惯一致；副标题继续承担 EAGLE-2 / DSpark 的具体范围说明，首页卡片仍保留完整概念名。
+- 导航短标签：侧栏把可见标签从 `Speculative Decoding` 改为 `Spec Decode`，完整名称继续用于 `aria-label` 与 hover title。所有可见目录文本统一增加 `whitespace-nowrap`，图标固定不收缩，不扩大原 `176px` 侧栏。
+- 渲染证据：1517px 桌面基线中该目录项原为 `159×60px`，其余条目均为 `159×40px`；修复后 9 个条目全部为 `159×40px`。中英章节标题在桌面 header 均无横向溢出；390×844 抽屉中 9 个条目也全部为 40px 单行，页面保持 `bodyScrollWidth=375 == clientWidth=375 < innerWidth=390`。
+- 验证：模块模型回归、convention checker 9/9、QA matrix 与 Vite production build（1898 modules）通过。改动只涉及标题文案和导航呈现，不改变算法控制、时间线、主画布顺序或响应式阅读顺序。

@@ -35,6 +35,7 @@ Each file is a self-contained, interactive visualization:
 | `ParallelStrategies.jsx` | 6D parallel topology (DP/TP/PP/CP/EP/ETP), tensor slicing, GPU mapping |
 | `FlashAttention.jsx` | Tiled attention vs standard, SRAM/HBM IO tracking |
 | `FlashDecode.jsx` | KV cache splitting, parallel reduction |
+| `SpeculativeDecoding.jsx` | Autoregressive baseline, Draft–Target verification, rejection correction, KV rollback, tree candidates |
 | `Engram.jsx` | DeepSeek n-gram memory retrieval, async prefetch |
 | `RadixCache.jsx` | SGLang radix tree KV cache, LRU eviction, block reuse |
 | `DpAttention.jsx` | DP/TP hybrid attention, KV cache sharding, cross-rank communication |

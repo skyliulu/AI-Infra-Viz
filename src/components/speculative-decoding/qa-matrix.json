@@ -1,0 +1,27 @@
+{
+  "dimensions": {
+    "algorithm": ["eagle2", "dspark"],
+    "scenario": ["representative", "lowAcceptance"],
+    "outcome": ["idle", "intermediate", "done"],
+    "raceOutcome": ["idle", "multiCycle", "finalLead", "boundaryTie"],
+    "language": ["zh", "en"],
+    "viewport": ["desktop", "mobile"]
+  },
+  "requiredCrossProducts": [
+    ["algorithm", "scenario"],
+    ["algorithm", "outcome"],
+    ["algorithm", "viewport"],
+    ["raceOutcome", "viewport"],
+    ["language", "viewport"]
+  ],
+  "cases": [
+    { "name": "eagle representative idle desktop zh", "state": { "algorithm": "eagle2", "scenario": "representative", "outcome": "idle", "raceOutcome": "idle", "language": "zh", "viewport": "desktop" }, "checks": ["chapter title follows the repository visualization naming style", "the visible Spec Decode navigation label is one 40px row while its accessible name remains Speculative Decoding", "one Large models can example spans race and trace", "Draft internals are always inline in three compact tiers with no expansion control or duplicate summary", "compact left overview shows Target, EAGLE sidecar, bidirectional ports, and KV without a duplicate runtime-loop panel", "Target KV shows a persistent Prefix plus eight visibly unallocated candidate slots before verification", "EAGLE tree and ancestor-mask evidence fit the capped desktop workbench without a wide internal scroller"] },
+    { "name": "eagle low intermediate mobile en", "state": { "algorithm": "eagle2", "scenario": "lowAcceptance", "outcome": "intermediate", "raceOutcome": "boundaryTie", "language": "en", "viewport": "mobile" }, "checks": ["mobile drawer keeps every navigation item including Spec Decode to one 40px row", "fixed budget truthfully shows no gain under boundary acceptance", "tree scroller only", "local controls wrap"] },
+    { "name": "eagle representative done mobile zh", "state": { "algorithm": "eagle2", "scenario": "representative", "outcome": "done", "raceOutcome": "finalLead", "language": "zh", "viewport": "mobile" }, "checks": ["race preserves speculative output lead at budget end", "accepted path committed", "Target KV shows four committed Draft slots and four reclaimed reusable slots", "compact mask explains sibling isolation", "other branches reclaimed"] },
+    { "name": "eagle low done desktop en", "state": { "algorithm": "eagle2", "scenario": "lowAcceptance", "outcome": "done", "raceOutcome": "boundaryTie", "language": "en", "viewport": "desktop" }, "checks": ["correction token visible", "boundary text explains zero gain"] },
+    { "name": "dspark representative idle mobile en", "state": { "algorithm": "dspark", "scenario": "representative", "outcome": "idle", "raceOutcome": "multiCycle", "language": "en", "viewport": "mobile" }, "checks": ["compact Target and DSpark relation cards plus always-inline four-tier Draft flow without page overflow", "DSpark flow distinguishes runtime features, trainable projection and backbone, reused LM head, low-rank Markov matrices, confidence weight, and scheduler without a legend or repeated output row", "committed prefix and predict anchor are explicit", "parallel context guesses and sequential correction are distinct"] },
+    { "name": "dspark low intermediate desktop zh", "state": { "algorithm": "dspark", "scenario": "lowAcceptance", "outcome": "intermediate", "raceOutcome": "multiCycle", "language": "zh", "viewport": "desktop" }, "checks": ["compact model card and right trace highlight the same Draft or Target owner", "conditional confidence multiplies into prefix survival", "hardware curve trims verification prefix"] },
+    { "name": "dspark representative done desktop en", "state": { "algorithm": "dspark", "scenario": "representative", "outcome": "done", "raceOutcome": "finalLead", "language": "en", "viewport": "desktop" }, "checks": ["speculative lane outputs more tokens in the same budget", "the and future accepted plus of correction", "two accepted Draft-token KV slots become resident, the rejected temporary slot is reclaimed, and correction-token KV is explicitly pending the next Target forward", "one Target forward"] },
+    { "name": "dspark low done mobile zh", "state": { "algorithm": "dspark", "scenario": "lowAcceptance", "outcome": "done", "raceOutcome": "idle", "language": "zh", "viewport": "mobile" }, "checks": ["two draft positions skipped", "Target KV distinguishes commit and reclaim"] }
+  ]
+}
