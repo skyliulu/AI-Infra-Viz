@@ -21,6 +21,19 @@ export function roundEven(x) {
   const f = Math.floor(x), d = x - f;
   return d === .5 ? (f % 2 === 0 ? f : f + 1) : Math.round(x);
 }
+// Binary16 reference for the primer, separate from the high-precision experiment.
+// Its selectable examples are all finite normals; reject other classes explicitly.
+export function describeFP16(value) {
+  const magnitude = Math.abs(value);
+  if (!Number.isFinite(value) || magnitude < 2 ** -14 || magnitude > 65504) throw new Error('FP16 primer expects a finite normal value');
+  let power = Math.floor(Math.log2(magnitude));
+  let fraction = roundEven((magnitude / 2 ** power - 1) * 1024);
+  if (fraction === 1024) { fraction = 0; power++; }
+  const sign = +(value < 0), exponent = power + 15, significand = 1 + fraction / 1024;
+  const fields = [String(sign), exponent.toString(2).padStart(5, '0'), fraction.toString(2).padStart(10, '0')];
+  const represented = (-1) ** sign * significand * 2 ** power;
+  return {input:value, sign, exponent, fraction, power, significand, fields, bits:fields.join(''), represented, error:represented-value};
+}
 // Positive finite E4M3FN encodings, including subnormals, excluding NaN (0x7f).
 export const FP8_VALUES = Array.from({length: 127}, (_, code) => {
   const e = code >> 3, m = code & 7;
@@ -159,12 +172,29 @@ export function deriveCapacityModel({mode = 'w4', batch = 1, context = 2048, kv 
     activation:tokens * d * ab / 8, highActivation:tokens * d * 2,
     weightBytesPerToken:(weightPayload + weightScales) / tokens, tokens, wb, ab, kb};
 }
-export function deriveNumericModel({mode = 'w4', group = 8, clip = 1, affine = false, outliers = true, selected = 2} = {}) {
+export function deriveNumericModel({mode = 'w4', group = 8, clip = 1, affine = false, outliers = true, selected = 2, floatSource = 'example'} = {}) {
   const x = fixture(outliers), w = clone(WEIGHTS), format = modeFormat(mode);
   const q = quantize(w, {format, group, clip, affine});
   const i = clamp(Math.floor(Number.isFinite(selected) ? selected : 0), 0, 23), r = Math.floor(i / 8), c = i % 8, p = q.params[q.ids[r][c]];
   const input = mode === 'w8' || mode === 'fp8' ? quantize(x, {format, group:8}).values : x;
+  const baselineBytes = w.flat().length * 2, totalBytes = q.payload + q.metadata;
+  // Real low-precision bit patterns; the high-precision baseline remains a
+  // storage budget, not a fabricated FP16 rounding simulation.
+  const packedCodes = format === 'fp16' ? [] : q.codes.flat().map(value => {
+    const raw = format === 'fp8' ? FP8_VALUES.indexOf(Math.abs(value)) + (value < 0 ? 128 : 0)
+      : (value + 2 ** q.bits) % 2 ** q.bits;
+    return raw.toString(2).padStart(q.bits, '0');
+  });
+  const contributions = w[r].map((value, col) => (q.values[r][col] - value) * x[0][col]);
+  const extraActivationError = input[0].reduce((sum, value, col) => sum + (value - x[0][col]) * q.values[r][col], 0);
   return {x, w, q, r, c, p, selected:i, selectedGroup:format === 'fp16' ? null : q.ids[r][c],
+    format, low:format !== 'fp16', affine:affine && format !== 'fp8' && format !== 'fp16',
+    float16:describeFP16(floatSource === 'selected' ? w[r][c] : .75),
+    storage:{count:w.flat().length, baselineBytes, totalBytes, extent:Math.max(baselineBytes,totalBytes),
+      savedBytes:baselineBytes-totalBytes, packedCodes, scaleBytes:format === 'fp16' ? 0 : q.params.length * 4,
+      zeroBytes:format !== 'fp16' && format !== 'fp8' && affine ? q.params.length : 0},
+    contributions, extraActivationError, weightDelta:q.values[r][c]-w[r][c],
+    inputExtent:maxAbs([fixture(true)[0],fixture(false)[0]]), contribution:contributions[c],
     groupCount:format === 'fp16' ? 0 : q.params.length, emphasisColumn:outliers ? 2 : null,
     input, output:linear(input, q.values), reference:linear(x, w),
     error:mse(linear(x, w), linear(input, q.values)), value:w[r][c], code:q.codes[r][c], restored:q.values[r][c],

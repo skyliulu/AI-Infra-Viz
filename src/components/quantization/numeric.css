@@ -1,0 +1,71 @@
+.qn-main { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.qn-storage,.qn-reconstruction { min-width:0; }
+.qn-reconstruction { border-left:1px solid #e2e8f0; padding-left:20px; display:flex; flex-direction:column; gap:7px; }
+.qn-main p { font-size:12px; margin:4px 0; }
+.qn-storage-row { margin:14px 0 10px; }
+.qn-label { display:flex; justify-content:space-between; gap:5px; flex-wrap:wrap; font-size:12px; }
+.qn-byte-track { height:28px; display:flex; background:#f1f5f9; border-radius:4px; margin:5px 0 3px; overflow:hidden; border:1px solid #cbd5e1; }
+.qn-weight-payload,.qn-scale-payload { display:flex; transition:width .25s; }
+.qn-byte-track button { flex:1; min-width:0; border-right:1px solid #ffffff80; background:#60a5fa; padding:0; }
+.qn-weight-payload.low button { background:#3b82f6; }
+.qn-scale-payload button,.qn-scale-key { background:#fbbf24!important; }
+.qn-zero-payload { background:#a78bfa; }
+.qn-weight-payload button.in-group { box-shadow:inset 0 -3px #1e3a8a; }
+.qn-byte-track button.selected { box-shadow:inset 0 0 0 2px #0f172a; }
+.qn-byte-track button:focus-visible { outline-offset:-3px; outline-color:#0f172a; }
+.qn-saving { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; background:#ecfdf5; border-left:3px solid #059669; padding:7px 9px; margin:7px 0; font-size:12px; color:#065f46; }
+.qn-saving span { font-size:11px; }
+.qn-saving.warning { background:#fff1f2; color:#9f1239; border-color:#e11d48; }
+.qn-bit-budget,.qn-binary { display:flex; gap:1px; align-self:center; height:15px; margin:4px 0; }
+.qn-bit-budget i { display:block; background:#93c5fd; width:3px; border-radius:1px; }
+.qn-binary i { font-style:normal; font-size:11px; background:#dbeafe; min-width:9px; line-height:15px; color:#1e3a8a; }
+.qn-binary { font-size:10px; white-space:nowrap; }
+.qn-packed-byte { display:flex; flex-wrap:wrap; gap:5px 8px; align-items:center; }
+.qn-packed-byte>span { display:flex; border:1px solid #64748b; border-radius:4px; overflow:hidden; }
+.qn-packed-byte>span>span { display:flex; background:#f1f5f9; padding:2px 3px; }
+.qn-packed-byte>span>span+span { border-left:1px dashed #64748b; }
+.qn-packed-byte .selected { background:#dbeafe; box-shadow:inset 0 -2px #2563eb; }
+.qn-packed-byte i { font-style:normal; font-size:11px; width:10px; text-align:center; }
+.qn-scale-equation { display:flex; gap:5px 12px; align-items:center; flex-wrap:wrap; background:#fffbeb; border-left:3px solid #f59e0b; padding:6px 9px; font-size:12px; }
+.qn-scale-equation .katex { font-size:1.05em; }
+.qn-group-experiment { display:flex; gap:10px 18px; align-items:center; flex-wrap:wrap; border-top:1px solid #e2e8f0; padding-top:12px; margin-top:13px; }
+.qn-group-experiment>div:first-child { flex:1; min-width:220px; }
+.qn-group-experiment p { font-size:12px; margin:4px 0 0; }
+.qn-group-experiment .q-field { min-width:185px; }
+.qn-group-result { display:flex; flex-direction:column; gap:3px; font-size:12px; color:#92400e; }
+.qn-detail[open]>summary { margin-bottom:10px; }
+.qn-detail .q-heading p { flex:1; min-width:220px; font-size:12px; }
+.qn-input-bars { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:4px; }
+.qn-input-bars button { display:flex; flex-direction:column; align-items:center; border:1px solid transparent; border-radius:4px; padding:3px; }
+.qn-input-bars button[aria-pressed=true] { border:2px solid #2563eb; padding:2px; }
+.qn-input-bars button>span { height:70px; width:100%; max-width:27px; background:#f1f5f9; display:flex; align-items:end; }
+.qn-input-bars i { width:100%; background:#60a5fa; min-height:1px; transition:height .2s; }
+.qn-input-bars strong { font-size:10px; }
+.qn-impact { border-left:2px solid #cbd5e1; padding-left:12px; }
+.qn-impact h4 { display:flex; flex-wrap:wrap; gap:6px; }
+.qn-impact .katex { font-size:1.04em; }
+.qn-impact p { font-size:11px; }
+.qn-source { color:#1d4ed8; text-decoration:underline; }
+.qn-float { border-top:1px solid #e2e8f0; margin-top:12px; padding-top:10px; }
+.qn-float-heading { display:flex; align-items:center; justify-content:space-between; gap:7px; flex-wrap:wrap; margin-bottom:8px; }
+.qn-float-heading h4 { font-size:12px; }
+.qn-float-heading>div { display:flex; flex-wrap:wrap; gap:4px; }
+.qn-float-heading button { font-size:11px; border:1px solid #cbd5e1; border-radius:4px; padding:3px 6px; }
+.qn-float-heading button[aria-pressed=true] { background:#eff6ff; border-color:#2563eb; color:#1e40af; }
+.qn-float-fields { display:grid; grid-template-columns:minmax(48px,.5fr) minmax(94px,1fr) minmax(125px,1.5fr); gap:6px; }
+.qn-float-field { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.qn-float-field>small { font-size:10px; }
+.qn-float-bits { display:flex; height:23px; gap:1px; }
+.qn-float-bits i { text-align:center; font-style:normal; background:#e2e8f0; border-bottom:2px solid #64748b; width:14px; min-width:11px; font-size:12px; line-height:21px; color:#334155; }
+.field-0 .qn-float-bits i { background:#fce7f3; border-color:#be185d; color:#831843; }
+.field-1 .qn-float-bits i { background:#dbeafe; border-color:#2563eb; color:#1e3a8a; }
+.field-2 .qn-float-bits i { background:#d1fae5; border-color:#059669; color:#065f46; }
+.qn-float-fields .katex { font-size:.95em; }
+.qn-float-value { margin:7px 0 4px; font-size:13px; }
+.qn-float-value .katex { font-size:1.05em; }
+.qn-float p { font-size:11px; line-height:1.6; }
+.qn-float-bridge { border-left:2px solid #f59e0b; padding-left:7px; color:#92400e; }
+.qn-float>small { display:block; font-size:10px; margin-top:5px; }
+@media(max-width:900px) { .qn-main { grid-template-columns:minmax(0,1fr); gap:16px; } .qn-reconstruction { border-left:0; border-top:1px solid #e2e8f0; padding-left:0; padding-top:12px; } }
+@media(max-width:500px) { .qn-main { gap:12px; } .qn-group-experiment { gap:9px; } .qn-group-result { flex:1; } .qn-binary i { min-width:7px; font-size:9px; } .qn-bit-budget i { width:2px; } .qn-impact { border-left:0; border-top:1px solid #e2e8f0; padding:10px 0 0; } }
+@media(prefers-reduced-motion:reduce) { .qn-weight-payload,.qn-scale-payload,.qn-input-bars i { transition:none; } }

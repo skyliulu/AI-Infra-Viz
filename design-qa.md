@@ -869,3 +869,72 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 渲染检查：1280×1000、768×1000、390×844，中文/英文均实际查看。手机展开两条容量公式的 scrollWidth = clientWidth = 313px；KaTeX errors=0。两语言首页的 10 个标题逐项一致，与侧栏一致。截图为 artifacts/quantization-review/07–11；修正后的独立页面启动、切换语言和引擎单步 0/19 → 1/19 无 warning/error。语言切换保留当前进度。
 - 自动验证：check-navigation 通过；量化 192 数值组合、1080 原生命周期和 462 引擎快照通过，新增选中组/成员数/容量变量与严格 KaTeX 渲染断言。module convention 9/9、0 warning。其余八个模块已有模型回归亦通过。refinement-qa-matrix.json 明确区分 32 个数值交叉组合与 6 个渲染尺寸/语言组合。
 - 最终构建 1911 modules 通过；Windows 沙箱父目录解析限制使用经批准的构建权限重跑，仅既有 Browserslist 过期提醒。git diff --check 通过。未提交或推送；非真实模型准确率或 GPU 性能测试，未进行完整屏幕阅读器审计。
+
+## 2026-09-06 量化第二、四节理解性与空间利用率复查（未实施）
+
+- 范围：用户要求检查“为什么数据变小”、输入特征/共享 scale 的解释，以及运行时布局。按交互模块规范与截图审计流程核对当前页面和模型；本轮只诊断，不改应用代码。
+- 当前截图：`artifacts/quantization-comprehension-audit/01-numeric-default.png`、`02-engine-startup.png`，1287×911 中文，均为本轮捕获并重新打开检查的原始视口图。详细发现、取舍和边界见同目录 `audit.md`。
+- P1：第二节缺少 16-bit 存储 → 4-bit 编码 + scale 元数据的物理表示对比，标题“数值变小”也混淆数值大小和存储位宽。输入选择实际是教学激活样例，不是概率分布图；W4A16 下只改变输出误差实验，不改变权重编码/存储。参数先于因果解释出现。
+- 当前纯模型复核：24 个权重的 16 位基线为 48 B；对称 INT4 载荷 12 B，分组 24/8/4/2 的 FP32 scale 元数据为 4/12/24/48 B，总量 16/24/36/60 B。最细分组反而大于基线，现有局部读数未直观对比。不得把精度/误差或总压缩收益写成无条件单调关系。
+- P2：第四节当前高度 1005.5px；固定 500px 数据流画布对照启动检查器 293px、Prefill 检查器 242px，右侧明显留白。已在 UI 定位 Prefill 7/19 查看有数据状态，再恢复启动 0/19；保留原 AWQ 2/4 和参数。800px 窄容器画布仅做源码检查，本轮不冒充手机渲染验证。
+- 建议契约（待授权）：第二节先展示位数/打包，再讲 scale 与分组，最后讲输入幅度如何放大误差；第四节保留真实数据流、KV 与阶段语义，压缩一次性加载区和多层控制条，按内容确定节点与检查区布局。不是通过更多文字或缩小字号解决。
+- 本轮未运行新的生产构建/完整回归、真实引擎、完整键盘或读屏审计。只新增审计记录与截图，未提交推送。
+
+## 2026-09-06 量化存储解释与运行时紧凑布局（已实施）
+
+### 变更契约与能力
+
+- 用户批准上一轮两项建议。本轮是第二、四节内部的局部结构调整；保留四节顺序、首页/侧栏英文索引、全局精度和语言控件，以及离线算法、部署路径、阶段跳转、播放、矩阵检查与 KV 槽位选择。未更换其他模块或更改真实引擎执行语义。
+- 能力保持 timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。第二节不用虚构时间轴；用户选择位宽、分组、裁剪、映射、权重和输入样例后从 deriveNumericModel 同步派生结果。语言/披露/布局测量仅影响呈现；共享输入变化仍确定性重置下面两节进度。
+- 第二节抽为 NumericWorkbench，移开最初的输入参数和完整矩阵；改为存储对比与单个数值还原并排，下面保留分组控制。完整矩阵/舍入设置、输入误差实验、公式均可展开，不删除对应能力。第四节将一次性权重加载压成窄条，检查区与 KV 在图下方并排；窄屏保持阶段与数据依赖的阅读顺序。
+
+### 主张 → 模型 → 可见证据
+
+| 主张 | 依据与边界 | 模型和可见结果 |
+| --- | --- | --- |
+| 省的是存储位数，不是权重数量或数值大小 | NVIDIA TensorRT Quantization Schemes；此处 16 位仅为容量参照，不伪造 FP16 舍入 | 同样 24 权重，用共同字节比例比较 48B 基线与编码 + scale + 可选 zero point；点击两条任意权重同步右侧值和二进制编码 |
+| 低位编码需要 scale 才能回到原单位 | 对称整数、无符号 affine、E4M3FN 分开处理；不把 FP8 当 INT8 | 0.64 → 4（0100）→ 约 0.7029；动态数值公式、原值/重建点与误差。INT4 两个邻码装进一个 8-bit 容器；位序是教学布局，非某引擎文件格式 |
+| 共用 scale 会改变元数据开销 | 每份 scale 按 FP32 4B；affine 另计每组 1B zero point。小矩阵元数据偏大 | 默认 12B 编码 + 12B scales = 24B；分组 24/8/4/2 总量 16/24/36/60B。分组 2 显示“反而多占 12B”；affine 同配置 72B。选中黄色 scale 与共享权重下划线同步 |
+| 大输入可能放大相同权重误差 | 确定性 12×8 激活样例，非 Token 概率；图显示第一样本 | 共享刻度的输入幅度柱、可选通道、权重误差 × 对应输入 = 对该输出的贡献。W8A8 另外列出该输出的激活误差贡献；全部输出 MSE 仍由原模型计算 |
+| 加载一次、激活逐轮变化、KV 保留/读写 | 原固定 SGLang v0.4.6.post5 / FlashInfer 教学路径未改变 | 数据流对象保持稳定；内容自适应 Grid + ResizeObserver 仅测量布局，纯 routeFlowEdges 将原依赖连到实际节点边界。没有为对称排版添加假阶段 |
+
+主来源：https://docs.nvidia.com/deeplearning/tensorrt/latest/inference-library/quantized-types-schemes.html 。加载、Prefill、Decode 的版本、形状与后端限制继续在第四节现有“实现依据、配置与边界”中披露。
+
+### 渲染对比与回归
+
+- 修改前查看四精度、四部署路径及手机基线；基线截图保存在 `artifacts/quantization-clarity/before-*`，同时沿用上一轮完整两节的当前基线。部署路径快速捕获中有渲染帧滞后的局部截图，不把这些局部图当作严格同态完整截图；关键高度比较使用明确状态的基线记录。
+- 桌面 1287×911 中文默认：第二节 744 → 660.32px；第四节 1005.5 → 850.09px。第四节原 500px 固定主图 + 独立右栏，改为 417.59px 内容驱动画布（包含检查区）；加载节点 130 → 63.5px，检查区 167px，不再留一个半空右侧长栏。
+- 手机 390×844 中文默认披露关闭：第二节约 1353.32 → 1089.32px；第四节约 1829.5 → 1562.17px。密集 Prefill 和英文文本按内容增高，未用固定小高度裁掉数值或缩小全部文字。768px 平板使用两列运行图，权重复用线经外侧进入 Linear，KV 写入/读回方向保持正确。
+- 浏览器：四精度 × 中英文 × 390/768/1287 共 24 个组合核对模块仍在 Quantization、编码长度、页面/核心组件无溢出。一次快速跨断点循环被侧栏过渡干扰而离开模块，已通过可见导航恢复并分宽度重跑；该中断不记为通过用例。代表性图包括 `after-numeric-desktop-zh.png`、`after-numeric-mobile-zh.png`、`after-numeric-mobile-en.png`、`after-engine-startup-zh.png`、`after-engine-prefill-zh.png`、`after-engine-tablet-en.png`。最终桌面两图重新从本地打开确认。
+- 浏览器：四分组的总量和 bit pattern 同步变化；affine 元数据单独计价；原始矩阵选择能定位输入柱及误差贡献；输入切换保留权重编码并重置下面进度；默认每条存储条仅一个 Tab 入口，并实现左右方向键选择（代码/焦点 DOM 检查，不宣称完整键盘审计）。
+- 浏览器：四部署 × 三 KV 共 12 条路径均跳转最后 Decode 后逐步执行到终点：6 已写、6 读取、1 新槽、0 活跃节点，下一步禁用且节点/检查区无溢出。最后一轮自动播放结束后保持 19/19、Replay，无活跃节点。手机英文展开矩阵、源码与 scale 公式时页面/核心组件无溢出、KaTeX error=0。
+- 模型：192 数值组合、1080 原生命周期快照、462 SGLang 快照通过。新增 INT4/INT8/FP8 bit pattern 往返、payload/scale/zero 总量、分组收益反转、输入不改权重存储、误差贡献分解和宽/窄布局边界连线断言。`clarity-qa-matrix.json` 的 55 用例 / 7 维度覆盖结构检查通过。
+- 公共 convention 9/9、0 warning；推测解码 53 参数配置、并行策略模型和首页导航检查通过。最终生产构建 1914 modules 成功；Windows 沙箱父目录读取限制通过经批准的构建权限重跑。开发中两个 JSX 闭合错误已修复，最终独立检查页日志无 warning/error；仅构建存在既有 Browserslist 数据过期提醒。
+- 局限：依然是教学数值模型，未运行实际 GPU 引擎、checkpoint、性能或模型准确率评测；不是完整屏幕阅读器/键盘/对比度审计。临时检查页关闭，恢复用户原页面。未提交、推送或部署。
+
+## 2026-09-06 浮点表示基础与 KV 直连（修复 / 扩展）
+
+### 契约与依据
+
+- 本轮只扩展第二节数值表示、修复第四节 KV 路由，并按用户要求移除“实现依据、配置与边界”整个披露块。保留四节顺序、左右核心视图、全局精度/语言、分组/权重选择、离线算法、引擎配置、播放与缓存检查。页尾原始来源链接、算子 scale 公式以及一行版本/示例边界保留；不再显示被移除的配置与源码长面板。
+- 受影响维度：FP16 参考的简单例子/当前权重（独立选择）、权重选择与全局精度（前者决定参考值，后者不改原值）、中英文、390/768/1517 宽度、Prefill/Decode 的读写路径。输入共享与执行进度的原有关系不变。能力仍为 timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。
+- 依据：[NVIDIA CUDA 浮点表示](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/mathematical-functions.html#floating-point-format)、[CUDA half 类型](https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/struct____half.html)、[Transformer Engine FP8 与 scale](https://archive.docs.nvidia.com/deeplearning/transformer-engine-releases/release-2.11/user-guide/examples/fp8_primer.html)。普通二进制浮点使用符号、带偏置的指数与显式尾数；外部量化 scale 不是每个浮点数内部的指数。公式限定有限正规数，未把正规数规则套用到零、非正规数或特殊值。
+
+### 主张 → 模型 → 画面
+
+| 主张 | 模型事实 | 可见证据 / 边界 |
+| --- | --- | --- |
+| FP16 的 16 bit 存储三个字段 | describeFP16 做最近偶数舍入并派生 1/5/10 bit 字段、偏置指数及还原值 | 默认 0.75 的字段为 0 / 01110 / 1000000000，直接显示二进制科学计数式；符号、指数、尾数分别标名，不只靠颜色 |
+| 位数有限会产生舍入，但不等于整组量化 scale | 切到当前权重，参考输入跟随 selected；参考不进入 q、storage 或 output | 负权重 -0.37 显示负号与约 -0.370117 的 FP16 数值；原 INT4/INT8/FP8 重建实验保持原数据。额外说明这只是 FP16 编码参考，不将 JS 基线冒充硬件 FP16 运算 |
+| 浮点内部指数与外部 scale 不同 | 指数存在每个值的 bit 中；量化元数据模型未改变 | 在同一存储视图内连接位字段与黄色 scale 的说明；一般公式和变量含义放在原“公式与变量”内。符号位用 b，避免与原量化公式里的 scale 符号 s 重名 |
+| KV 读写无需中途折弯 | 宽/窄布局中 Cache 均覆盖 Linear 与 Attention 的水平中心 | write/read 使用单段竖直路径，保持方向与启用条件。Prefill 仍没有读缓存边；Decode 仍读历史及新 KV。短标签移到线右侧，不压线 |
+
+### 验证结果
+
+- 基准与结果：`artifacts/quantization-float-basics/` 下保存 `before-numeric.png`、`before-runtime.png`、`after-numeric-desktop-zh.png`、`after-runtime-desktop-zh.png`、`after-mobile-zh.png`、`after-mobile-en.png`、`after-cache-mobile-en.png`。实际截图检查了字段、负数公式、Cache 直线及标签。
+- 1517×911 中文、W8A8 INT8、选中第一权重的同态比较：第二节 626.82 → 840.69px，其中新增浮点说明 227.19px；保留原双列，而未把全部矩阵/设置默认展开。第四节同为 load-fp8 / fp8-file / 19/19：839.48 → 802.48px。第二节增加的是用户本轮要求的基础知识，未声称它比之前更矮。
+- 浏览器覆盖：四精度 × 双语在桌面与 390px 手机下检查位字段、公式与主实验保持独立，组件/页面无非预期横向溢出、KaTeX error 为 0；768px 双语和通用公式披露检查通过。简单例子与正负当前权重可切换，改变选中权重实时更新字段与表达式。英文手机发现指数表达式在等号后折行，已改为“字段值 / 扣除偏置 / 实际指数”的明确短行。
+- KV：桌面四部署 × 三 KV 共 12 路径运行最后一轮到终点，下一步禁用、无活跃路径、节点/检查器无溢出；手机三种 KV 配置完成相同终点检查。390/768/1517 上 Prefill 的 read 边均不存在，write 保持竖直。手机发现旧长标签压线，改为 Write/Read 或 写入/读取 后截图确认。
+- 自动回归：新增 61,440 个正负正规 FP16 编码往返、偶数舍入与指数进位断言；零/非正规/超范围/非有限输入明确拒绝。四精度 × 24 权重检查参考选择不改变 q、存储及误差，数值与二进制公式严格 KaTeX 解析。宽/窄布局 KV 路径断言只有 M/V，横坐标位于 Cache 内。
+- 原 192 数值组合、1080 生命周期、462 SGLang 快照通过；`float-qa-matrix.json` 的 20 用例 / 5 维覆盖结构检查通过；公共规范 9/9、0 warning，生产构建 1914 modules 成功。最终独立检查页控制台 warning/error 为空。构建仍有既有 Browserslist 数据过期提示。
+- 限制：FP16 参考只开放有限正规数例子，不是完整 IEEE-754 编辑器；未运行 GPU/真实 checkpoint/性能评测，也未做完整读屏与键盘审计。本轮未提交、推送或部署。

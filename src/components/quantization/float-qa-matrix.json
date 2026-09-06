@@ -1,0 +1,269 @@
+{
+  "dimensions": {
+    "precision": [
+      "fp16",
+      "w4",
+      "w8",
+      "fp8"
+    ],
+    "source": [
+      "example",
+      "selected"
+    ],
+    "language": [
+      "zh",
+      "en"
+    ],
+    "viewport": [
+      390,
+      768,
+      1517
+    ],
+    "phase": [
+      "prefill",
+      "decode"
+    ]
+  },
+  "requiredCrossProducts": [
+    [
+      "precision",
+      "source"
+    ],
+    [
+      "language",
+      "viewport"
+    ],
+    [
+      "phase",
+      "viewport"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "FP16 primer fp16 example",
+      "state": {
+        "precision": "fp16",
+        "source": "example"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer fp16 selected",
+      "state": {
+        "precision": "fp16",
+        "source": "selected"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer w4 example",
+      "state": {
+        "precision": "w4",
+        "source": "example"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer w4 selected",
+      "state": {
+        "precision": "w4",
+        "source": "selected"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer w8 example",
+      "state": {
+        "precision": "w8",
+        "source": "example"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer w8 selected",
+      "state": {
+        "precision": "w8",
+        "source": "selected"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer fp8 example",
+      "state": {
+        "precision": "fp8",
+        "source": "example"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "FP16 primer fp8 selected",
+      "state": {
+        "precision": "fp8",
+        "source": "selected"
+      },
+      "checks": [
+        "Pure model: selected source follows all 24 weights; example stays 0.75",
+        "Bit decode, formula and rounding agree; quantization/output/storage unchanged"
+      ]
+    },
+    {
+      "name": "Float layout zh 390",
+      "state": {
+        "language": "zh",
+        "viewport": 390
+      },
+      "checks": [
+        "Rendered fields and formulas fit; both input controls remain usable",
+        "No page overflow or KaTeX error"
+      ]
+    },
+    {
+      "name": "Float layout zh 768",
+      "state": {
+        "language": "zh",
+        "viewport": 768
+      },
+      "checks": [
+        "Rendered fields and formulas fit; both input controls remain usable",
+        "No page overflow or KaTeX error"
+      ]
+    },
+    {
+      "name": "Float layout zh 1517",
+      "state": {
+        "language": "zh",
+        "viewport": 1517
+      },
+      "checks": [
+        "Rendered fields and formulas fit; both input controls remain usable",
+        "No page overflow or KaTeX error"
+      ]
+    },
+    {
+      "name": "Float layout en 390",
+      "state": {
+        "language": "en",
+        "viewport": 390
+      },
+      "checks": [
+        "Rendered fields and formulas fit; both input controls remain usable",
+        "No page overflow or KaTeX error"
+      ]
+    },
+    {
+      "name": "Float layout en 768",
+      "state": {
+        "language": "en",
+        "viewport": 768
+      },
+      "checks": [
+        "Rendered fields and formulas fit; both input controls remain usable",
+        "No page overflow or KaTeX error"
+      ]
+    },
+    {
+      "name": "Float layout en 1517",
+      "state": {
+        "language": "en",
+        "viewport": 1517
+      },
+      "checks": [
+        "Rendered fields and formulas fit; both input controls remain usable",
+        "No page overflow or KaTeX error"
+      ]
+    },
+    {
+      "name": "KV ports prefill 390",
+      "state": {
+        "phase": "prefill",
+        "viewport": 390
+      },
+      "checks": [
+        "Straight write/read ports align with Linear/Attention and land in Cache",
+        "Prefill read edge remains disabled; Decode read edge enabled",
+        "Port labels do not cross their lines"
+      ]
+    },
+    {
+      "name": "KV ports prefill 768",
+      "state": {
+        "phase": "prefill",
+        "viewport": 768
+      },
+      "checks": [
+        "Straight write/read ports align with Linear/Attention and land in Cache",
+        "Prefill read edge remains disabled; Decode read edge enabled",
+        "Port labels do not cross their lines"
+      ]
+    },
+    {
+      "name": "KV ports prefill 1517",
+      "state": {
+        "phase": "prefill",
+        "viewport": 1517
+      },
+      "checks": [
+        "Straight write/read ports align with Linear/Attention and land in Cache",
+        "Prefill read edge remains disabled; Decode read edge enabled",
+        "Port labels do not cross their lines"
+      ]
+    },
+    {
+      "name": "KV ports decode 390",
+      "state": {
+        "phase": "decode",
+        "viewport": 390
+      },
+      "checks": [
+        "Straight write/read ports align with Linear/Attention and land in Cache",
+        "Prefill read edge remains disabled; Decode read edge enabled",
+        "Port labels do not cross their lines"
+      ]
+    },
+    {
+      "name": "KV ports decode 768",
+      "state": {
+        "phase": "decode",
+        "viewport": 768
+      },
+      "checks": [
+        "Straight write/read ports align with Linear/Attention and land in Cache",
+        "Prefill read edge remains disabled; Decode read edge enabled",
+        "Port labels do not cross their lines"
+      ]
+    },
+    {
+      "name": "KV ports decode 1517",
+      "state": {
+        "phase": "decode",
+        "viewport": 1517
+      },
+      "checks": [
+        "Straight write/read ports align with Linear/Attention and land in Cache",
+        "Prefill read edge remains disabled; Decode read edge enabled",
+        "Port labels do not cross their lines"
+      ]
+    }
+  ]
+}

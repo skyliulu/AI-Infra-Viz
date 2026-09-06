@@ -77,3 +77,27 @@ assert.notEqual(dynamic.passes[0].qx.params[0].scale,dynamic.passes[1].qx.params
 assert.equal(derive({step:-5}).completed,0);
 assert.equal(derive({preset:'invalid',kv:'invalid'}).preset,'load-fp8');
 console.log(`SGLang: ${snapshots} snapshots passed; versioned deployment paths, load-once weights, activation scales, causal attention, fixed KV scales, reservation/write lifetime and i18n.`);
+import { routeFlowEdges } from '../src/components/quantization/flow-layout.js';
+// Content-sized layout keeps dependencies attached in both compositions.
+const box=(x,y,width,height)=>({x,y,width,height});
+for(const narrow of [false,true]) {
+  const rects=narrow?{
+    checkpoint:box(0,0,100,120),prepare:box(115,0,100,120),weights:box(230,0,100,120),
+    input:box(0,150,150,130),activation:box(180,150,150,130),
+    linear:box(0,310,150,120),attention:box(180,310,150,120),cache:box(0,460,330,150),
+  }:{
+    checkpoint:box(10,0,300,64),prepare:box(340,0,300,64),weights:box(670,0,300,64),
+    input:box(10,94,220,130),activation:box(260,94,220,130),
+    linear:box(510,94,220,130),attention:box(760,94,220,130),cache:box(510,254,470,150),
+  };
+  const paths=routeFlowEdges(rects,narrow?350:1000);
+  if(Object.keys(paths).length!==10||Object.values(paths).some(path=>/NaN|undefined/.test(path))) throw new Error('Invalid responsive edge geometry');
+  if(!paths.write.endsWith(`V${rects.cache.y}`)||!paths.read.endsWith(`V${rects.attention.y+rects.attention.height}`)) throw new Error('KV dependency endpoints detached');
+  for(const [edge,node] of [['write',rects.linear],['read',rects.attention]]) {
+    const x=node.x+node.width/2;
+    assert.match(paths[edge],/^M[\d.]+ [\d.]+ V[\d.]+$/,'KV edges must be straight vertical paths');
+    assert.ok(paths[edge].startsWith(`M${x} `));
+    assert.ok(x>=rects.cache.x && x<=rects.cache.x+rects.cache.width,'straight port must land inside cache');
+  }
+  if(!paths.reuse.endsWith(`V${rects.linear.y}`)) throw new Error('Weight reuse must enter Linear');
+}

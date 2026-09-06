@@ -1,20 +1,9 @@
-import React, { useId } from 'react';
-import { FileBox, Database } from 'lucide-react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
+import { Database } from 'lucide-react';
 import { MathFormula } from '../linear-attention/MathFormula';
 import { bytes } from './primitives';
 import { objectKey } from './flow-content';
-const PATHS = {
-  wide: {
-    load:'M168 55 H211', prepare:'M384 55 H427', reuse:'M516 110 V150',
-    cast:'M168 220 H211', compute:'M384 220 H427', bypass:'M84 295 V314 H450 V310',
-    write:'M486 295 V330 H192 V345', query:'M552 295 V345', fresh:'M552 295 V345', read:'M384 425 H427',
-  },
-  narrow: {
-    load:'M264 52 H307', prepare:'M444 104 V142', reuse:'M576 198 H594 V518 H581',
-    cast:'M264 355 H307', compute:'M444 414 V454', bypass:'M264 370 H288 V500 H307',
-    write:'M312 518 H269', query:'M444 577 V617', fresh:'M444 577 V617', read:'M264 681 H307',
-  },
-};
+import { routeFlowEdges } from './flow-layout';
 
 export function Payload({payload, metadata=0, baseline, t}) {
   return <div className="qf-payload"><div><span>{t('flowPayload')}</span><strong>{bytes(payload)}</strong>{metadata>0 && <small>+ {bytes(metadata)} {t('flowMetadata')}</small>}</div><div className="qf-byte-track"><i style={{width:`${Math.min(100,payload/baseline*100)}%`}}/></div></div>;
@@ -24,16 +13,30 @@ function Rows({count, ready, compact=false, row}) {
   return <div className={`qf-rows ${ready ? 'ready' : ''} ${compact ? 'low' : ''}`} aria-hidden="true">{Array.from({length:Math.max(1,count)},(_,r)=><div key={r} className={ready&&row===r?'inspected':''}>{Array.from({length:8},(_,c)=><i key={c}/>)}</div>)}</div>;
 }
 
-export default function EngineFlow({m, t, selected, onSelect, selectedSlot, onSlot, isPlaying, row}) {
+export default function EngineFlow({m, t, selected, onSelect, selectedSlot, onSlot, isPlaying, row, inspector}) {
   const id = useId().replace(/:/g,''), f=m.flow;
+  const canvas=useRef(null), [geometry,setGeometry]=useState({rects:{},width:0,height:0});
+  useLayoutEffect(()=>{
+    const root=canvas.current;
+    const measure=()=>{
+      const bounds=root.getBoundingClientRect(), rects={};
+      root.querySelectorAll('[data-object]').forEach(el=>{const r=el.getBoundingClientRect();rects[el.dataset.object]={x:r.x-bounds.x,y:r.y-bounds.y,width:r.width,height:r.height};});
+      const next={rects,width:bounds.width,height:bounds.height};
+      setGeometry(previous=>JSON.stringify(previous)===JSON.stringify(next)?previous:next);
+    };
+    const observer=new ResizeObserver(measure);
+    observer.observe(root);root.querySelectorAll('[data-object], .qf-detail').forEach(el=>observer.observe(el));
+    measure();return ()=>observer.disconnect();
+  },[]);
+  const paths=routeFlowEdges(geometry.rects,geometry.width);
   const node = (name, tag, children) => <button type="button" data-object={name} className={`qf-node qf-${name} ${f.nodes[name].ready?'ready':''} ${f.nodes[name].active?'active':''} ${selected===name?'selected':''}`} aria-pressed={selected===name} onClick={()=>onSelect(name)}>
     <small className="qf-tag">{t(tag)}</small><strong>{t(objectKey(m,name))}</strong>{children}
   </button>;
   return <div className={`qf-canvas-wrap ${isPlaying?'is-playing':''}`}>
     <div className="qf-canvas-heading"><strong>{t('flowTitle')}</strong><small>{t('flowHint')}</small></div>
-    <div className="qf-canvas" data-testid="engine-flow">
-      {Object.entries(PATHS).map(([layout,paths])=><svg key={layout} className={`qf-wires ${layout}`} viewBox={`0 0 600 ${layout==='wide'?500:740}`} preserveAspectRatio="none" aria-hidden="true"><defs>{['active','passed','pending'].map(state=><marker key={state} id={`${id}-${layout}-${state}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill={state==='active'?'#2563eb':state==='passed'?'#64748b':'#cbd5e1'}/></marker>)}</defs>{Object.entries(paths).map(([edge,path])=>f.edges[edge].enabled && <g key={edge} className={`qf-wire ${f.edges[edge].status}`} data-edge={edge} data-state={f.edges[edge].status}><path d={path} markerEnd={`url(#${id}-${layout}-${f.edges[edge].status})`}/></g>)}</svg>)}
-      {node('checkpoint','flowOffline',<><FileBox size={20}/><span>{m.saved?'FP8 + scale':'BF16'}</span></>)}
+    <div className="qf-canvas" data-testid="engine-flow" ref={canvas}>
+      {geometry.width>0 && <svg className="qf-wires" viewBox={`0 0 ${geometry.width} ${geometry.height}`} aria-hidden="true"><defs>{['active','passed','pending'].map(state=><marker key={state} id={`${id}-${state}`} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill={state==='active'?'#2563eb':state==='passed'?'#64748b':'#cbd5e1'}/></marker>)}</defs>{Object.entries(paths).map(([edge,path])=>f.edges[edge].enabled && <g key={edge} className={`qf-wire ${f.edges[edge].status}`} data-edge={edge} data-state={f.edges[edge].status}><path d={path} markerEnd={`url(#${id}-${f.edges[edge].status})`}/></g>)}</svg>}
+      {node('checkpoint','flowOffline',<span>{m.saved?'FP8 + scale':'BF16'}</span>)}
       {node('prepare','flowOnce',<><span>{t(!m.low?'flowWeightBase':m.saved?'flowWeightSaved':'flowWeightCast')}</span><small>{t(m.ready?'flowPassed':'flowFuture')}</small></>)}
       {node('weights',m.ready?'flowReused':'flowKeep',<><MathFormula>{`${m.ready&&m.low?'Q_W^\\mathsf T':m.saved?'Q_W':'W'}\\!: ${m.weightShape[0]}\\times${m.weightShape[1]}`}</MathFormula><Payload payload={f.weightPayload} metadata={f.weightMetadata} baseline={48} t={t}/></>)}
       {node('input','flowEach',<><div className="qf-shape"><span>{t('flowRows')}: {f.inputRows || '—'}</span>{f.inputRows>0 && <MathFormula>{`${f.inputRows}\\times8`}</MathFormula>}</div><Rows count={f.inputRows} ready={f.inputReady} row={row}/><span>{f.inputReady?`BF16 · ${bytes(f.inputBytes)}`:t('flowWaiting')}</span></>)}
@@ -50,9 +53,9 @@ export default function EngineFlow({m, t, selected, onSelect, selectedSlot, onSl
         }):<span className="qf-pool-pending">{t('enginePoolPending')}</span>}</div>
         <div className="qf-cache-stats"><small>{t('flowReserve')}: {m.allocated}</small><small>{t('flowPayload')}: {bytes(m.kvWrittenBytes)} / {bytes(m.poolBudget)}</small></div>
       </div>
-      <span className={`qf-wire-label qf-label-write ${m.active?.op==='write'?'active':''}`}>{t(m.kv==='auto'?'flowWriteLabel':'flowCastWrite')}</span>
-      <span className={`qf-wire-label qf-label-query ${m.active?.op==='attention'?'active':''}`}>{m.cycle===0?'Q/K/V':'Q'}</span>
-      {!m.inStartup && m.cycle>0 && <span className={`qf-wire-label qf-label-read ${m.active?.op==='attention'?'active':''}`}>{t('flowRead')}</span>}
+      <div className="qf-detail">{inspector}</div>
+      {geometry.rects.cache && geometry.rects.linear && <span className={`qf-wire-label ${m.active?.op==='write'?'active':''}`} style={{left:geometry.rects.linear.x+geometry.rects.linear.width/2+8,top:geometry.rects.cache.y-22}}>{t('flowWritePort')}</span>}
+      {geometry.rects.cache && geometry.rects.attention && !m.inStartup && m.cycle>0 && <span className={`qf-wire-label ${m.active?.op==='attention'?'active':''}`} style={{left:geometry.rects.attention.x+geometry.rects.attention.width/2+8,top:geometry.rects.cache.y-22}}>{t('flowReadPort')}</span>}
     </div>
     <div className="qf-bottom"><span>{t('flowWeightCount')}: <b>{m.weightQuantizations}</b></span><span>{t('flowActivationCount')}: <b>{m.activationQuantizations}</b></span><small>{t('flowLayerScope')}</small></div>
   </div>;

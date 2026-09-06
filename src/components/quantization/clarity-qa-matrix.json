@@ -1,0 +1,648 @@
+{
+  "dimensions": {
+    "precision": [
+      "fp16",
+      "w4",
+      "w8",
+      "fp8"
+    ],
+    "group": [
+      "tensor",
+      8,
+      4,
+      2
+    ],
+    "viewport": [
+      390,
+      768,
+      1287
+    ],
+    "language": [
+      "zh",
+      "en"
+    ],
+    "deployment": [
+      "bf16",
+      "load-fp8",
+      "saved-dynamic",
+      "saved-static"
+    ],
+    "kv": [
+      "auto",
+      "fp8-unit",
+      "fp8-file"
+    ],
+    "phase": [
+      "startup",
+      "prefill",
+      "decode",
+      "done"
+    ]
+  },
+  "requiredCrossProducts": [
+    [
+      "precision",
+      "group"
+    ],
+    [
+      "precision",
+      "viewport",
+      "language"
+    ],
+    [
+      "deployment",
+      "kv"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "model-fp16-tensor",
+      "state": {
+        "precision": "fp16",
+        "group": "tensor"
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp16-8",
+      "state": {
+        "precision": "fp16",
+        "group": 8
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp16-4",
+      "state": {
+        "precision": "fp16",
+        "group": 4
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp16-2",
+      "state": {
+        "precision": "fp16",
+        "group": 2
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w4-tensor",
+      "state": {
+        "precision": "w4",
+        "group": "tensor"
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w4-8",
+      "state": {
+        "precision": "w4",
+        "group": 8
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w4-4",
+      "state": {
+        "precision": "w4",
+        "group": 4
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w4-2",
+      "state": {
+        "precision": "w4",
+        "group": 2
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w8-tensor",
+      "state": {
+        "precision": "w8",
+        "group": "tensor"
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w8-8",
+      "state": {
+        "precision": "w8",
+        "group": 8
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w8-4",
+      "state": {
+        "precision": "w8",
+        "group": 4
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-w8-2",
+      "state": {
+        "precision": "w8",
+        "group": 2
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp8-tensor",
+      "state": {
+        "precision": "fp8",
+        "group": "tensor"
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp8-8",
+      "state": {
+        "precision": "fp8",
+        "group": 8
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp8-4",
+      "state": {
+        "precision": "fp8",
+        "group": 4
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "model-fp8-2",
+      "state": {
+        "precision": "fp8",
+        "group": 2
+      },
+      "checks": [
+        "Model regression: payload + FP32 scales + optional zero points; exact low-precision bits; first-row error decomposition; high-precision reference invariants."
+      ]
+    },
+    {
+      "name": "browser-zh-390-fp16",
+      "state": {
+        "language": "zh",
+        "viewport": 390,
+        "precision": "fp16"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-390-w4",
+      "state": {
+        "language": "zh",
+        "viewport": 390,
+        "precision": "w4"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-390-w8",
+      "state": {
+        "language": "zh",
+        "viewport": 390,
+        "precision": "w8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-390-fp8",
+      "state": {
+        "language": "zh",
+        "viewport": 390,
+        "precision": "fp8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-768-fp16",
+      "state": {
+        "language": "zh",
+        "viewport": 768,
+        "precision": "fp16"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-768-w4",
+      "state": {
+        "language": "zh",
+        "viewport": 768,
+        "precision": "w4"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-768-w8",
+      "state": {
+        "language": "zh",
+        "viewport": 768,
+        "precision": "w8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-768-fp8",
+      "state": {
+        "language": "zh",
+        "viewport": 768,
+        "precision": "fp8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-1287-fp16",
+      "state": {
+        "language": "zh",
+        "viewport": 1287,
+        "precision": "fp16"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-1287-w4",
+      "state": {
+        "language": "zh",
+        "viewport": 1287,
+        "precision": "w4"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-1287-w8",
+      "state": {
+        "language": "zh",
+        "viewport": 1287,
+        "precision": "w8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-zh-1287-fp8",
+      "state": {
+        "language": "zh",
+        "viewport": 1287,
+        "precision": "fp8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-390-fp16",
+      "state": {
+        "language": "en",
+        "viewport": 390,
+        "precision": "fp16"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-390-w4",
+      "state": {
+        "language": "en",
+        "viewport": 390,
+        "precision": "w4"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-390-w8",
+      "state": {
+        "language": "en",
+        "viewport": 390,
+        "precision": "w8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-390-fp8",
+      "state": {
+        "language": "en",
+        "viewport": 390,
+        "precision": "fp8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-768-fp16",
+      "state": {
+        "language": "en",
+        "viewport": 768,
+        "precision": "fp16"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-768-w4",
+      "state": {
+        "language": "en",
+        "viewport": 768,
+        "precision": "w4"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-768-w8",
+      "state": {
+        "language": "en",
+        "viewport": 768,
+        "precision": "w8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-768-fp8",
+      "state": {
+        "language": "en",
+        "viewport": 768,
+        "precision": "fp8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-1287-fp16",
+      "state": {
+        "language": "en",
+        "viewport": 1287,
+        "precision": "fp16"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-1287-w4",
+      "state": {
+        "language": "en",
+        "viewport": 1287,
+        "precision": "w4"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-1287-w8",
+      "state": {
+        "language": "en",
+        "viewport": 1287,
+        "precision": "w8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "browser-en-1287-fp8",
+      "state": {
+        "language": "en",
+        "viewport": 1287,
+        "precision": "fp8"
+      },
+      "checks": [
+        "UI mode switching with DOM verification of storage, bit length and matrix/inspector overflow; representative screenshots separately recorded in design-qa.md."
+      ]
+    },
+    {
+      "name": "engine-final-bf16-auto",
+      "state": {
+        "deployment": "bf16",
+        "kv": "auto",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-bf16-fp8-unit",
+      "state": {
+        "deployment": "bf16",
+        "kv": "fp8-unit",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-bf16-fp8-file",
+      "state": {
+        "deployment": "bf16",
+        "kv": "fp8-file",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-load-fp8-auto",
+      "state": {
+        "deployment": "load-fp8",
+        "kv": "auto",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-load-fp8-fp8-unit",
+      "state": {
+        "deployment": "load-fp8",
+        "kv": "fp8-unit",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-load-fp8-fp8-file",
+      "state": {
+        "deployment": "load-fp8",
+        "kv": "fp8-file",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-saved-dynamic-auto",
+      "state": {
+        "deployment": "saved-dynamic",
+        "kv": "auto",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-saved-dynamic-fp8-unit",
+      "state": {
+        "deployment": "saved-dynamic",
+        "kv": "fp8-unit",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-saved-dynamic-fp8-file",
+      "state": {
+        "deployment": "saved-dynamic",
+        "kv": "fp8-file",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-saved-static-auto",
+      "state": {
+        "deployment": "saved-static",
+        "kv": "auto",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-saved-static-fp8-unit",
+      "state": {
+        "deployment": "saved-static",
+        "kv": "fp8-unit",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-final-saved-static-fp8-file",
+      "state": {
+        "deployment": "saved-static",
+        "kv": "fp8-file",
+        "phase": "done"
+      },
+      "checks": [
+        "Browser: seek last Decode, step to done; six written/read slots, one new slot, zero active nodes, next disabled; no node/inspector overflow."
+      ]
+    },
+    {
+      "name": "engine-phase-startup",
+      "state": {
+        "deployment": "load-fp8",
+        "kv": "fp8-file",
+        "phase": "startup"
+      },
+      "checks": [
+        "Rendered representative stage, correctly attached responsive dependency paths and content-sized node geometry; engine model regression covers all lifecycle snapshots."
+      ]
+    },
+    {
+      "name": "engine-phase-prefill",
+      "state": {
+        "deployment": "load-fp8",
+        "kv": "fp8-file",
+        "phase": "prefill"
+      },
+      "checks": [
+        "Rendered representative stage, correctly attached responsive dependency paths and content-sized node geometry; engine model regression covers all lifecycle snapshots."
+      ]
+    },
+    {
+      "name": "engine-phase-decode",
+      "state": {
+        "deployment": "load-fp8",
+        "kv": "fp8-file",
+        "phase": "decode"
+      },
+      "checks": [
+        "Rendered representative stage, correctly attached responsive dependency paths and content-sized node geometry; engine model regression covers all lifecycle snapshots."
+      ]
+    }
+  ]
+}

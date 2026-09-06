@@ -3,8 +3,34 @@ import fs from 'node:fs';
 import {WEIGHTS, MODES, ALGORITHMS, FP8_VALUES, roundEven, nearestFP8, quantize, fixture, linear, mse, deriveNumericModel, deriveAlgorithmModel, deriveCapacityModel, deriveRuntimeModel} from '../src/components/quantization/model.js';
 import {i18n, CODE, FORMULAS} from '../src/components/quantization/content.js';
 import katex from 'katex';
+import {describeFP16} from '../src/components/quantization/model.js';
 const near = (a,b,e=1e-10) => assert.ok(Math.abs(a-b) < e, `${a} != ${b}`);
 assert.deepEqual(Object.keys(i18n.zh).sort(),Object.keys(i18n.en).sort());
+assert.equal(describeFP16(.75).bits,'0011101000000000');
+assert.equal(describeFP16(-.75).bits,'1011101000000000');
+assert.equal(describeFP16(.75).represented,.75);
+assert.equal(describeFP16(1+2**-11).fraction,0,'ties round to an even significand');
+assert.equal(describeFP16(1+3*2**-11).fraction,2);
+assert.equal(describeFP16(2-2**-11).represented,2,'rounding can carry into exponent');
+for(const bad of [0,-0,2**-15,65505,Infinity,NaN]) assert.throws(()=>describeFP16(bad));
+// Every finite positive normal binary16 code, plus the negative counterpart.
+for(let raw=0x400;raw<=0x7bff;raw++) {
+  const value=(1+(raw&1023)/1024)*2**((raw>>10)-15);
+  assert.equal(parseInt(describeFP16(value).bits,2),raw);
+  assert.equal(parseInt(describeFP16(-value).bits,2),raw+0x8000);
+}
+for(const mode of MODES) for(let selected=0;selected<24;selected++) {
+  const base=deriveNumericModel({mode,selected}), m=deriveNumericModel({mode,selected,floatSource:'selected'});
+  assert.equal(base.float16.input,.75);
+  assert.equal(m.float16.input,WEIGHTS.flat()[selected]);
+  assert.deepEqual(base.q,m.q,'primer choice must not change quantization');
+  assert.deepEqual(base.storage,m.storage,'primer is not another storage allocation');
+  assert.equal(base.error,m.error);
+  const f=m.float16;
+  near(f.represented,(-1)**f.sign*(1+f.fraction/1024)*2**(f.exponent-15));
+  katex.renderToString(`(-1)^{${f.sign}}\\times\\left(1+\\frac{${f.fraction}}{1024}\\right)\\times2^{${f.power}}\\approx${f.represented}`,{throwOnError:true});
+  katex.renderToString(`${f.sign?'-':''}(1.${f.fields[2].replace(/0+$/,'')||'0'})_2\\times2^{${f.power}}\\approx${f.represented}`,{throwOnError:true});
+}
 assert.equal(roundEven(.5),0); assert.equal(roundEven(1.5),2); assert.equal(roundEven(-1.5),-2);
 assert.equal(FP8_VALUES.at(-1),448); near(FP8_VALUES[1],2**-9);
 for(const v of FP8_VALUES) {near(nearestFP8(v),v); near(nearestFP8(-v),-v);}
@@ -23,6 +49,19 @@ for (const mode of MODES) for(const group of ['tensor',2,4,8]) for(const clip of
   assert.equal(m.groupCount,mode==='fp16'?0:m.q.params.length);
   assert.equal(m.selectedGroup,mode==='fp16'?null:m.q.ids[2][7]);
   assert.equal(m.emphasisColumn,outliers?2:null);
+  assert.equal(m.storage.baselineBytes,48);
+  assert.equal(m.storage.totalBytes,m.q.payload+m.q.metadata);
+  assert.equal(m.storage.scaleBytes+m.storage.zeroBytes,m.q.metadata);
+  assert.equal(m.storage.savedBytes,48-m.storage.totalBytes);
+  assert.ok(m.storage.extent>=Math.max(48,m.storage.totalBytes));
+  near(m.contributions.reduce((a,b)=>a+b,0)+m.extraActivationError,m.output[0][m.r]-m.reference[0][m.r]);
+  near(m.contribution,m.weightDelta*m.x[0][m.c]);
+  if(mode!=='fp16') m.storage.packedCodes.forEach((binary,i)=>{
+    assert.equal(binary.length,m.q.bits); assert.match(binary,/^[01]+$/);
+    const raw=parseInt(binary,2),code=m.q.codes.flat()[i];
+    if(mode==='fp8') near((raw&128?-1:1)*FP8_VALUES[raw&127],code);
+    else near(!affine && raw>=2**(m.q.bits-1)?raw-2**m.q.bits:raw,code);
+  });
   if(mode!=='fp16') assert.equal(m.q.ids.flat().filter(id=>id===m.selectedGroup).length,m.p.count);
   for (let r=0;r<3;r++) for(let c=0;c<8;c++) {
     const p=m.q.params[m.q.ids[r][c]];
@@ -92,7 +131,16 @@ for(const formula of Object.values(FORMULAS)) assert.doesNotThrow(()=>katex.rend
 assert.ok(FORMULAS.kvElements.includes('\\cdot'));
 assert.equal(deriveRuntimeModel({step:-4,token:99}).completed,0);
 const jsx=fs.readFileSync(new URL('../src/components/Quantization.jsx',import.meta.url),'utf8');
-for(const id of ['quant-overview','quant-numeric','quant-algorithm']) assert.ok(jsx.includes(id));
+for(const id of ['quant-overview','quant-algorithm']) assert.ok(jsx.includes(id));
+const numericJSX=fs.readFileSync(new URL('../src/components/quantization/NumericWorkbench.jsx',import.meta.url),'utf8');
+assert.ok(numericJSX.includes('quant-numeric'));
+assert.ok(numericJSX.indexOf('<Storage m=')<numericJSX.indexOf('inputExperiment'));
+for(const group of ['tensor',8,4,2]) {
+  const m=deriveNumericModel({mode:'w4',group});
+  assert.equal(m.storage.totalBytes,({tensor:16,8:24,4:36,2:60})[group]);
+  assert.deepEqual(m.storage,deriveNumericModel({mode:'w4',group,outliers:false}).storage);
+}
+assert.equal(deriveNumericModel({mode:'w4',selected:2}).storage.packedCodes[2],'0100');
 assert.ok(fs.readFileSync(new URL('../src/components/quantization/SGLangWorkbench.jsx',import.meta.url),'utf8').includes('quant-runtime'));
 assert.ok(jsx.indexOf('<Overview config')<jsx.indexOf('<Numeric mode'));
 assert.ok(jsx.indexOf('<Numeric mode')<jsx.indexOf('<Algorithm outliers'));
