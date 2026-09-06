@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { MODULE_LABELS } from '../src/lib/module-titles.js';
 /**
  * Visual rendering check for LLM-Infra-Explorer modules.
  *
@@ -58,16 +59,7 @@ const ALL_MODULES = [
 // English card titles from HomeLanding featureCards — used to click the feature card
 // that navigates into a module (the app uses React useState routing, not URL hashes).
 // Add your new module here when following the new-module skill.
-const MODULE_CARD_TITLE = {
-  llm:          'LLM Inference',
-  parallel:     'Parallel Strategy',
-  flash:        'Flash Attention',
-  flashdecode:  'Flash Decode',
-  engram:       'Engram',
-  radixcache:   'Radix Cache',
-  dpattention:  'DP Attention',
-  linearattn:   'Linear Attention',
-};
+const MODULE_CARD_TITLE = MODULE_LABELS;
 
 // Per-module step counts — add your module here when using the new-module skill.
 // Format: { default: N }  or  { default: N, modeB: M } for two-mode modules.

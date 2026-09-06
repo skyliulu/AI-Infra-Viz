@@ -36,6 +36,7 @@ Each file is a self-contained, interactive visualization:
 | `FlashAttention.jsx` | Tiled attention vs standard, SRAM/HBM IO tracking |
 | `FlashDecode.jsx` | KV cache splitting, parallel reduction |
 | `SpeculativeDecoding.jsx` | Autoregressive baseline, Draft–Target verification, rejection correction, KV rollback, tree candidates |
+| `Quantization.jsx` | Offline RTN/AWQ/GPTQ/SmoothQuant, INT4/INT8/FP8 representation, online activation/KV quantization and scale lifecycle |
 | `Engram.jsx` | DeepSeek n-gram memory retrieval, async prefetch |
 | `RadixCache.jsx` | SGLang radix tree KV cache, LRU eviction, block reuse |
 | `DpAttention.jsx` | DP/TP hybrid attention, KV cache sharding, cross-rank communication |

@@ -1,0 +1,117 @@
+{
+  "dimensions": {
+    "viewport": [
+      "desktop",
+      "tablet",
+      "mobile"
+    ],
+    "language": [
+      "zh",
+      "en"
+    ],
+    "precision": [
+      "fp16",
+      "w4",
+      "w8",
+      "fp8"
+    ],
+    "algorithm": [
+      "rtn",
+      "awq",
+      "gptq",
+      "smooth"
+    ]
+  },
+  "requiredCrossProducts": [
+    [
+      "viewport",
+      "language"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "Chinese desktop AWQ and INT4",
+      "state": {
+        "viewport": "desktop",
+        "language": "zh",
+        "precision": "w4",
+        "algorithm": "awq"
+      },
+      "checks": [
+        "Preserved numerical precision, grouping, clipping and selected-cell interactions",
+        "Offline algorithm stages preserve equivalence before rounding; only committed columns are fixed",
+        "No page overflow; bilingual labels, formulas and compact matrices remain readable"
+      ]
+    },
+    {
+      "name": "English desktop GPTQ and static INT8",
+      "state": {
+        "viewport": "desktop",
+        "language": "en",
+        "precision": "w8",
+        "algorithm": "gptq"
+      },
+      "checks": [
+        "Preserved numerical precision, grouping, clipping and selected-cell interactions",
+        "Offline algorithm stages preserve equivalence before rounding; only committed columns are fixed",
+        "No page overflow; bilingual labels, formulas and compact matrices remain readable"
+      ]
+    },
+    {
+      "name": "Chinese tablet reference and KV",
+      "state": {
+        "viewport": "tablet",
+        "language": "zh",
+        "precision": "fp16",
+        "algorithm": "rtn"
+      },
+      "checks": [
+        "Preserved numerical precision, grouping, clipping and selected-cell interactions",
+        "Offline algorithm stages preserve equivalence before rounding; only committed columns are fixed",
+        "No page overflow; bilingual labels, formulas and compact matrices remain readable"
+      ]
+    },
+    {
+      "name": "English tablet FP8 and SmoothQuant",
+      "state": {
+        "viewport": "tablet",
+        "language": "en",
+        "precision": "fp8",
+        "algorithm": "smooth"
+      },
+      "checks": [
+        "Preserved numerical precision, grouping, clipping and selected-cell interactions",
+        "Offline algorithm stages preserve equivalence before rounding; only committed columns are fixed",
+        "No page overflow; bilingual labels, formulas and compact matrices remain readable"
+      ]
+    },
+    {
+      "name": "Chinese mobile grouped INT4 and KV",
+      "state": {
+        "viewport": "mobile",
+        "language": "zh",
+        "precision": "w4",
+        "algorithm": "gptq"
+      },
+      "checks": [
+        "Preserved numerical precision, grouping, clipping and selected-cell interactions",
+        "Offline algorithm stages preserve equivalence before rounding; only committed columns are fixed",
+        "No page overflow; bilingual labels, formulas and compact matrices remain readable"
+      ]
+    },
+    {
+      "name": "English mobile FP8 and KV",
+      "state": {
+        "viewport": "mobile",
+        "language": "en",
+        "precision": "fp8",
+        "algorithm": "smooth"
+      },
+      "checks": [
+        "Preserved numerical precision, grouping, clipping and selected-cell interactions",
+        "Offline algorithm stages preserve equivalence before rounding; only committed columns are fixed",
+        "No page overflow; bilingual labels, formulas and compact matrices remain readable"
+      ]
+    }
+  ]
+}

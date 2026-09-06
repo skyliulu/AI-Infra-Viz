@@ -30,6 +30,7 @@ This project helps you **see and interact with these processes**, instead of jus
 - ⚡ **Flash Attention** — compare Standard Softmax with FlashAttention V1–V4 through forward/backward tiled pipelines, active SRAM tiles, HBM intermediates, and IO traffic
 - 🚀 **Flash Decode** — contrast Unsplit and Split-K decode, Contiguous and Paged KV layouts, MHA/GQA/MQA head sharing, CTA scheduling, workspace writes, and final reduction
 - ✨ **Speculative Decoding** — compare serial Target decoding with block verification, then explore EAGLE-2 dynamic draft trees and DSpark confidence-scheduled semi-autoregressive blocks
+- 📦 **Quantization & Low-Precision Inference** — compare W4A16, INT8 and FP8 storage/error; explore offline algorithms, then trace SGLang v0.4.6.post5 FP8 checkpoint loading, per-forward activation quantization, and fixed-scale paged KV writes / reads through Prefill and Decode
 - 🧬 **Engram (DeepSeek)** — trace tokenizer compression, multi-head n-gram retrieval, context-aware gating, short convolution, and inference/training data movement
 - 🌲 **Radix Cache** — explore radix-tree prefix reuse, per-request reference locks, capacity deficits, LRU leaf eviction, and paired K/V page allocation
 - 📈 **Linear Attention** — move from Standard Softmax to kernelized linear Attention, recurrent state updates, and Gated Linear Attention (GLA)
@@ -68,7 +69,7 @@ The next chapters will continue to connect algorithm-level tensor flows with run
 ### Inference algorithms
 
 - **Speculative Decoding Extensions** — benchmark-backed hardware profiles, EAGLE-3, native MTP, multi-round serving traces, and engine-specific batching/runtime boundaries
-- **Quantization & Low-Precision Inference** — W8A8, W4A16, FP8, KV Cache quantization, scaling granularity, and dequantization/fused-kernel boundaries
+- **Quantization extensions** — Real checkpoint calibration and task evaluation, hardware measurements of specific kernels, additional low-precision formats, and quantized graph transformations
 
 ### Serving runtime and memory
 

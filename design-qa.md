@@ -754,3 +754,118 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 密集态与响应式：1280px英文EAGLE steps5/top-k3/budget16完成态，最大树936px内容在707px容器内滚动，6层高度448px；节点56px、相邻层72px，截图未见重叠。390px英文最大EAGLE与DSpark block8检查完整代码及公式展开，代码scrollWidth未超过clientWidth，KaTeX error=0，body375px。DSpark表格保持原有局部滚动，block8完成仍2/4=50%、新增3Token；EAGLE默认完成仍3/7=43%、新增4Token。手机竞速单列325px；桌面两列等宽，章节顺序不变。
 - 验证：原53组主模型/事件/KV/调度/输出一致性和采样回归通过；convention9/9、0warning；新增density-qa-matrix.json，6case覆盖算法×视口、语言×视口、默认/密集内容×视口，检查器通过；Vite生产构建1899modules成功，仅现有Browserslist数据过期提醒。未提交推送。
 - 运行日志：独立新页面加载并进入推测解码模块后，浏览器warning/error为空；旧标签历史HMR记录不作为本次运行结果。
+
+### 2026-09-06 新章节：量化与低精度推理
+
+- 变更契约：用户批准四区大纲，并明确聚焦推理部署的离线权重量化、在线激活/KV量化。本次为新增章节，不重排已有模块；新增首页卡片、侧栏入口、README与模块目录记录。基线已核对首页/路由不存在量化页，并截图记录相邻推测解码工作台；工作区起始干净。遵循 develop-interactive-module 的全部四份参考，以微型真实数值计算驱动可视化，不以硬编码准确率或虚构速度驱动动画。
+- 能力：timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。四区为作用位置/容量 → 数值表示/误差 → 离线算法 → 在线执行。全局格式影响容量、数值实验、线性运行路径；KV精度独立且两处控件同步；样例在数值/算法/运行时共享。算法模式、步骤与运行步骤是局部实验，离线算法实验不隐式替换在线RTN权重。页面对此边界明确标注。
+- 控件契约：标题、主格式选择与目标语言按钮在顶栏；离线/在线重置、播放、单步各在本区标题尾部，与相邻模块34px图标按钮一致。单步执行高亮操作，矩阵显示已完成步骤结果；到末尾停止并禁用下一步，检查阶段会暂停。修改数据样例重置两个局部时间线；切换全局格式/KV精度重置在线轨迹；语言切换不改变数值状态。容量batch/context/阶段只影响本区。
+
+| 教学主张 | 一手依据与边界 | 模型与可见证据 |
+|---|---|---|
+| 低精度表示有scale、舍入、饱和与元数据 | TensorRT Working with Quantized Types（2026-08页面）；对称示例使用窄范围整数码，FP8为E4M3FN；不声称覆盖所有后端编码 | quantize使用nearest-even，FP8枚举127个非负有限码含subnormal；选择格子、改变分组/裁剪/非对称映射，同步改变重建、数轴、scale、zero point、字节和MSE |
+| AWQ通过激活感知的通道缩放控制权重误差 | AWQ arXiv:2306.00978v5；11点指数搜索，没有完整裁剪搜索 | 校准数据实际决定通道尺度；等价缩放前后输出相同，量化后计算误差，不保留所谓1% FP16权重 |
+| GPTQ将量化误差补偿到未固定列 | IST-DASLab/gptq/gptq.py；固定列序、静态逐行scale、1%阻尼，小矩阵顺序Schur消元实现，非原仓库block优化 | 输入Gram矩阵加阻尼求逆；每步固定一列并更新剩余列；3行的已固定边框每步增加3个，已固定值后续不变 |
+| SmoothQuant转移激活量化难度 | SmoothQuant arXiv:2211.10438v7；展示通道缩放+逐行INT8，不做算法质量排名 | alpha改变X/W尺度，两者乘积在量化前一致；之后实际量化两者，显示输出MSE；部署产物声明必要图变换 |
+| 在线量化与动态scale不是同义词 | TensorRT quantization workflows 与 vLLM v0.20.1 Quantized KV Cache；本例KV每token/head FP32 scales，不泛化为引擎默认布局 | 切换固定/动态scale后仍有在线编码步骤；放大后续输入时固定scale保持不变并裁剪，动态scale变化；K/V只在commit后增长且旧slot的值与scale保持 |
+| 位宽压缩不直接等于端到端加速 | 原论文均基于指定实现/硬件；没有在此运行GPU | 容量按字节计算；权重理想复用读量与batch/prefill联动但不作为实测速度。运行时区分W4 tile解包、INT8乘法/INT32累加、FP8乘法/FP32累加及高精度路径；JavaScript只模拟数值和依赖，不模拟累加硬件 |
+
+- 数值与容量边界：12个8通道校准样本，3×8固定权重，输入离群通道为可切换合成数据；误差以全样本MSE计算，画面显示第一个样本。16位基线是JS高精度未量化参照，不模拟FP16舍入。容量示例为32层/4096hidden/11008FFN/GQA8×128，仅投影、MLP和已用KV，不含Embedding/Norm/Workspace/预分配；权重每128值FP32 scale、KV每token/head分别为K/V保存FP32 scale。微型矩阵的scale开销另行精确计数，不拿小样本元数据比例冒充实际大模型。
+- 桌面交互证据：1280px中文默认W4权重+KV为3.06GiB，16位参照10.81GiB；数字格选择双向高亮，默认输出MSE约0.221。AWQ缩放后误差为数值浮点残差（UI显示0），完成后约0.019；GPTQ单步固定3格，自动播放到10/10固定24格、Replay可用且Next disabled；SmoothQuant完成约1.64e-4，alpha=1缩放后仍0。INT8固定scale约0.109，三次输入的裁剪数0/1/1，输出MSE约0.010/12.201/18.799。FP8 KV在write之前0槽、之后1槽24B，元数据与slot一起出现。
+- 响应式与数学：已检查1280×900桌面、820×1000平板、390×844手机中英文，正文宽度分别1265/805/375px，无页面横向溢出。手机INT4分组2、非对称、30%裁剪、最后一格选择可用，payload12B+metadata60B，说明小矩阵元数据开销；平板16位误差为0且不出现量化配置滑块。FP8数轴为不均匀刻度，公式与整数路径分开；所有披露展开时KaTeX errors=0，检查的卡片、内部面板、格子和pre无意外溢出。公式超长时仅公式自身局部滚动。数值符号修复为真正的重建帽符号，防止JSX字面量双反斜杠被显示为hat字母。
+- 自动验证：新增check:quantization，覆盖192个数值组合、1080个运行阶段快照，另含FP8可表示数往返与ties-to-even、无效group/scale保护、等价缩放、GPTQ已固定列不变、AWQ搜索包含RTN参照、KV提交身份/旧scale保持、容量独立性、语言键一致性和四区顺序。检查全部通过；原check:speculative回归通过。convention 9/9、0 warnings；6case/5dimension QA matrix通过。最终构建与干净浏览器日志见下方完成记录。
+- 已知限制：此版本不执行真实checkpoint，不声称原论文全部复现，不输出任务准确率或硬件速度，不包含完整Attention算子/QAT/QLoRA。离线算法和在线算子为共享数据但独立的教学实验。源码与测试未提交推送。
+- 完成记录：最终Vite构建1903 modules成功，仅已有Browserslist过期提醒；git diff --check无内容空白错误。独立新标签从首页进入量化，切FP8/KV并自动播放至6/6，提交1槽24B，warning/error日志为空。原标签的日志只包含此前已记录的旧SpeculativeDecoding HMR错误（2026-09-06 06:15、旧模块URL），未把它当作当前量化模块异常。原页面已重新进入量化，恢复默认参数/中文/收起公式/两个时间线待开始，未提交推送。
+
+## 2026-09-06 量化：以 SGLang 为引擎主线
+
+### 变更契约与能力
+
+- 用户明确批准按 SGLang 改造引擎叙事。本轮是后半部分的授权结构调整：保留 01 容量与对象、02 数值实验、03 离线算法及已有控制/矩阵；用 04 SGLang 工作台替换无版本依据的通用在线时间线。03 增加产物与引擎格式的衔接说明，不冒称微型 AWQ/GPTQ/SmoothQuant 产物就是 FP8 checkpoint。
+- 变更前在原浏览器记录了 1280px 的数值、离线、在线模块截图；原在线面板为两列、三个输入、独立线性/KV 场景。本轮保留紧凑两列工作台，窄屏纵向排列，启动/Prefill/Decode 共用一组局部播放控制。共用控件仅从主文件提取到 primitives.jsx，没有修改其他章节。
+- 影响维度：四种部署路径、三种 KV 配置、共享离群输入样例、启动/Prefill/两次 Decode 的生命周期、语言、视口。部署/KV/输入变化重置轨迹；语言不改变模型；阶段定位暂停播放并确定性重建之前的提交状态。顶部精度明确只控制 01–02，SGLang 的部署配置独立。
+- 能力：timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。唯一纯模型 deriveSGLangModel 驱动 resident weights、输入 scale、缓存地址、写入/读取、数值误差、代码与高亮；不存储重复指标。
+
+### 主张、源码与可见证据
+
+本轮固定 **SGLang v0.4.6.post5** 为可复核教学基线，不宣称最新版。上下文为普通文本 Llama、TP=1、page_size=1、SM90/CUDA 12+、原生 sgl-kernel（未强制 Marlin/vLLM 分支）、非 block FP8、FlashInfer。公开原始文件通过只读访问核对，不依赖二手概述。
+
+| 主张 | 固定版本的权威依据 | 模型与画面证据 / 边界 |
+|---|---|---|
+| 量化绑定在线性层方法，而非额外模型 | [linear.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/layers/linear.py)、[fp8.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/layers/quantization/fp8.py) | 启动配置选择 Fp8LinearMethod / UnquantizedLinearMethod；BF16 路径没有激活转 FP8 操作 |
+| BF16 权重可在加载后量化一次；已量化 checkpoint 则读取权重与 scale 后调整布局 | [loader.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/model_loader/loader.py)、fp8.py 的 create_weights / process_weights_after_loading | 加载时路径常驻样例由 48B 转为 24B 数据+12B scale，权重量化次数只变为 1；后续请求复用。已序列化路径本次权重量化次数为 0，显示转置后的算子布局 |
+| 激活每次前向转换，动态逐行 scale 与 checkpoint 静态 scale 不同 | [fp8_utils.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/layers/quantization/fp8_utils.py)、[fp8_kernel.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/layers/quantization/fp8_kernel.py) | Prefill 显示四行，Decode 一行；动态逐行 scale，静态重复固定值。静态压力样例的最后一轮裁剪 1 个值、投影 MSE 约 136.448；仅为此微型输入，并非准确率 |
+| 不应把 Prefill 与 Decode 强行画成相同步骤 | [flashinfer_backend.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/layers/attention/flashinfer_backend.py) | 普通文本无前缀 Prefill 使用 ragged 包装器先对新高精度 Q/K/V 做因果 Attention，再写 KV；Decode 先写当前 KV，再 paged 读取所有已写前缀。Prefill 输出不受所选 KV 存储格式影响；源码其他 multimodal / 有前缀 / verify 路径不混入本例 |
+| 缓存池预分配、地址分配、有效写入是三件事 | [model_runner.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/model_executor/model_runner.py)、[schedule_batch.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/managers/schedule_batch.py)、[memory_pool.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/mem_cache/memory_pool.py) | 固定 24B 可用数据预算，BF16 6 槽/FP8 12 槽；橙色 reserved、绿色 written、蓝框+地址文本提示当前读取。Prefill 分配4/写入0，写入后4；Decode 分配5/写入4，最后6/6 |
+| KV scale 不在每个 Token 重新计算 | memory_pool.py 的 set_kv_buffer、[llama.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/models/llama.py) 的 load_kv_cache_scales、[server_args.py](https://github.com/sgl-project/sglang/blob/v0.4.6.post5/python/sglang/srt/server_args.py) | 示例用文件加载的固定层 KV scale（同一个 K/V factor），跨 Decode 不变；未提供 factor 的路径为有效 scale=1，显示源码质量警告。未混用原通用实验 per-token scale 布局 |
+
+### 修正与回归
+
+- P1 已修复：初始设计错误选用 non-ragged Prefill 并假设所有阶段先写缓存；查完整分支后改为普通文本无前缀的真实时序。新增 Prefill-before-write / Decode-after-write、Prefill 输出与 KV dtype 独立的回归断言。
+- P1 已修复：原微型 KV 校准范围无法覆盖刻意放大的 Decode 数据。PyTorch 的原始 FP8 cast 不等于饱和量化；将 KV 校准样例明确覆盖压力范围并留 25% 余量，所有当前 KV 值均处于有限范围，加入回归保护。不泛化为溢出可安全裁剪。
+- P2 已修复：无 KV scale 文件时伪代码不再写除以可能为 None 的 layer.k_scale，而是直接 cast，说明有效 scale=1。Prefill 标题不再误写“读取 KV”。
+- 页面操作：四种部署 × 三种 KV 组合共 12 条完成路径全部检查。基线 16/16，FP8 19/19；结束均为 6 个有效槽、0 个活动操作，下一步禁用。自动播放英文末轮到 Replay 状态并停止；阶段定位暂停、配置重置、之前写入的数据保持可复核。
+- 视觉：1280×900 桌面中英文、820×1000 平板中英文、390×844 手机中英文检查。稀疏启动、Prefill 四行密集矩阵、Decode 完成态、展开启动命令/JSON/公式均已检查；无页面与卡片/代码的意外横向溢出，KaTeX errors=0。手机八列格子仍可读，配置选择器独占行；两列主区域按内容高度，不拉长短面板填白。
+- 自动检查：check:quantization 保留 192 个数值组合、1080 个原数学模型快照，并增加 462 个 SGLang 快照；检查固定 scale、常驻权重、因果 Attention、地址分配/提交身份、代码路径及双语键。check:speculative 的 53 个参数配置回归通过。主模块 convention 9/9、0 warnings；保留区 6-case/4-dimension 与 SGLang 12-case/4-dimension QA matrix 均通过。
+- 开发中提取共用控件的中间 HMR 状态短暂出现 Tabs 未导入的异常；最终导入已修复，需以最终独立加载结果判断运行状态，不把旧控制台记录抹去或当成当前通过证据。
+- 范围边界：前两块数值实验、四种离线算法保留；引擎追踪本轮聚焦 BF16/非 block FP8，不虚构所有 INT4/INT8 算法共享同一 SGLang Kernel。QKV 仅一个 head、每个 Q/K/V 一维，JavaScript 计算不模拟 BF16 舍入/GPU 累加，也不满足实际 GPU GEMM 的形状要求。固定输入并非生成 Token；省略 RoPE、其余模型层、采样、并发竞争与前缀命中。24B 排除哨兵地址/元数据，非整卡用量，不测延迟或任务准确率，不声称加载峰值等于常驻内存。
+- 最终完成验证：独立干净页面从首页进入量化，自动播放到 19/19，6 个写入槽及 6 个读取高亮、0 个活动步骤，重播可用；浏览器 warning/error 日志为空。最终 Vite 构建 1907 modules 成功，仅现有 Browserslist 数据过期提醒。原页面恢复中文、加载时 FP8 + 校准 KV scale，配置与公式收起。本轮没有提交或推送。
+
+## 2026-09-06 量化：引擎数据流设计复查（未改应用）
+
+- 根据用户最新反馈，本轮只审查第四块学习路径，未继续强化 SGLang 品牌、未修改应用代码。恢复本地 5174 预览服务。
+- 当前页面截图及完整发现记录在 [quantization-review/review.md](artifacts/quantization-review/review.md)。1280×1100 中文桌面检查启动、Prefill QKV 投影、第二次 Decode 缓存读取三态；三个保存后的截图均已实际查看。
+- 核心问题：纵向步骤高亮与右侧数值矩阵分离，缺少常驻权重、激活、Linear 和 KV/Attention 的共同数据流；缓存占用有真实变化，但旧数据保留、新增和读写方向不够显著。
+- 建议保留原数值模型和引擎分支时序，第四块改为固定对象位置、动态数据连线、紧凑生命周期时间轴和次级对象检查器；实现品牌/源码作为可展开依据。前三块保持不变，等待后续改版决定。
+- 审查边界：本轮非全配置回归、非移动端或完整无障碍检查；没有应用改动，因此没有将此前构建/测试记录当作本轮新验证。未提交推送。
+
+## 2026-09-06 量化：固定数据流画布落地
+
+### 授权范围与交互契约
+
+- 用户明确要求直接实施上一轮建议。这次是第四块的结构重设计：保留 01–03 的布局、计算和交互，仅同步调整页面导语；保留第四块部署/KV 选择、四阶段定位、尾部播放控件与固定版本源码依据。
+- 改版前实际查看加载时 FP8 启动、BF16 Prefill、已序列化动态 Decode、手机静态激活布局。上一轮三张完整基线截图仍在 artifacts/quantization-review/01–03；改版后对应画面为 04-redesign-startup.png、05-redesign-prefill.png、06-redesign-decode.png。
+- 影响维度：四种部署路径、三种 KV 配置、共享离群输入、生命周期/播放、对象/激活行/KV 地址选择、中英文及视口。参数改变重置轨迹；对象选择暂停但不推进；行选择同步高亮转换前后同一行；语言仅改变呈现；播放/重置清理手动检查状态。
+- 能力维持 timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。新增 deriveEngineFlow 从原 deriveSGLangModel 快照推导对象就绪/活动、可用连线、字节数、旧/新/目标 KV 地址；没有另存计数或数值。
+
+### 主张到画面
+
+| 原有技术契约 | 本轮可见证据 |
+|---|---|
+| 权重加载/准备后常驻，后续不重复转换 | Checkpoint → 加载准备 → 常驻权重固定在上排；后续权重到 GEMM 的复用连线激活，权重量化计数保持不变。磁盘矩阵与 GPU 转置布局分开检查。 |
+| 每轮激活独立，静态 scale 也需运行时转换 | Prefill 四行、Decode 一行；BF16 64B → FP8 32B，Decode 16B → 8B，scale 元数据另计。行选择使两侧相同行同时加框，检查器展示原值、编码、重建值与实际 scale。 |
+| BF16 基线没有激活转 FP8 的调用 | 步骤数量由 19 变 16，激活节点标明不转换，输入旁路进入 BF16 GEMM；KV 配置不被权重模式联动覆盖。 |
+| 缓存池、预留、提交不同；旧缓存保留 | 固定预算下 6/12 槽；虚线预留、保留/新增文字、读边框并存；末轮只有地址 6 是新增，1–5 保留。点击地址检查该槽重建 K/V。 |
+| Prefill/Decode 使用不同 K/V 来源 | 无前缀 Prefill 由 Linear 的新 Q/K/V 直接进入 Attention，随后写入；Decode 先写，再由 KV 池与本轮 Q 汇入 Attention。并未为了画面对称改变原分支时序。 |
+| 框架源码是实现依据，不是首要学习内容 | 章节改名“量化在推理中如何生效”，主画布用对象和数据方向讲述；命令、JSON、当前调用、版本、硬件、数值边界收进次级披露。 |
+
+所有技术来源、固定版本与简化边界沿用上一节已核对的 SGLang v0.4.6.post5 / FlashInfer 契约；本轮不增加未经核对的新后端，不声称实测性能。位宽条是数据载荷字节，不改变张量逻辑维度；减少动效偏好下停止流线动画。
+
+### 验证与修正
+
+- 纯模型：192 个数值组合、1080 个原生命周期快照、462 个引擎快照通过。新增断言覆盖单一活动对象、FP8/旁路连线、Prefill/Decode 来源切换、激活载荷、权重 payload+metadata、旧/新槽集合、地址不超过已分配、磁盘布局不被 GPU 转置改变、结束态无活动连线。
+- 浏览器：四部署 × 三 KV 共 12 组均定位末轮并步进结束；最终 6 个写入、1 个本轮新增、6 个读边框、0 个活动节点，下一步禁用。验证自动播放到终点停止；共享输入切换后恢复 0/19 与空池；语言切换不改变进度；激活行 4 的高亮在两侧同步；KV 地址 6 可检查数值。
+- 响应式：1280×1100、820×1000、390×844 中英文实际查看。修复手机英文和中等宽度英文的 prepare/weights/activation/linear 内容溢出，改为短标签和按内容需要的节点高度；再次测得页面无横向溢出，节点 scrollWidth/scrollHeight 不超过容器。源码、公式披露展开时 KaTeX errors=0。宽屏主数据图固定 500px 高，窄屏两列布线 800px；检查器不拉长填空。
+- 交互可达性：使用原生 button/select/details、动态 aria-pressed/current、槽位状态文字和可见焦点样式；本轮未做完整键盘逐项或屏幕阅读器审计，不宣称无障碍合规认证。
+- 回归：原推测解码 53 参数配置通过；module convention 9/9、0 warnings；原 12-case/4-dimension QA matrix 通过；最终生产构建 1910 modules 成功，仅既有 Browserslist 数据过期提示。构建首次被 Windows 沙箱拒绝读取父目录，正常权限重跑成功。
+- 中间新增 CSS 尚未写入时产生一次 HMR reload error，已修复；另将非组件导出移到内容文件，避免组件热更新导出不兼容。最终独立页面初始/交互日志无 warning/error，不把旧 HMR 日志当成当前运行结果。
+- 结果：前三块逻辑和布局保留，第四块按授权完成。当前仍是微型教学数值模型，不启动实际引擎、不运行真实 checkpoint 或 GPU kernel。未提交推送。
+
+## 2026-09-06 首页英文索引与量化阅读性修正
+
+### 最终变更契约
+
+- 用户澄清：首页卡片与左侧索引使用原来的简短英文名，不随中文/英文切换，不使用正文的长标题。新增 MODULE_LABELS 单一来源，包含 LLM Inference、Parallel Strategy、Flash Attention、Flash Decode、Spec Decode、Quantization、Engram、Radix Cache、DP Attention、Linear Attention。正文标题和原来的语言初始化/切换行为保持不变；撤回中间误改的共享正文标题与全局语言方案。
+- 量化保留四节顺序、前两节双列画布、后两节算法/引擎的执行逻辑。本轮只调整顶部精度控制、01 公式表达、02 分组与输入通道说明，以及 03 缩放柱的就地释义。未修改已有第四节数据流布局。
+- 影响维度：四精度、四分组、两输入样例、选中权重、KV 精度/容量参数、语言和视口。指标与分组高亮来自 deriveCapacityModel / deriveNumericModel；没有增加重复计数状态。能力仍为 timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。
+
+### 可见改进与验证
+
+- 顶部四精度移到语言按钮旁；取消占满整行的灰色选项条。1280px 中文 header 高 100.5px、选项宽约 361px；英文高 120px。较窄空间自然换行，手机为紧凑两行选项。保留“仅作用于 01–02”的范围提示。
+- KV 公式改为“元素数 → 位数换算字节”两步，用明确乘号、分数和变量表解释层数、batch、缓存 Token、KV heads、head dim、位宽。切换 KV16 → FP8，默认示例显示 128 MiB payload + 4 MiB scales = 132 MiB，变量位宽同步从 16 变 8；不混用第四节引擎的固定 scale 布局。
+- 02 明确“输入通道是一列特征，输出通道是一行权重产生的一个输出”。第 3 输入通道用虚线框标出离群值；切回普通样例时框消失、原始权重不变、输出误差变化。Scale 解释为重建倍率/整数网格间距，保留范围解释为网格精度与截断误差的取舍。
+- 同组权重底部连线随点击与分组改变；两张矩阵高亮总数依次为 48/16/8/4，对应每张矩阵 24/8/4/2 个权重。分组总数与元数据同步变化。16 位基线不再展示实际上未使用的 scale/zero-point 或分组提示，误差保持 0。
+- 03 原来的缩放柱增加“输入列除以系数、对应权重列乘以系数”的简短说明，SmoothQuant 的迁移强度不被描述为越大越好。算法计算未改。
+- 渲染检查：1280×1000、768×1000、390×844，中文/英文均实际查看。手机展开两条容量公式的 scrollWidth = clientWidth = 313px；KaTeX errors=0。两语言首页的 10 个标题逐项一致，与侧栏一致。截图为 artifacts/quantization-review/07–11；修正后的独立页面启动、切换语言和引擎单步 0/19 → 1/19 无 warning/error。语言切换保留当前进度。
+- 自动验证：check-navigation 通过；量化 192 数值组合、1080 原生命周期和 462 引擎快照通过，新增选中组/成员数/容量变量与严格 KaTeX 渲染断言。module convention 9/9、0 warning。其余八个模块已有模型回归亦通过。refinement-qa-matrix.json 明确区分 32 个数值交叉组合与 6 个渲染尺寸/语言组合。
+- 最终构建 1911 modules 通过；Windows 沙箱父目录解析限制使用经批准的构建权限重跑，仅既有 Browserslist 过期提醒。git diff --check 通过。未提交或推送；非真实模型准确率或 GPU 性能测试，未进行完整屏幕阅读器审计。

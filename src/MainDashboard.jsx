@@ -1,3 +1,4 @@
+import { MODULE_LABELS } from './lib/module-titles';
 import React, { lazy, Suspense, useState } from 'react';
 import { Github, Cpu, Zap, FastForward, Network, Database, GitBranch, Activity, Sparkles, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -16,17 +17,19 @@ const ParallelStrategies = lazy(() => import('./components/ParallelStrategies.js
 const Engram = lazy(() => import('./components/Engram.jsx'));
 const RadixCache = lazy(() => import('./components/RadixCache.jsx'));
 const LinearAttention = lazy(() => import('./components/LinearAttention.jsx'));
+const Quantization = lazy(() => import('./components/Quantization.jsx'));
 
 const TABS = [
-  { id: 'llm', label: 'LLM Inference', icon: Cpu, component: LLMInference },
-  { id: 'parallel', label: 'Parallel Strategy', icon: Network, component: ParallelStrategies },
-  { id: 'flash', label: 'Flash Attention', icon: Zap, component: FlashAttention },
-  { id: 'flashdecode', label: 'Flash Decode', icon: FastForward, component: FlashDecode },
-  { id: 'speculative', label: 'Spec Decode', fullLabel: 'Speculative Decoding', icon: Sparkles, component: SpeculativeDecoding },
-  { id: 'engram', label: 'Engram', icon: Database, component: Engram },
-  { id: 'radixcache', label: 'Radix Cache', icon: GitBranch, component: RadixCache },
-  { id: 'dpattention', label: 'DP Attention', icon: Network, component: DpAttention },
-  { id: 'linearattn', label: 'Linear Attention', icon: Activity, component: LinearAttention },
+  { id: 'llm', icon: Cpu, component: LLMInference },
+  { id: 'parallel', icon: Network, component: ParallelStrategies },
+  { id: 'flash', icon: Zap, component: FlashAttention },
+  { id: 'flashdecode', icon: FastForward, component: FlashDecode },
+  { id: 'speculative', icon: Sparkles, component: SpeculativeDecoding },
+  { id: 'quantization', icon: Cpu, component: Quantization },
+  { id: 'engram', icon: Database, component: Engram },
+  { id: 'radixcache', icon: GitBranch, component: RadixCache },
+  { id: 'dpattention', icon: Network, component: DpAttention },
+  { id: 'linearattn', icon: Activity, component: LinearAttention },
 ];
 
 function LoadingFallback() {
@@ -117,6 +120,7 @@ export default function MainDashboard() {
         <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
+            const title = MODULE_LABELS[tab.id];
             const isActive = tab.id === activeTab;
             return (
               <button
@@ -132,11 +136,11 @@ export default function MainDashboard() {
                     ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 )}
-                aria-label={tab.fullLabel || tab.label}
-                title={sidebarCollapsed || tab.fullLabel ? tab.fullLabel || tab.label : undefined}
+                aria-label={title}
+                title={title}
               >
                 <Icon size={16} className="shrink-0" />
-                {!sidebarCollapsed && <span className="min-w-0 whitespace-nowrap">{tab.label}</span>}
+                {!sidebarCollapsed && <span className="min-w-0 whitespace-nowrap">{title}</span>}
               </button>
             );
           })}

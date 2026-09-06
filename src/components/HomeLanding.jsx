@@ -1,3 +1,4 @@
+import { MODULE_LABELS } from '../lib/module-titles';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, BrainCircuit, Cpu, Database, FastForward, Github, GitBranch, Globe, Network, Sparkles, Star, Zap, Activity } from 'lucide-react';
 
@@ -32,7 +33,6 @@ const i18n = {
 const featureCards = [
   {
     id: 'llm',
-    title: { en: 'LLM Inference', zh: 'LLM 推理' },
     description: {
       en: 'Understand prefill/decode stages, KV cache usage, and token generation flow.',
       zh: '理解 Prefill/Decode 阶段、KV Cache 使用方式与 Token 生成流程。',
@@ -42,7 +42,6 @@ const featureCards = [
   },
   {
     id: 'parallel',
-    title: { en: 'Parallel Strategy', zh: '并行策略' },
     description: {
       en: 'Explore tensor, pipeline, and data parallelism trade-offs visually.',
       zh: '交互式探索张量并行、流水并行、数据并行等策略权衡。',
@@ -52,7 +51,6 @@ const featureCards = [
   },
   {
     id: 'flash',
-    title: { en: 'Flash Attention', zh: 'Flash Attention' },
     description: {
       en: 'See how tiled attention cuts memory access and boosts throughput.',
       zh: '了解分块注意力如何减少显存访问并提升吞吐。',
@@ -62,7 +60,6 @@ const featureCards = [
   },
   {
     id: 'flashdecode',
-    title: { en: 'Flash Decode', zh: 'Flash Decode' },
     description: {
       en: 'Dive into low-latency decoding optimizations for real-time responses.',
       zh: '深入低时延解码优化路径，理解实时生成性能提升。',
@@ -72,7 +69,6 @@ const featureCards = [
   },
   {
     id: 'speculative',
-    title: { en: 'Speculative Decoding', zh: '推测解码' },
     description: {
       en: 'See why Draft–Verify reduces serial Target work, then compare EAGLE-2 dynamic trees with DSpark confidence scheduling.',
       zh: '先理解 Draft–Verify 如何减少 Target 串行前向，再比较 EAGLE-2 动态树与 DSpark 置信度调度。',
@@ -81,8 +77,13 @@ const featureCards = [
     iconClass: 'text-blue-300',
   },
   {
+    id: 'quantization',
+    description: { en: 'Explore offline weight preparation, online activation / KV quantization, numerical error and runtime execution.', zh: '探索离线权重量化、在线激活与 KV 量化，以及数值误差和真实执行路径。' },
+    icon: Cpu,
+    iconClass: 'text-teal-300',
+  },
+  {
     id: 'engram',
-    title: { en: 'Engram', zh: 'Engram' },
     description: {
       en: 'Explore how Engram augments Transformer layers with n-gram memory modules for efficient long-context modeling.',
       zh: '了解 Engram 如何通过 n-gram 记忆模块增强 Transformer 层，以更高效地建模长上下文。',
@@ -92,7 +93,6 @@ const featureCards = [
   },
   {
     id: 'radixcache',
-    title: { en: 'Radix Cache', zh: 'Radix Cache' },
     description: {
       en: 'Explore how Radix Cache uses a radix tree for prefix-sharing KV cache to reduce memory usage and improve throughput.',
       zh: '了解 Radix Cache 如何通过基数树实现前缀共享 KV Cache，减少显存占用并提升吞吐量。',
@@ -102,7 +102,6 @@ const featureCards = [
   },
   {
     id: 'linearattn',
-    title: { en: 'Linear Attention', zh: 'Linear Attention' },
     description: {
       en: 'From O(N²) to O(N): understand how the kernel trick and associativity reorder transforms Attention into a recurrent state machine.',
       zh: '从 O(N²) 到 O(N)：理解核函数近似与结合律重排如何将 Attention 变为 O(d²) 固定状态的递归更新。',
@@ -112,7 +111,6 @@ const featureCards = [
   },
   {
     id: 'dpattention',
-    title: { en: 'DP Attention', zh: 'DP Attention' },
     description: {
       en: 'Understand hybrid DP/TP attention flow, KV cache sharding, and cross-rank communication trade-offs.',
       zh: '理解 DP/TP 混合并行中的 Attention 流程、KV Cache 切分方式与跨卡通信权衡。',
@@ -187,7 +185,7 @@ export default function HomeLanding({ onExplore }) {
 
   const copy = i18n[language] || i18n.en;
   const cards = useMemo(
-    () => featureCards.map((card) => ({ ...card, titleText: card.title[language], descriptionText: card.description[language] })),
+    () => featureCards.map((card) => ({ ...card, titleText: MODULE_LABELS[card.id], descriptionText: card.description[language] })),
     [language]
   );
 

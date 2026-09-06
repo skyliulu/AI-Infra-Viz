@@ -1,0 +1,454 @@
+{
+  "dimensions": {
+    "mode": [
+      "fp16",
+      "w4",
+      "w8",
+      "fp8"
+    ],
+    "group": [
+      "tensor",
+      8,
+      4,
+      2
+    ],
+    "outliers": [
+      false,
+      true
+    ],
+    "width": [
+      1280,
+      768,
+      390
+    ],
+    "lang": [
+      "zh",
+      "en"
+    ]
+  },
+  "requiredCrossProducts": [
+    [
+      "mode",
+      "group",
+      "outliers"
+    ],
+    [
+      "width",
+      "lang"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "model-fp16-tensor-false",
+      "state": {
+        "mode": "fp16",
+        "group": "tensor",
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-tensor-true",
+      "state": {
+        "mode": "fp16",
+        "group": "tensor",
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-8-false",
+      "state": {
+        "mode": "fp16",
+        "group": 8,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-8-true",
+      "state": {
+        "mode": "fp16",
+        "group": 8,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-4-false",
+      "state": {
+        "mode": "fp16",
+        "group": 4,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-4-true",
+      "state": {
+        "mode": "fp16",
+        "group": 4,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-2-false",
+      "state": {
+        "mode": "fp16",
+        "group": 2,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp16-2-true",
+      "state": {
+        "mode": "fp16",
+        "group": 2,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-tensor-false",
+      "state": {
+        "mode": "w4",
+        "group": "tensor",
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-tensor-true",
+      "state": {
+        "mode": "w4",
+        "group": "tensor",
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-8-false",
+      "state": {
+        "mode": "w4",
+        "group": 8,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-8-true",
+      "state": {
+        "mode": "w4",
+        "group": 8,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-4-false",
+      "state": {
+        "mode": "w4",
+        "group": 4,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-4-true",
+      "state": {
+        "mode": "w4",
+        "group": 4,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-2-false",
+      "state": {
+        "mode": "w4",
+        "group": 2,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w4-2-true",
+      "state": {
+        "mode": "w4",
+        "group": 2,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-tensor-false",
+      "state": {
+        "mode": "w8",
+        "group": "tensor",
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-tensor-true",
+      "state": {
+        "mode": "w8",
+        "group": "tensor",
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-8-false",
+      "state": {
+        "mode": "w8",
+        "group": 8,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-8-true",
+      "state": {
+        "mode": "w8",
+        "group": 8,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-4-false",
+      "state": {
+        "mode": "w8",
+        "group": 4,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-4-true",
+      "state": {
+        "mode": "w8",
+        "group": 4,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-2-false",
+      "state": {
+        "mode": "w8",
+        "group": 2,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-w8-2-true",
+      "state": {
+        "mode": "w8",
+        "group": 2,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-tensor-false",
+      "state": {
+        "mode": "fp8",
+        "group": "tensor",
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-tensor-true",
+      "state": {
+        "mode": "fp8",
+        "group": "tensor",
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-8-false",
+      "state": {
+        "mode": "fp8",
+        "group": 8,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-8-true",
+      "state": {
+        "mode": "fp8",
+        "group": 8,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-4-false",
+      "state": {
+        "mode": "fp8",
+        "group": 4,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-4-true",
+      "state": {
+        "mode": "fp8",
+        "group": 4,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-2-false",
+      "state": {
+        "mode": "fp8",
+        "group": 2,
+        "outliers": false
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "model-fp8-2-true",
+      "state": {
+        "mode": "fp8",
+        "group": 2,
+        "outliers": true
+      },
+      "checks": [
+        "Executed scripts/check-quantization.mjs: selected group membership, scale count, metadata, reconstruction, fixture and output MSE identity."
+      ]
+    },
+    {
+      "name": "render-1280-zh",
+      "state": {
+        "width": 1280,
+        "lang": "zh"
+      },
+      "checks": [
+        "Rendered in browser: compact top controls, readable fixed English sidebar labels, responsive sections; no document horizontal overflow."
+      ]
+    },
+    {
+      "name": "render-1280-en",
+      "state": {
+        "width": 1280,
+        "lang": "en"
+      },
+      "checks": [
+        "Rendered in browser: compact top controls, readable fixed English sidebar labels, responsive sections; no document horizontal overflow."
+      ]
+    },
+    {
+      "name": "render-768-zh",
+      "state": {
+        "width": 768,
+        "lang": "zh"
+      },
+      "checks": [
+        "Rendered in browser: compact top controls, readable fixed English sidebar labels, responsive sections; no document horizontal overflow."
+      ]
+    },
+    {
+      "name": "render-768-en",
+      "state": {
+        "width": 768,
+        "lang": "en"
+      },
+      "checks": [
+        "Rendered in browser: compact top controls, readable fixed English sidebar labels, responsive sections; no document horizontal overflow."
+      ]
+    },
+    {
+      "name": "render-390-zh",
+      "state": {
+        "width": 390,
+        "lang": "zh"
+      },
+      "checks": [
+        "Rendered in browser: compact top controls, readable fixed English sidebar labels, responsive sections; no document horizontal overflow."
+      ]
+    },
+    {
+      "name": "render-390-en",
+      "state": {
+        "width": 390,
+        "lang": "en"
+      },
+      "checks": [
+        "Rendered in browser: compact top controls, readable fixed English sidebar labels, responsive sections; no document horizontal overflow."
+      ]
+    }
+  ]
+}

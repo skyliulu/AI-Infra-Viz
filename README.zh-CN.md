@@ -30,6 +30,7 @@
 - ⚡ **Flash Attention** — 对比 Standard Softmax 与 FlashAttention V1–V4 的前向/反向分块流水线、片上 SRAM Tile、HBM 中间产物和 IO 流量
 - 🚀 **Flash Decode** — 对比 Unsplit / Split-K、Contiguous / Paged KV、MHA/GQA/MQA Head 共享、CTA 调度、Workspace 写入与最终归约
 - ✨ **推测解码** — 同屏对比 Target 串行 Decode 与块验证，并探索 EAGLE-2 动态候选树和 DSpark 置信度调度的半自回归候选块
+- 📦 **量化与低精度推理** — 对比 W4A16、INT8、FP8 的容量与数值误差，探索离线算法，再沿 SGLang v0.4.6.post5 追踪 FP8 checkpoint 加载、逐次前向激活量化，以及 Prefill / Decode 中固定 scale 的分页 KV 写入与读取
 - 🧬 **Engram（DeepSeek）** — 追踪 Tokenizer Compression、多头 N-gram 检索、Context-aware Gating、Short Convolution，以及推理/训练的数据移动
 - 🌲 **Radix Cache** — 探索基数树前缀复用、请求引用锁、容量缺口、LRU 叶节点驱逐和成对 K/V Page 分配
 - 📈 **Linear Attention** — 从 Standard Softmax 推进到核函数 Linear Attention、递归状态更新与 Gated Linear Attention（GLA）
@@ -68,7 +69,7 @@
 ### 推理算法
 
 - **推测解码扩展** — 增加有实测依据的硬件配置、EAGLE-3、原生 MTP、多轮 Serving 轨迹和不同引擎的批处理/运行时边界
-- **量化与低精度推理** — 展示 W8A8、W4A16、FP8、KV Cache 量化、缩放粒度，以及反量化与融合 Kernel 的边界
+- **量化扩展** — 接入真实 checkpoint 校准与任务评测，增加具体 Kernel 的硬件测量、更多低精度格式和量化图变换细节
 
 ### Serving Runtime 与显存
 

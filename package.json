@@ -15,6 +15,7 @@
     "check:dpa": "node scripts/check-dp-attention.mjs",
     "check:llm": "node scripts/check-llm-inference.mjs",
     "check:speculative": "node scripts/check-speculative-decoding.mjs",
+    "check:quantization": "node scripts/check-quantization.mjs && node scripts/check-sglang-quantization.mjs",
     "check:visual": "node scripts/visual-check.js",
     "check:visual:module": "node scripts/visual-check.js --module"
   },

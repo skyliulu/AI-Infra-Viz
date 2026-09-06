@@ -1,0 +1,228 @@
+{
+  "dimensions": {
+    "preset": [
+      "bf16",
+      "load-fp8",
+      "saved-dynamic",
+      "saved-static"
+    ],
+    "kv": [
+      "auto",
+      "fp8-unit",
+      "fp8-file"
+    ],
+    "viewport": [
+      "desktop",
+      "tablet",
+      "mobile"
+    ],
+    "language": [
+      "zh",
+      "en"
+    ]
+  },
+  "requiredCrossProducts": [
+    [
+      "preset",
+      "kv"
+    ],
+    [
+      "viewport",
+      "language"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "bf16 with auto",
+      "state": {
+        "preset": "bf16",
+        "kv": "auto",
+        "viewport": "desktop",
+        "language": "zh"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "bf16 with fp8-unit",
+      "state": {
+        "preset": "bf16",
+        "kv": "fp8-unit",
+        "viewport": "tablet",
+        "language": "zh"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "bf16 with fp8-file",
+      "state": {
+        "preset": "bf16",
+        "kv": "fp8-file",
+        "viewport": "mobile",
+        "language": "zh"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "load-fp8 with auto",
+      "state": {
+        "preset": "load-fp8",
+        "kv": "auto",
+        "viewport": "desktop",
+        "language": "en"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "load-fp8 with fp8-unit",
+      "state": {
+        "preset": "load-fp8",
+        "kv": "fp8-unit",
+        "viewport": "tablet",
+        "language": "en"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "load-fp8 with fp8-file",
+      "state": {
+        "preset": "load-fp8",
+        "kv": "fp8-file",
+        "viewport": "mobile",
+        "language": "en"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "saved-dynamic with auto",
+      "state": {
+        "preset": "saved-dynamic",
+        "kv": "auto",
+        "viewport": "desktop",
+        "language": "zh"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "saved-dynamic with fp8-unit",
+      "state": {
+        "preset": "saved-dynamic",
+        "kv": "fp8-unit",
+        "viewport": "tablet",
+        "language": "zh"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "saved-dynamic with fp8-file",
+      "state": {
+        "preset": "saved-dynamic",
+        "kv": "fp8-file",
+        "viewport": "mobile",
+        "language": "zh"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "saved-static with auto",
+      "state": {
+        "preset": "saved-static",
+        "kv": "auto",
+        "viewport": "desktop",
+        "language": "en"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "saved-static with fp8-unit",
+      "state": {
+        "preset": "saved-static",
+        "kv": "fp8-unit",
+        "viewport": "tablet",
+        "language": "en"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    },
+    {
+      "name": "saved-static with fp8-file",
+      "state": {
+        "preset": "saved-static",
+        "kv": "fp8-file",
+        "viewport": "mobile",
+        "language": "en"
+      },
+      "checks": [
+        "Preset and KV controls reset timeline; load-once weights remain stable across requests",
+        "No-prefix ragged Prefill attends before KV write; Decode writes before paged read",
+        "End state: six written slots; next disabled; no active stage or overflow",
+        "Fixed data-flow objects persist across phases; weight reuse, activation payload and old/new KV slots follow the canonical snapshot",
+        "Object, row and cache-slot inspection pauses without advancing; native controls, translated labels and node overflow checked"
+      ]
+    }
+  ]
+}
