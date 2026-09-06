@@ -1,0 +1,14 @@
+{
+  "dimensions": {"language":["zh","en"],"viewport":["desktop","mobile"],"example":["before","after"],"details":["closed","open"]},
+  "requiredCrossProducts": [["language","viewport"],["example","viewport"],["details","viewport"]],
+  "cases": [
+    {"name":"Chinese desktop before","state":{"language":"zh","viewport":"desktop","example":"before","details":"closed"},"checks":["Scoring rows map predict/the/future/many to the/future/many/different with no verdict before verify","As-is probabilities are 60/20/20; C shows Target10/Draft20 and acceptance50; formulas collapsed"]},
+    {"name":"Chinese desktop after","state":{"language":"zh","viewport":"desktop","example":"after","details":"open"},"checks":["Keep the/future, correct many to of, discard different","Probability repair gives 70/20/10 with 10 points refilled into A","C at draw .75 is rejected and replaced by A"]},
+    {"name":"English desktop after","state":{"language":"en","viewport":"desktop","example":"after","details":"closed"},"checks":["Language preserves both reveals and output","Sections retain efficiency/correctness/implementation order"]},
+    {"name":"English desktop before","state":{"language":"en","viewport":"desktop","example":"before","details":"open"},"checks":["Resetting either example does not reset algorithm or other example","A lower and B equal probabilities always accepted; C higher is accepted with50%; probability and log views agree"]},
+    {"name":"Chinese mobile after","state":{"language":"zh","viewport":"mobile","example":"after","details":"open"},"checks":["Four scoring rows readable at390px; row conditioned on rejected many is discarded","Probability and log headers wrap without overlapping","Expanded softmax/log-accept/residual formulas do not cause page overflow"]},
+    {"name":"Chinese mobile before","state":{"language":"zh","viewport":"mobile","example":"before","details":"closed"},"checks":["Both examples remain within existing correctness section","No verdict leaks after reset"]},
+    {"name":"English mobile after","state":{"language":"en","viewport":"mobile","example":"after","details":"open"},"checks":["Corrected percentages and legend readable","Sampling controls do not alter the implementation timeline"]},
+    {"name":"English mobile before","state":{"language":"en","viewport":"mobile","example":"before","details":"closed"},"checks":["Long headings wrap without page overflow","Advanced content stays collapsed and examples can be replayed"]}
+  ]
+}

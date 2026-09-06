@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildRun, deriveSpeculativeSnapshot as derive, normalizeSpeculativeInput, schedulePrefix, deriveSamplingModel, getNextLifecycle, getTeachingPosition, PREFIX, STREAM } from '../src/components/speculative-decoding/model.js';
+import { buildRun, deriveSpeculativeSnapshot as derive, normalizeSpeculativeInput, schedulePrefix, deriveSamplingModel, deriveCorrectnessExample, getNextLifecycle, getTeachingPosition, PREFIX, STREAM } from '../src/components/speculative-decoding/model.js';
 let cases=0;
 const inputs=[];
 for(const depth of [1,2,3,4,5]) for(const width of [1,2,3]) for(const budget of [2,8,16]) inputs.push({algorithm:'eagle2',depth,width,budget});
@@ -43,10 +43,15 @@ for(const input of inputs) {
       assert.equal(idle.event,null);
       assert.equal(idle.committedTokens.length,0);
       assert.equal(idle.acceptance.rate,null);
+      assert.deepEqual(idle.guide.data,[idle.round.nodes[0].token],'Idle code preview must not disclose future candidates');
       assert.ok(idle.kv.slots.every(x=>x.state==='empty'));
       for(const e of idle.round.events) {
         const s=derive({...input,phase:'running',step:e.operationIndex});
         assert.equal(s.stages.filter(x=>x.status==='active').length,1);
+        assert.equal(s.guide.codeIndex,e.codeIndex,'Code walkthrough follows canonical execution event');
+        if(e.type==='expand') assert.deepEqual(s.guide.data,s.candidates.filter(x=>x.level===e.level).map(x=>x.token));
+        if(e.type==='accept') assert.deepEqual(s.guide.data,s.round.accepted.map(x=>x.token));
+        if(e.type==='commit') assert.deepEqual(s.guide.data,[],'Commit code preview cannot emit early');
         assert.equal(s.committedTokens.length,0,'No output before commit completes');
         if(e.type==='verify')assert.ok(s.kv.slots.every(x=>x.state==='temporary'));
         if(e.type==='commit')assert.ok(s.kv.slots.every(x=>['committing','reclaiming'].includes(x.state)));
@@ -62,6 +67,7 @@ for(const input of inputs) {
       assert.equal(done.kv.committedPrefixLength,PREFIX.length+done.round.cursor+acceptedIds.length);
       assert.equal(done.kv.pendingAnchor,done.round.bonus);
       assert.deepEqual(done.committedTokens,done.round.output);
+      assert.deepEqual(done.guide.data,done.committedTokens);
       if(done.round.verifiedDraftCount===0)assert.equal(done.acceptance.rate,null);
       else assert.equal(done.acceptance.rate,done.round.acceptedCount/done.round.verifiedDraftCount);
       if(done.rounds.length>1){
@@ -115,4 +121,40 @@ assert.ok(!jsx.includes('text-[6px]')&&!jsx.includes('text-[7px]')&&!jsx.include
 assert.ok(!jsx.includes('name="quality"')&&!jsx.includes('name="load"')&&!jsx.includes('s.quality'),'No acceptance or load input, including downstream expected-rate bars');
 assert.ok(jsx.includes('flag="block_size"'),'DSpark uses its actual model config field');
 assert.ok(jsx.includes('<details')&&!jsx.includes('<details open'),'Long parameter explanations are collapsed by default');
+assert.ok(jsx.includes("'race-acceptance'")&&jsx.includes("'round-acceptance'"),'Both playback scopes expose a clearly labeled acceptance result');
+assert.ok(jsx.includes('data-testid="execution-guide"')&&jsx.includes('data-testid="code-data"'),'Code has synchronized explanation and concrete data');
+assert.ok(jsx.includes('onSeek')&&jsx.includes("setIsPlaying(false);setRacePlaying(false)"),'Manual code inspection pauses both playbacks');
+const composition=jsx.slice(jsx.indexOf('<main className="mx-auto max-w-[1600px]'));
+assert.ok(composition.indexOf('<Race ')<composition.indexOf('<Principles ')&&composition.indexOf('<Principles ')<composition.indexOf('<Workbench ')&&composition.indexOf('<Workbench ')<composition.indexOf('<References '),'Reading order is efficiency, correctness, implementation, references');
+const workbench=jsx.slice(jsx.indexOf('function Workbench('),jsx.indexOf('function ExecutionGuide('));
+assert.ok(workbench.includes('<ExecutionGuide ')&&workbench.includes('onSeek={onSeek}'),'Execution guide belongs to the implementation section and keeps shared step control');
+const principles=jsx.slice(jsx.indexOf('function Principles('),jsx.indexOf('export default function'));
+assert.ok(principles.includes("t('simpleGreedy')")&&principles.includes("t('simpleSampling')")&&!principles.includes('<ExecutionGuide '),'Correctness distinguishes greedy output from sampling distribution, without implementation code');
+const intro=deriveCorrectnessExample();
+assert.deepEqual(intro.greedy.output,[]);
+assert.ok(intro.greedy.candidates.every(x=>x.status==='pending'));
+const explained=deriveCorrectnessExample(true,true);
+assert.deepEqual(explained.greedy.candidates.map(x=>x.status),['match','match','reject','discarded']);
+assert.deepEqual(explained.greedy.output,['the','future','of']);
+assert.equal(explained.greedy.correction,'of');
+assert.deepEqual(intro.sampling.rows.map(x=>x.display),[.6,.2,.2]);
+explained.sampling.rows.forEach(row=>assert.ok(Math.abs(row.display-row.target)<1e-12&&Math.abs(row.kept+row.refill-row.target)<1e-12));
+assert.equal(explained.sampling.threshold,.5);
+assert.equal(deriveCorrectnessExample(false,false,.49,2).sampling.output,2);
+assert.equal(deriveCorrectnessExample(false,false,.5,2).sampling.output,0);
+assert.equal(deriveCorrectnessExample(false,false,.99,0).sampling.output,0);
+assert.ok(principles.includes('data-testid="correctness-formulas"')&&!principles.includes('<details open'),'Advanced formulas stay behind disclosure');
+assert.ok(principles.includes('deriveCorrectnessExample(')&&!principles.includes('deriveSamplingModel(')&&jsx.includes('deriveCorrectnessExample, getNextLifecycle'),'Intro component uses its imported example model');
+assert.deepEqual(intro.greedy.scoringRows.map(row=>row.readout),['predict','the','future','many']);
+assert.deepEqual(intro.greedy.scoringRows.map(row=>row.candidate),['the','future','many','different']);
+intro.greedy.scoringRows.forEach((row,i)=>assert.deepEqual(row.context,[...PREFIX,'predict',...intro.greedy.candidates.slice(0,i).map(x=>x.token)],'Scoring context excludes the candidate itself and all future tokens'));
+assert.deepEqual(explained.greedy.scoringRows.map(row=>row.usable),[true,true,true,false]);
+for(const tokenIndex of [0,1,2]){
+  const candidate=deriveCorrectnessExample(false,false,.75,tokenIndex).sampling;
+  assert.ok(Math.abs(Math.exp(candidate.logP)-candidate.selectedP)<1e-12);
+  assert.ok(Math.abs(Math.exp(candidate.logQ)-candidate.selectedQ)<1e-12);
+  assert.ok(Math.abs(Math.min(1,Math.exp(candidate.logP-candidate.logQ))-candidate.threshold)<1e-12);
+  assert.equal(candidate.alwaysAccept,tokenIndex!==2,'Both lower and equal Draft probabilities always accept; higher does not');
+}
+assert.ok(principles.includes('data-testid="target-probability-origin"')&&principles.includes('data-testid="token-acceptance-rule"'),'Probability origin and token decision remain visible');
 console.log('Speculative decoding: '+cases+' parameter configurations, event/round/KV identity invariants, scheduler causality, output equality and exact sampling mass passed.');

@@ -231,9 +231,17 @@ export function deriveSpeculativeSnapshot(input={}) {
   const cumulativeVerified=completed.reduce((sum,r)=>sum+r.verifiedDraftCount,0);
   const observedAccepted=hasVerdict?round.acceptedCount:0;
   const observedVerified=reached('verify')?round.verifiedDraftCount:0;
+  const guide = { codeIndex:event?.codeIndex ?? (committed?round.events.at(-1).codeIndex:0), dataKey:'guideAnchor', data:[round.nodes[0].token] };
+  if (committed || event?.type==='commit') { guide.dataKey='actualOutput'; guide.data=committed?round.output:[]; }
+  else if (event?.type==='expand') { guide.dataKey='guideCandidates'; guide.data=candidates.filter(x=>x.level===event.level).map(x=>x.token); }
+  else if (event?.type==='backbone') { guide.dataKey='baseGuess'; guide.data=round.nodes.slice(1).map(x=>x.baseToken); }
+  else if (event?.type==='markov') { guide.dataKey='guideCandidates'; guide.data=candidates.filter(x=>x.id!=='root'&&x.generated).map(x=>x.token); }
+  else if (event?.type==='confidence') { guide.dataKey='confidence'; guide.data=round.nodes.slice(1).map(x=>x.confidence.toFixed(2)); }
+  else if (event?.type==='accept') { guide.dataKey='accepted'; guide.data=round.accepted.map(x=>x.token); }
+  else if (selectedVisible) { guide.dataKey='targetInput'; guide.data=round.selected.map(x=>x.token); }
   return {
     ...n,phase,step,roundIndex,round,rounds:run.rounds,
-    event,maxStep:round.events.length,hasVerdict,committed,selectedVisible,candidates,
+    event,maxStep:round.events.length,hasVerdict,committed,selectedVisible,candidates,guide,
     generatedLevel,markovPosition,
     committedTokens:committed?round.output:[],
     acceptance:{accepted:observedAccepted,verified:observedVerified,rate:hasVerdict&&observedVerified?observedAccepted/observedVerified:null,
@@ -266,6 +274,9 @@ export function deriveSamplingModel(quality=80,draw=0.82,proposalIndex=2,residua
   const closeness=clamp(quality,0,100,80)/100;
   const p=[0.7,0.2,0.1], bad=[0.15,0.15,0.7];
   const q=p.map((v,i)=>closeness*v+(1-closeness)*bad[i]);
+  return sampleDistributions(p,q,draw,proposalIndex,residualDraw);
+}
+function sampleDistributions(p,q,draw,proposalIndex,residualDraw) {
   const acceptedMass=p.map((v,i)=>Math.min(v,q[i]));
   const acceptance=acceptedMass.reduce((a,b)=>a+b,0);
   const rejection=1-acceptance;
@@ -275,6 +286,29 @@ export function deriveSamplingModel(quality=80,draw=0.82,proposalIndex=2,residua
   const threshold=Math.min(1,p[selected]/q[selected]);
   let total=0;
   const correction=residual.findIndex(value=>{total+=value;return residualDraw<total;});
-  const output=draw<=threshold?selected:Math.max(0,correction);
-  return {p,q,acceptedMass,acceptance,rejection,residual,result,selected,threshold,draw,residualDraw,output,accepted:draw<=threshold};
+  const output=draw<threshold?selected:Math.max(0,correction);
+  return {p,q,acceptedMass,acceptance,rejection,residual,result,selected,threshold,draw,residualDraw,output,accepted:draw<threshold};
+}
+
+// Independent introductory examples: reuse the actual greedy fixture and exact
+// sampler, but use round percentages so probability correction is easy to see.
+export function deriveCorrectnessExample(verified=false,corrected=false,draw=.75,proposalIndex=2) {
+  const round=buildRun({algorithm:'dspark',blockSize:4}).rounds[0];
+  const sampling=sampleDistributions([.7,.2,.1],[.6,.2,.2],draw,proposalIndex,.37);
+  return {
+    greedy:{prefix:[...PREFIX,STREAM[0]],verified,
+      scoringRows:round.selected.slice(1).map((node,i)=>({
+        context:[...PREFIX,STREAM[0],...round.selected.slice(1,i+1).map(x=>x.token)],
+        readout:round.selected[i].token,candidate:node.token,
+        usable:!verified?null:i<=round.acceptedCount,
+      })),
+      candidates:round.selected.slice(1).map((node,i)=>({token:node.token,status:!verified?'pending':i<round.acceptedCount?'match':i===round.acceptedCount?'reject':'discarded'})),
+      correction:verified?round.bonus:null,output:verified?round.output:[]},
+    sampling:{...sampling,corrected,
+      selectedToken:['A','B','C'][sampling.selected],
+      selectedP:sampling.p[sampling.selected],selectedQ:sampling.q[sampling.selected],
+      logP:Math.log(sampling.p[sampling.selected]),logQ:Math.log(sampling.q[sampling.selected]),
+      alwaysAccept:sampling.q[sampling.selected]<=sampling.p[sampling.selected],
+      rows:sampling.p.map((target,i)=>({token:['A','B','C'][i],target,draft:sampling.q[i],kept:sampling.acceptedMass[i],refill:sampling.rejection*sampling.residual[i],display:corrected?sampling.result[i]:sampling.q[i]}))},
+  };
 }

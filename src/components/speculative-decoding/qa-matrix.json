@@ -42,7 +42,7 @@
   ],
   "cases": [
     {
-      "name": "EAGLE compact desktop",
+      "name": "EAGLE idle acceptance and code preview",
       "state": {
         "algorithm": "eagle2",
         "details": "collapsed",
@@ -51,13 +51,13 @@
         "language": "zh"
       },
       "checks": [
-        "Only depth width capacity sliders; no quality/load/presets",
-        "Parameter area shorter than 208px baseline",
-        "No early acceptance result"
+        "Three h2 sections follow efficiency, correctness, implementation; references are last",
+        "Cumulative and round acceptance are prominent and show dashes before verification",
+        "Code preview reveals only the existing anchor; full code collapsed"
       ]
     },
     {
-      "name": "EAGLE details during playback",
+      "name": "EAGLE code inspection during playback",
       "state": {
         "algorithm": "eagle2",
         "details": "expanded",
@@ -66,12 +66,13 @@
         "language": "en"
       },
       "checks": [
-        "Details keyboard reachable; do not reset execution",
-        "Parameter changes reset dependent views"
+        "Selecting a code step pauses playback and synchronizes stage, candidates and KV",
+        "Accept step shows the accepted path; commit step does not emit before completion",
+        "Code is inside implementation; expanded full pseudocode is readable and does not overflow"
       ]
     },
     {
-      "name": "EAGLE narrow mobile",
+      "name": "EAGLE Chinese mobile completion",
       "state": {
         "algorithm": "eagle2",
         "details": "expanded",
@@ -80,13 +81,13 @@
         "language": "zh"
       },
       "checks": [
-        "Top-k=1 capacity equals steps+1",
-        "Accepted count and utilization match selected nodes",
-        "No page overflow"
+        "Round acceptance shows 3/7=43% and 4 committed output tokens",
+        "Counting explanation excludes anchor and bonus and includes rejected branches",
+        "Correctness precedes implementation on mobile; expanded code and scope do not overflow"
       ]
     },
     {
-      "name": "EAGLE wide mobile",
+      "name": "EAGLE English mobile completion",
       "state": {
         "algorithm": "eagle2",
         "details": "collapsed",
@@ -95,13 +96,13 @@
         "language": "en"
       },
       "checks": [
-        "Widening can improve count while reducing utilization",
-        "Maximum tree scroll remains local",
-        "KV and race share the accepted path"
+        "Correctness explanation, independent lab and implementation code stay readable at 390px",
+        "Algorithm-specific sources identify paper, configuration and sampling roles",
+        "Acceptance result stays independent from the untouched cumulative race"
       ]
     },
     {
-      "name": "DSpark compact desktop",
+      "name": "DSpark idle desktop scope",
       "state": {
         "algorithm": "dspark",
         "details": "collapsed",
@@ -110,13 +111,13 @@
         "language": "en"
       },
       "checks": [
-        "Only block_size slider, labeled DeepSpec model config",
-        "No EAGLE flags",
-        "Sampling lab distributions independent of config"
+        "Switching algorithm clears old acceptance and code lifecycle",
+        "References switch to DSpark paper and DeepSpec configuration",
+        "The shared correctness section precedes DSpark implementation; no future verdict in idle code"
       ]
     },
     {
-      "name": "DSpark details desktop",
+      "name": "DSpark step-specific teaching data",
       "state": {
         "algorithm": "dspark",
         "details": "expanded",
@@ -125,13 +126,13 @@
         "language": "zh"
       },
       "checks": [
-        "Details explain checkpoint constraint and verified prefix",
-        "Fixed confidence and cost drive causal scheduler",
-        "Sequential Markov stages remain coherent"
+        "First Markov step exposes only the first generated token",
+        "Code uses greedy argmax consistently with the visible trace",
+        "Sampling controls stay independent of the implementation timeline; code controls still synchronize it"
       ]
     },
     {
-      "name": "DSpark short mobile",
+      "name": "DSpark Chinese mobile verification",
       "state": {
         "algorithm": "dspark",
         "details": "collapsed",
@@ -140,13 +141,13 @@
         "language": "zh"
       },
       "checks": [
-        "Short block accepts fixed prefix",
-        "Commit emits accepted tokens and bonus",
-        "No page overflow"
+        "Default block verifies 4 drafts and accepts 2, showing 50%",
+        "Completion exposes accepted the/future plus Target bonus of",
+        "Mobile order is efficiency, correctness, implementation with code, references; no overflow"
       ]
     },
     {
-      "name": "DSpark long mobile",
+      "name": "DSpark English mobile disclosures",
       "state": {
         "algorithm": "dspark",
         "details": "expanded",
@@ -155,9 +156,9 @@
         "language": "en"
       },
       "checks": [
-        "Longer block preserves earlier proposals but may lower utilization",
-        "Causal early stopping still shown",
-        "Reset clears results without changing fixture"
+        "Expanded pseudocode wraps rather than creating page overflow",
+        "Sources name their explanatory role; scope identifies synthetic timing and single-request scheduling",
+        "Language and disclosure changes preserve round, acceptance and the independent sampling state"
       ]
     }
   ]

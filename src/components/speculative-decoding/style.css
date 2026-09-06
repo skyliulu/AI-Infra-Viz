@@ -1,9 +1,27 @@
-.spec-page .spec-card { border: 1px solid #e2e8f0; border-radius: 12px; background: white; padding: 16px; min-width: 0; }
+.spec-page .spec-card { border: 1px solid #e2e8f0; border-radius: 12px; background: white; padding: 12px; min-width: 0; }
 .spec-page .spec-icon { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border: 1px solid #e2e8f0; border-radius: 8px; background: white; color: #475569; }
 .spec-page .spec-icon:disabled { opacity: .35; cursor: default; }
 .spec-page button:focus-visible, .spec-page input:focus-visible, .spec-page select:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
 .spec-page .spec-small-button { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 9px; background: white; color: #334155; font-size: 11px; }
-.spec-page .spec-lane { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
+.spec-page .spec-lane { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; background: #f8fafc; }
+/* Compact this workbench's spacing, not its type or control hit areas.
+   Keep all content, disclosures and DOM reading order intact. */
+.spec-page .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 8px; }
+.spec-page .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 6px; }
+.spec-page .spec-card p.leading-relaxed { line-height: 1.5; }
+.spec-page .spec-card .p-3 { padding: 10px; }
+.spec-page .spec-card .mt-4 { margin-top: 12px; }
+.spec-page .spec-card .mb-4 { margin-bottom: 10px; }
+.spec-page .spec-card .mt-3 { margin-top: 8px; }
+.spec-page .spec-card .mb-3 { margin-bottom: 8px; }
+.spec-page .spec-card .my-3 { margin-top: 8px; margin-bottom: 8px; }
+.spec-page .spec-card .mt-2 { margin-top: 6px; }
+.spec-page .spec-card .mb-2 { margin-bottom: 6px; }
+.spec-page .spec-card .my-2 { margin-top: 6px; margin-bottom: 6px; }
+.spec-page .spec-card .pt-4 { padding-top: 12px; }
+.spec-page .spec-card .pt-3 { padding-top: 8px; }
+.spec-page .spec-card .py-2:not(button) { padding-top: 6px; padding-bottom: 6px; }
+.spec-page .spec-card .gap-4 { gap: 12px; }
 .spec-workbench { container-type: inline-size; }
 .spec-tree-mask { display: grid; gap: 12px; min-width: 0; }
 @container (min-width: 960px) { .spec-tree-mask { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }

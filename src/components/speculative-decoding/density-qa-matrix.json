@@ -1,0 +1,12 @@
+{
+  "dimensions":{"algorithm":["eagle2","dspark"],"viewport":["desktop","mobile"],"language":["zh","en"],"content":["default","dense"]},
+  "requiredCrossProducts":[["algorithm","viewport"],["language","viewport"],["content","viewport"]],
+  "cases":[
+    {"name":"EAGLE desktop comparison","state":{"algorithm":"eagle2","viewport":"desktop","language":"zh","content":"default"},"checks":["Same-state textContent exactly matches baseline","Page shrinks from3485px to3009px at1280px","Race lanes have equal-width side-by-side time scales"]},
+    {"name":"DSpark desktop comparison","state":{"algorithm":"dspark","viewport":"desktop","language":"zh","content":"default"},"checks":["Same-state textContent exactly matches baseline","Page shrinks from3480px to3005px at1280px","Section order and controls unchanged"]},
+    {"name":"Maximum EAGLE tree","state":{"algorithm":"eagle2","viewport":"desktop","language":"en","content":"dense"},"checks":["56px-tall nodes at72px level pitch leave16px gaps","936px maximum tree scroll stays local","All masks, KV mappings and code remain accessible"]},
+    {"name":"DSpark mobile comparison","state":{"algorithm":"dspark","viewport":"mobile","language":"zh","content":"default"},"checks":["Same-state textContent exactly matches baseline","Page shrinks from6050px to5462px at390px","Race lanes remain vertically stacked"]},
+    {"name":"Expanded EAGLE mobile","state":{"algorithm":"eagle2","viewport":"mobile","language":"en","content":"dense"},"checks":["Maximum tree remains scrollable without page overflow","Expanded formulas/code retain all content","No font-size or control hit-area reduction"]},
+    {"name":"Expanded DSpark mobile","state":{"algorithm":"dspark","viewport":"mobile","language":"en","content":"dense"},"checks":["Block8 and expanded disclosures remain readable","Scheduler and acceptance results unchanged","No page overflow"]}
+  ]
+}
