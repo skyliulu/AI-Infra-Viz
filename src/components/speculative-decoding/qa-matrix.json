@@ -1,27 +1,164 @@
 {
   "dimensions": {
-    "algorithm": ["eagle2", "dspark"],
-    "scenario": ["representative", "lowAcceptance"],
-    "outcome": ["idle", "intermediate", "done"],
-    "raceOutcome": ["idle", "multiCycle", "finalLead", "boundaryTie"],
-    "language": ["zh", "en"],
-    "viewport": ["desktop", "mobile"]
+    "algorithm": [
+      "eagle2",
+      "dspark"
+    ],
+    "details": [
+      "collapsed",
+      "expanded"
+    ],
+    "phase": [
+      "idle",
+      "intermediate",
+      "done"
+    ],
+    "viewport": [
+      "desktop",
+      "mobile"
+    ],
+    "language": [
+      "zh",
+      "en"
+    ]
   },
   "requiredCrossProducts": [
-    ["algorithm", "scenario"],
-    ["algorithm", "outcome"],
-    ["algorithm", "viewport"],
-    ["raceOutcome", "viewport"],
-    ["language", "viewport"]
+    [
+      "algorithm",
+      "details"
+    ],
+    [
+      "algorithm",
+      "phase"
+    ],
+    [
+      "algorithm",
+      "viewport"
+    ],
+    [
+      "language",
+      "viewport"
+    ]
   ],
   "cases": [
-    { "name": "eagle representative idle desktop zh", "state": { "algorithm": "eagle2", "scenario": "representative", "outcome": "idle", "raceOutcome": "idle", "language": "zh", "viewport": "desktop" }, "checks": ["chapter title follows the repository visualization naming style", "the visible Spec Decode navigation label is one 40px row while its accessible name remains Speculative Decoding", "one Large models can example spans race and trace", "Draft internals are always inline in three compact tiers with no expansion control or duplicate summary", "compact left overview shows Target, EAGLE sidecar, bidirectional ports, and KV without a duplicate runtime-loop panel", "Target KV shows a persistent Prefix plus eight visibly unallocated candidate slots before verification", "EAGLE tree and ancestor-mask evidence fit the capped desktop workbench without a wide internal scroller"] },
-    { "name": "eagle low intermediate mobile en", "state": { "algorithm": "eagle2", "scenario": "lowAcceptance", "outcome": "intermediate", "raceOutcome": "boundaryTie", "language": "en", "viewport": "mobile" }, "checks": ["mobile drawer keeps every navigation item including Spec Decode to one 40px row", "fixed budget truthfully shows no gain under boundary acceptance", "tree scroller only", "local controls wrap"] },
-    { "name": "eagle representative done mobile zh", "state": { "algorithm": "eagle2", "scenario": "representative", "outcome": "done", "raceOutcome": "finalLead", "language": "zh", "viewport": "mobile" }, "checks": ["race preserves speculative output lead at budget end", "accepted path committed", "Target KV shows four committed Draft slots and four reclaimed reusable slots", "compact mask explains sibling isolation", "other branches reclaimed"] },
-    { "name": "eagle low done desktop en", "state": { "algorithm": "eagle2", "scenario": "lowAcceptance", "outcome": "done", "raceOutcome": "boundaryTie", "language": "en", "viewport": "desktop" }, "checks": ["correction token visible", "boundary text explains zero gain"] },
-    { "name": "dspark representative idle mobile en", "state": { "algorithm": "dspark", "scenario": "representative", "outcome": "idle", "raceOutcome": "multiCycle", "language": "en", "viewport": "mobile" }, "checks": ["compact Target and DSpark relation cards plus always-inline four-tier Draft flow without page overflow", "DSpark flow distinguishes runtime features, trainable projection and backbone, reused LM head, low-rank Markov matrices, confidence weight, and scheduler without a legend or repeated output row", "committed prefix and predict anchor are explicit", "parallel context guesses and sequential correction are distinct"] },
-    { "name": "dspark low intermediate desktop zh", "state": { "algorithm": "dspark", "scenario": "lowAcceptance", "outcome": "intermediate", "raceOutcome": "multiCycle", "language": "zh", "viewport": "desktop" }, "checks": ["compact model card and right trace highlight the same Draft or Target owner", "conditional confidence multiplies into prefix survival", "hardware curve trims verification prefix"] },
-    { "name": "dspark representative done desktop en", "state": { "algorithm": "dspark", "scenario": "representative", "outcome": "done", "raceOutcome": "finalLead", "language": "en", "viewport": "desktop" }, "checks": ["speculative lane outputs more tokens in the same budget", "the and future accepted plus of correction", "two accepted Draft-token KV slots become resident, the rejected temporary slot is reclaimed, and correction-token KV is explicitly pending the next Target forward", "one Target forward"] },
-    { "name": "dspark low done mobile zh", "state": { "algorithm": "dspark", "scenario": "lowAcceptance", "outcome": "done", "raceOutcome": "idle", "language": "zh", "viewport": "mobile" }, "checks": ["two draft positions skipped", "Target KV distinguishes commit and reclaim"] }
+    {
+      "name": "EAGLE compact desktop",
+      "state": {
+        "algorithm": "eagle2",
+        "details": "collapsed",
+        "phase": "idle",
+        "viewport": "desktop",
+        "language": "zh"
+      },
+      "checks": [
+        "Only depth width capacity sliders; no quality/load/presets",
+        "Parameter area shorter than 208px baseline",
+        "No early acceptance result"
+      ]
+    },
+    {
+      "name": "EAGLE details during playback",
+      "state": {
+        "algorithm": "eagle2",
+        "details": "expanded",
+        "phase": "intermediate",
+        "viewport": "desktop",
+        "language": "en"
+      },
+      "checks": [
+        "Details keyboard reachable; do not reset execution",
+        "Parameter changes reset dependent views"
+      ]
+    },
+    {
+      "name": "EAGLE narrow mobile",
+      "state": {
+        "algorithm": "eagle2",
+        "details": "expanded",
+        "phase": "done",
+        "viewport": "mobile",
+        "language": "zh"
+      },
+      "checks": [
+        "Top-k=1 capacity equals steps+1",
+        "Accepted count and utilization match selected nodes",
+        "No page overflow"
+      ]
+    },
+    {
+      "name": "EAGLE wide mobile",
+      "state": {
+        "algorithm": "eagle2",
+        "details": "collapsed",
+        "phase": "done",
+        "viewport": "mobile",
+        "language": "en"
+      },
+      "checks": [
+        "Widening can improve count while reducing utilization",
+        "Maximum tree scroll remains local",
+        "KV and race share the accepted path"
+      ]
+    },
+    {
+      "name": "DSpark compact desktop",
+      "state": {
+        "algorithm": "dspark",
+        "details": "collapsed",
+        "phase": "idle",
+        "viewport": "desktop",
+        "language": "en"
+      },
+      "checks": [
+        "Only block_size slider, labeled DeepSpec model config",
+        "No EAGLE flags",
+        "Sampling lab distributions independent of config"
+      ]
+    },
+    {
+      "name": "DSpark details desktop",
+      "state": {
+        "algorithm": "dspark",
+        "details": "expanded",
+        "phase": "intermediate",
+        "viewport": "desktop",
+        "language": "zh"
+      },
+      "checks": [
+        "Details explain checkpoint constraint and verified prefix",
+        "Fixed confidence and cost drive causal scheduler",
+        "Sequential Markov stages remain coherent"
+      ]
+    },
+    {
+      "name": "DSpark short mobile",
+      "state": {
+        "algorithm": "dspark",
+        "details": "collapsed",
+        "phase": "done",
+        "viewport": "mobile",
+        "language": "zh"
+      },
+      "checks": [
+        "Short block accepts fixed prefix",
+        "Commit emits accepted tokens and bonus",
+        "No page overflow"
+      ]
+    },
+    {
+      "name": "DSpark long mobile",
+      "state": {
+        "algorithm": "dspark",
+        "details": "expanded",
+        "phase": "done",
+        "viewport": "mobile",
+        "language": "en"
+      },
+      "checks": [
+        "Longer block preserves earlier proposals but may lower utilization",
+        "Causal early stopping still shown",
+        "Reset clears results without changing fixture"
+      ]
+    }
   ]
 }

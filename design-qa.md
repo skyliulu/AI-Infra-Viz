@@ -659,3 +659,44 @@ Browser console:     LinearAttention and LLMInference clean; remaining chapters 
 - 导航短标签：侧栏把可见标签从 `Speculative Decoding` 改为 `Spec Decode`，完整名称继续用于 `aria-label` 与 hover title。所有可见目录文本统一增加 `whitespace-nowrap`，图标固定不收缩，不扩大原 `176px` 侧栏。
 - 渲染证据：1517px 桌面基线中该目录项原为 `159×60px`，其余条目均为 `159×40px`；修复后 9 个条目全部为 `159×40px`。中英章节标题在桌面 header 均无横向溢出；390×844 抽屉中 9 个条目也全部为 40px 单行，页面保持 `bodyScrollWidth=375 == clientWidth=375 < innerWidth=390`。
 - 验证：模块模型回归、convention checker 9/9、QA matrix 与 Vite production build（1898 modules）通过。改动只涉及标题文案和导航呈现，不改变算法控制、时间线、主画布顺序或响应式阅读顺序。
+
+### 2026-09-06 参数映射与教学目标审查（仅审查，未修复）
+
+- 范围：保留现有竞速 → 模型关系/算法轨迹 → 伪代码结构；本次检查参数语义、执行真实性及可读性，不修改产品代码。以下发现更新此前“无遗留问题”的结论。
+- 依据：SGLang 官方 speculative decoding 文档及 `python/sglang/srt/speculative/eagle_utils.py`；EAGLE-2 原论文 §4；DSpark 原论文 §3.1、§3.2.2、§5.2、附录 A。参数含义必须标注框架/算法；SGLang `num_steps` 为 Draft 自回归展开深度、`eagle_topk` 为展开宽度、`num_draft_tokens` 为验证容量（其树输入包括 bonus/root）。不能与本页六个教学阶段混用。
+- 已复现 P1：idle/第一个 Draft 阶段，右侧仍显示最终“本轮提交”及已验证数量；DSpark 验证行在 idle 已着色为接受/拒绝。终态预设与当前执行状态未分离。
+- 已确认 P1：DSpark 画了 anchor + 4 masks → 4 logits；原论文 §3.1 明确使用 anchor + (gamma - 1) masks → gamma logits。该输入沿用了 DFlash 描述，未体现 DSpark 的位置调整。
+- 已确认 P1：DSpark `verifyBudget` 按场景固定为 3/2；两场景 confidence 完全相同，SPS 柱高 `[78,92,100,88]` 也相同，未参与调度计算。伪代码的 unrestricted argmax 还遗漏原论文的因果 early-stop；如采用生产异步版本，需解释历史容量与当前候选排序的区别。不能据此声称完整复现无损调度。
+- 已确认 P1：EAGLE Target KV 仅按 `index < acceptedDraftCount` 将前四槽提交，槽没有 candidate ID 或 gather 映射。当前压平序列的接受位置实际为 0/1/3/5；若槽对应验证输入顺序，0/1/2/3 不正确；若意图表示压紧后槽，则缺少重排过程和语义标注。
+- 已确认 P2：Draft 权重所有分组共用 `active: draftActive`，DSpark Markov/Confidence/调度阶段仍同时点亮 backbone；Markov 四位置同时变色，EAGLE 扩树一次显示全部节点，尚未呈现逐深度/逐位置依赖。动态 Top-k 选中的 level-2 父节点为 e3/e4，而固定树的 level-3 子节点来自 e3/e7，固定拓扑并非该选择过程的计算结果。
+- 已确认 P2：上方竞速按固定周期成本/固定提交数量切 `OUTPUT_STREAM`，下方只演示一轮。低接受率 EAGLE 下方输出 predict/generate，上方仍输出 predict/the/future/of；不是同一条多轮轨迹。成本估计是教学假设，不能做算法性能排序依据。
+- 已确认 P2：准确性仅有文字解释，接受/修正公式常量未在当前页面渲染；没有 p/q、随机数、首拒后的残差采样证据，也未明确 greedy 输出一致与 stochastic 分布一致的区别。
+- 渲染证据：1280px 实际视口，EAGLE 工作台 clientWidth=687、scrollWidth=843；树卡 clientWidth=685、scrollWidth=842。截图中右侧 Mask/说明被裁出可见区域。外层 310px 列和内层 560px+260px 最小列宽同时在 xl 生效，内层未按可用容器宽度重排。Draft 核心文字使用 6–8px，压缩空间已损害可读性；Mask 没有行列 token 标签或节点联动。
+- 验证：浏览器检查中文 EAGLE/DSpark 代表态与低接受率状态、单步及完成状态；EAGLE 低接受率竞速在 t=6 输出 6/6 后停止；页面 console error/warn 为空。`npm run check:speculative` 通过，但该脚本主要验证固定计数，不能排除以上教学/身份映射缺陷。本次未改产品代码，未重复生产构建；未复测移动端/英文，不将历史通过记录当成本轮证据。
+- 建议下一轮验收：加入带框架口径的深度/宽度/验证预算控制，所有候选、Target 输入、接受路径、KV 和时间线由同一轮事件模型派生；DSpark 使用独立的块长与负载/调度语义。先修正生命周期、输入数量和槽位身份，再补参数交互和响应式可读性。
+
+### 2026-09-06 参数、接受率与统一执行模型修复
+
+- 变更契约：本节落实上一节审查与用户“接受率也体现出来、这些问题都改掉”的要求。保留竞速 → 左侧模型关系/右侧算法轨迹 → 原理/伪代码的区域顺序与左右关系；未恢复冗长架构抽屉。能力为 timeline、multiple-modes、resource-metrics、structural-comparison、data-movement、dense-layout、math。
+- 参数口径：EAGLE-2 的展开步数、Top-k、验证容量采用 SGLang 命名并标出 anchor 占位及 Top-k=1 约束；DSpark 独立展示块长。教学阶段不再冒充 Draft steps。改变参数会重建候选与事件、重置竞速及当前轮；语言切换不重置执行。
+- 接受率：可调的是合成的预期单步匹配水平，并非部署中的直接验收阈值。实际采用率由已接受 Draft / 实际送验 Draft 派生，分母包含树旁支和首拒后后缀，排除 anchor 与 Target 补发。分别展示本轮、累计和平均新增长度；零送验为无定义，不伪装成 0%。高/低接受快捷设置与模型共用输入。
+- 生命周期与跨视图：使用同一确定性多轮事件模型驱动上方计时与下方选择轮次，严格在 commit 完成后提交输出；idle 不揭示候选、最终 verdict 或输出。EAGLE 按深度展开，DSpark 按顺序位置执行轻量 Markov；仅对应权重/运行时组激活。下一轮以同一 Target 补发 token 为 anchor。
+- 技术依据延续上节原始来源：EAGLE-2 §4 的动态 Top-k 与路径乘积选取；DSpark §3.1 的 anchor + gamma-1 masks → gamma base logits，及 §3.2.2 的非前瞻连续前缀停止。DSpark 三词 logits 切片展示前一 token → 转移偏置 → 当前 logits；confidence、生存概率、归一化 Target 成本与吞吐真正参与因果调度，首次不改善后不再读取未来行来反悔。
+- KV 修复：临时槽绑定实际 candidate ID，保留 root + 接受路径，显示 gather → 新 Prefix 的压紧映射并回收其他槽。输入编号从 1 起算，目标索引从 0 起算，页面明示。Target 补发 token 不冒充当前槽 KV，下一轮验证才生成它的 KV；Draft 上下文明确与 Target KV 分离。
+- 准确性证据：主轨迹为 greedy，所有输出与固定 Target 流一致。新增独立三词 p/q 拒绝采样实验，可调候选、接受随机数、残差随机数；显示正残差分布和最终概率质量守恒。它不声称复刻 EAGLE 树的随机采样实现。90% 示例 C 被拒后，残差抽样 0.37 输出 A、0.99 输出 B；quality=100 时无拒绝。
+- 布局：移除遗留静态组件与 6–8px 核心文字。树/Mask 按真实容器宽度重排；Mask 标注行列与 token，节点联动高亮祖先路径。最大树采用逐层均匀排布，将宽度从 2808 收紧至 936px；窄屏初始居中根节点，树内部保留必要滚动。修正 KaTeX 容器 1–3px 溢出造成的小滚动条。
+- 浏览器证据：1280×900 中英桌面，页面 body=1265px，工作台无横向溢出；最大树只在自身 683px 容器内滚动 936px 内容。390×844 英文 EAGLE/DSpark，body=375px；最大树容器 307px、根节点屏幕 x=140.5px，页面无外溢。KaTeX error 元素为 0。中文默认树节点 `future` 点击后 Mask 可见路径为 predict → the → future；完成后 KV 输入编号 1/2/4/7 对应新 Prefix 索引 3/4/5/6，Prefix 3→7，下一轮 anchor 为 language。
+- 运行证据：默认 EAGLE 90%、steps=3、Top-k=2、容量=8、load=1，在归一化 8 时间单位后输出 12 vs baseline 8，累计 9/21=43%、每轮新增 4；此处 43% 是包含旁支的采用率，并非与 90% 参数相矛盾。最大树、0% 匹配输出 2 vs 8，采用 0/30；DSpark 0%、load=8 输出 5 vs 8，调度仅验证 anchor，接受率为 — (0/0)。DSpark 高接受第一轮送验 4、接受 4，输出 the/future/of/language + Target with。两侧计时到预算后停止，不继续扩大差距。
+- 自动验证：`npm run check:speculative` 覆盖 180 组参数、逐事件/跨轮/KV 身份、因果 early-stop、输出一致、101 组采样概率及实际残差输出；全部通过。convention checker 9/9、0 warning，8-case/6-dimension QA matrix 通过。Vite production build 1899 modules 通过；沙箱内 esbuild 读配置权限不足，获准在外部运行构建后成功，仅有现有 Browserslist 数据过期提醒。`git diff --check` 无空白错误。
+- 边界：合成 token、概率与归一化成本，不加载 checkpoint，不作为 EAGLE/DSpark 性能排行榜；confidence 使用教学近似，不是经训练校准的预测器；DSpark 仅模拟单请求因果调度，不包含生产异步队列与性能 profiling；不包括 prefill、训练和批处理收益。本轮未重新采集浏览器 console 日志，不沿用上一轮空日志作为新证据。已完成视觉与 DOM 交互检查、构建和模型回归；真实硬件/模型 benchmark 不在此次教学模块范围内。
+
+### 2026-09-06 配置与运行结果分离、参数区精简
+
+- 用户确认的修正：删除顶部预期接受率、引擎负载、高/低接受示例；EAGLE 只保留 steps / Top-k / 验证容量，DSpark 只保留 `block_size`。保留竞速、模型总览/算法工作台、原理/代码的区域顺序与控制位置；本次为 repair，不重做页面结构。按交互模块规范将派生结果与独立配置分离，并使用渐进披露压缩说明。
+- 来源与边界：延续前一轮已核对的 SGLang speculative 文档；DSpark 英文名称来自 [DeepSpec 官方模型配置](https://github.com/deepseek-ai/DeepSpec/blob/main/config/dspark/dspark_qwen3_4b.py) 的 `model.block_size`，并非虚构的 SGLang 启动参数。顶部标注运行时配置/模型配置，DSpark 详情说明现有 checkpoint 的块长不能任意修改。调度保留固定教学成本曲线，不再把模拟 load 作为主页面输入。
+- 固定样例：删除主模型 quality/load/scenario 输入及随机匹配生成；按绝对输出位置读取固定候选 rank 与独立 confidence 表。验证容量不能改写候选，DSpark 延长块不能改写已有位置。步数、宽度、容量仅改变展开/送验范围，实际接受数量、利用率与输出由验证派生。后续轮次沿同一 Target 序列继续，不因 round index 换一组“正确率”。独立拒绝采样实验使用固定 p/q，不再暗中依赖顶部参数。
+- 指标：移除“预期 vs 实际”双条，只保留实际接受率（明确候选利用率口径）、已接受/已送验数量及动态条；累计利用率和平均每轮新增仍由实际完成轮次计算。模型回归确认：depth=3 时 Top-k=1 接受 2/3，Top-k=2、容量8 接受3/7——接受数量增加，比例却下降，不把比例当成唯一优化目标。
+- 文案与披露：每项默认显示中文名、英文参数名、一句用途；原细节移入默认关闭的原生 details，可鼠标或 Enter 展开。仅展示当前算法的来源标签和内容；切换语言、展开说明不重置轨迹，改变配置重置两条播放及轮次。桌面基线参数区为208px/5个滑块，修复后163px/3个滑块（约缩短22%）；DSpark为163px/1个滑块。
+- 浏览器证据：1287px中文及1280px英文桌面复核精简/展开态；390×844中英文EAGLE/DSpark复核，body=375px，无页面横向溢出。最大树936px仅在自身307px容器内滚动，工作台无外溢；桌面body=1265px。浏览器确认EAGLE单链完成后2/3=67%；DSpark block_size=2为2/2=100%，block_size=8生成8个候选、调度在第5个停止、实际送验4/接受2=50%，后续调度行显示未评估。默认EAGLE竞速到8单位后输出9 vs baseline8并停止，累计6/21=29%、每轮新增3。KaTeX error节点为0；本轮重新读取浏览器console error/warn为空。
+- 回归：模型脚本更新为53组实际配置组合（45组EAGLE、8种DSpark块长），并新增旧quality/load输入无效、容量不改写候选、块长保留前缀、接受数量与利用率反向变化、仅结果展示、DSpark真实字段及默认折叠断言。逐事件/跨轮/KV身份、调度因果性、贪心输出一致、101组严格采样质量守恒继续通过。convention checker 9/9、0 warning；8-case/5-dimension QA matrix通过；Vite生产构建1899 modules通过，仅现有Browserslist数据过期提醒；git diff --check无空白错误。
+- 限制：固定教学样例与计时，不是实测checkpoint性能或参数效果预测；DSpark confidence是固定合成模型证据，不是由实际接受结果反向生成。保留单请求因果调度范围，不扩展到生产异步队列。本节取代上一节可调接受水平/负载的产品设计与对应验收口径，历史结果仅作为改动前记录。

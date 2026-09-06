@@ -1,757 +1,422 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Activity,
-  ArrowRight,
-  Boxes,
-  BrainCircuit,
-  Check,
-  Cpu,
-  FastForward,
-  Gauge,
-  GitBranch,
-  Globe,
-  Pause,
-  Play,
-  RotateCcw,
-  ShieldCheck,
-  SkipForward,
-} from 'lucide-react';
+import { ArrowDown, ArrowRight, BrainCircuit, Cpu, Database, Globe, Pause, Play, RotateCcw, SkipForward } from 'lucide-react';
 import { MathFormula } from './linear-attention/MathFormula';
-import { deriveSpeculativeSnapshot, getNextLifecycle } from './speculative-decoding/model';
+import { deriveSpeculativeSnapshot, deriveSamplingModel, getNextLifecycle, PREFIX, STREAM } from './speculative-decoding/model';
+import './speculative-decoding/style.css';
 
-const getInitialLang = () => (typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().includes('zh') ? 'zh' : 'en');
-
-const SPEEDUP_FORMULA = String.raw`S\approx\frac{A\,C_{\mathrm{decode}}}{C_{\mathrm{draft}}+C_{\mathrm{verify}}(V)+C_{\mathrm{runtime}}}`;
-const ACCEPT_FORMULA = String.raw`a_i=\min\!\left(1,\frac{p_i(x_i)}{q_i(x_i)}\right),\qquad u_i\le a_i`;
-const CORRECTION_FORMULA = String.raw`r_i(x)=\frac{[p_i(x)-q_i(x)]_+}{\sum_y[p_i(y)-q_i(y)]_+}`;
-const EAGLE_VALUE_FORMULA = String.raw`V_i\approx\prod_{t_j\in\operatorname{Path}(\mathrm{root},t_i)}c_j`;
-const DSPARK_MARKOV_FORMULA = String.raw`p_k(v)\propto\exp\!\left(U_k(v)+B(x_{k-1},v)\right)`;
-const DSPARK_SURVIVAL_FORMULA = String.raw`a_j=\prod_{i\le j}c_i,\qquad \Theta=\tau\cdot\operatorname{SPS}(B)`;
-const ATTENTION_WEIGHT_FORMULA = String.raw`W_Q,\,W_K,\,W_V,\,W_O`;
-const MLP_WEIGHT_FORMULA = String.raw`W_{\mathrm{gate}},\,W_{\mathrm{up}},\,W_{\mathrm{down}}`;
-
+const getInitialLang = () => navigator.language?.toLowerCase().includes('zh') ? 'zh' : 'en';
 const i18n = {
   zh: {
-    title: '推测解码原理可视化',
-    subtitle: '先看清加速来源，再比较 EAGLE-2 动态树与 DSpark 置信度调度',
-    teachingQuestion: '为什么便宜的 Draft 工作能减少昂贵的 Target 串行 Decode？',
-    eagle2: 'EAGLE-2', dspark: 'DSpark', representative: '代表性轨迹', lowAcceptance: '低接受率', scenario: '运行场景',
-    langToggle: 'EN', switchEnglish: 'Switch to English', reset: '重置', play: '播放', pause: '暂停', replay: '重播', next: '下一步',
-    ready: '准备开始', done: '本轮完成', stepProgress: '步骤 {current} / {total}',
-    committedPrefix: '已提交上下文', sameOutput: '相同提交结果', whyFaster: '加速来自减少 Target 串行前向，而不是跳过 Target 验证。',
-    baseline: '标准自回归', selectedAlgorithm: '当前推测方案', baselineSubtitle: '每次 Target Forward 只生成并提交一个 Token',
-    speculativeSubtitle: 'Draft 先提出候选，Target 在一次块前向中并行评分多个位置', targetModel: '大型 Target Model', draftModel: '轻量 Drafter',
-    targetForward: 'Target Forward', targetWeightStream: 'Target 权重流式读取轮次', serialDecode: '串行 Decode', blockVerify: '块验证',
-    draftCandidates: 'Draft 候选', targetScores: 'Target 同时评分', committed: '提交', correction: '修正 Token', pass: '次', passes: '次', tokenUnit: 'Token', positions: '位置',
-    raceTitle: '相同时间预算，谁输出更多 Token？', raceSubtitle: 'Baseline 每个 Target Forward 增加 1 个 Token；推测路径循环执行候选生成、一次 Target 块验证和批量提交，因此领先会保留到时间预算结束。',
-    raceClock: '相同时间预算', raceNow: '当前', raceBaselineCount: 'Baseline 输出', raceSpeculativeCount: '推测路径输出', raceLead: '当前多输出', raceTie: '低接受率抵消了本轮收益', raceNoLead: '等待第一个提交周期',
-    cheapProposal: '低成本候选', cheapProposalHint: '每个短周期都重复 Draft → Verify → Commit', oneBlockVerify: 'Target 块验证', commitBurst: '批量提交', baselineStillRunning: 'Baseline 继续逐 Token Decode',
-    racePending: '等待开始', raceDrafting: '当前周期：生成候选', raceVerifying: '当前周期：Target 验证多个位置', raceCommitting: '当前周期：提交接受结果', raceFinished: '本轮时间预算已用完', raceAllDone: '时间预算结束',
-    outputStream: '实时输出流', cycle: '周期', tokenGain: '本周期提交', localRaceControls: '顶层竞速控制', localTraceControls: '算法轨迹控制',
-    comparisonTitle: '同一输出量的执行代价', normalizedCost: '归一化成本', estimatedSpeedup: '教学估算加速', teachingModel: '共享刻度教学模型，不是特定硬件 Benchmark。',
-    architectureTitle: 'Transformer 静态权重与运行时关系', architectureSubtitle: '先分清磁盘/GPU 中长期存在的参数，再看一次请求中哪些参数在 Prefill、Draft、Verify 和 Commit 阶段被调用。',
-    modelWeightCanvas: '① 两个真实模型：权重形状、层堆叠与连接', modelWeightCanvasHint: '矩形长宽编码矩阵形状，层叠卡片编码重复层。Target 与 Draft 是两个 checkpoint；箭头表示运行时张量与候选在两者之间流动。',
-    targetTower: 'Target Transformer（完整原模型）', draftTower: 'Draft sidecar（额外小模型）', representativeLayer: '展开一个代表层', stackedLayers: '同构层堆叠', shapeLabel: '形状',
-    inputTokenTensor: '输入 Token IDs', targetHiddenTensor: 'Target 隐状态', logitsTensor: 'Target logits', candidateTensor: '候选结构',
-    matrixQuery: 'Query 投影', matrixKeyValue: 'Key / Value 投影', matrixOutput: '输出投影', matrixGateUp: 'Gate / Up 投影', matrixDown: 'Down 投影', matrixDraftQkv: 'Draft QKV 投影', matrixMarkovIn: '词表到低秩空间', matrixMarkovOut: '低秩空间到词表',
-    targetKvPerLayer: '每个 Target Layer 的运行时 KV', targetKvState: 'KV 是请求状态，不是 checkpoint 权重', draftWorkspace: 'Draft 临时候选工作区',
-    dimensionLegend: '符号维度', dimBatch: '批大小', dimSequence: '序列长度', dimVocab: '词表大小', dimHidden: '隐藏维度', dimFfn: 'MLP 中间维度', dimHeads: 'KV 头数 / 头维度', dimFeatureTaps: 'Target 特征层数', dimBlock: '候选块长度', dimRank: 'Markov 低秩维度',
-    modelCoupling: '运行时耦合', targetFeatureToDraft: 'Target 特征 → Draft', draftCandidatesToTarget: '候选 → Target 全层验证', targetScoresToKv: 'Target 分数 → 接受 / KV 提交',
-    liveRuntimeTitle: '② 同一画布的实时执行', liveRuntimeSubtitle: '播放下面的算法轨迹时，这里同步高亮当前真正运行的模型、张量与 KV 动作。', liveTensorTrace: '当前张量与候选', currentActivation: '送入 Draft 的 Target 激活', currentCandidates: '本轮候选', targetKvInside: 'Target 每层生成 / 读取自己的 KV；验证槽位只在接受后提交。', draftOffDuringPrefill: 'Prefill 只运行 Target；Draft 从 Decode 起点才参与。',
-    relationOverview: '模型关系总览', relationOverviewHint: '只保留推测解码新增的接口；Transformer 内部细节已折叠。', targetCompactStructure: 'Embedding → Transformer 层堆叠 → LM Head', targetInputLabel: '输入：已提交前缀 / 待验证候选', targetOutputLabel: '输出：隐状态、logits、Target KV', draftInputLabel: '输入：Target 特征 + Token / 锚点', draftOutputLabel: '输出：候选树 / 候选块 + 置信度',
-    draftStructureNow: '当前 Draft 结构', eagleCompactStructure: '共享 Embedding + Target 特征 → 融合投影 → 1 层 Draft Decoder → 共享 LM Head', dsparkCompactStructure: '多层 Target 特征 → 投影 → 块并行 Backbone → Markov / Confidence Heads', separateCheckpointBadge: '独立 Draft checkpoint', sharedWeightBadge: '复用 Target 冻结权重', runtimeInteraction: 'Decode 运行时闭环', interactionHidden: '① Target 特征送入 Draft', interactionCandidates: '② Draft 返回多步候选', interactionVerify: '③ Target 全层一次验证', interactionKv: '④ 接受前缀写入 KV，其余回收', algorithmWorkbench: '算法真实轨迹 + Draft 结构特征', algorithmWorkbenchHint: '右侧不再重复泛化架构，而是直接展示当前算法怎样生成候选、怎样调度并进入 Target 验证。',
-    expandDraft: '展开 Draft 内部', collapseDraft: '收起 Draft 内部', draftInternalTitle: 'Draft 权重与张量流', draftInternalHint: '沿箭头读取：青色是请求张量，紫色是新增可训练权重，黄色是复用的 Target 冻结权重，虚线灰色是无参数运行时逻辑。', trainableWeightBadge: 'Draft 可训练权重', runtimeTensorBadge: '运行时张量', runtimeLogicBadge: '无参数控制逻辑', targetStagePorts: '当前由这些 Target 阶段调用', draftStagePorts: '当前由 Draft 候选阶段调用', kvStagePorts: 'Target 裁决后写入', targetFeaturePort: 'Target 特征 / Token 向下', candidateReturnPort: '候选向上返回 Target', targetVerdictPort: 'Target logits / 接受结果', internalMatrices: '内部权重矩阵',
-    macroTitle: '静态权重在哪里，运行时何时激活？', macroSubtitle: 'Target 是原始完整 Transformer；推测解码额外加载一个独立 Draft checkpoint。两者不串成新的 Transformer Layer，而是在 Decode 时通过 Target 隐状态、共享输出层和验证循环协作。',
-    staticWeightsTitle: '① 静态权重拓扑（模型加载后常驻）', staticWeightsSubtitle: '结构表示参数归属，不表示执行先后；卡片宽度不代表参数量。', targetCheckpoint: '原始 Target checkpoint', targetCheckpointHint: '完整、未经删减的 Transformer 权重', draftCheckpoint: '新增 Draft checkpoint', targetOwnWeights: 'Target 独占权重', sharedFrozenWeights: '复用 / 冻结 Target 权重', draftTrainableWeights: '新增可训练 Draft 权重', runtimeActivationOnly: '运行时激活，无静态参数', notToScale: '示意图不按参数量缩放；具体层数由 checkpoint 决定。',
-    weightEmbedding: 'Token Embedding', weightDecoderStack: 'Transformer Decoder Stack', weightNormStage: 'RMSNorm', weightAttention: 'Causal Self-Attention', weightMlp: 'SwiGLU / MLP', weightFinalNorm: 'Final RMSNorm', weightLmHead: 'LM Head', weightFusionProjection: '特征 + Token 融合投影', weightEagleDecoder: '1 层 Draft Decoder', weightFeatureProjection: 'Target 特征投影', weightParallelBackbone: '块并行 Draft Backbone', weightMarkovHead: '低秩 Markov Head', weightConfidenceHead: 'Confidence Head', repeatedTargetLayers: '重复的 Target Layer', layerResidual: 'Residual + KV Cache', targetOwnerShort: 'Target', draftOwnerShort: 'Draft', kvOwnerShort: 'KV 管理器',
-    activationEagleFeature: 'Target 顶层特征 / LM Head 输入', activationDsparkFeature: '选定的 Target 隐状态', activationTapHint: '这是每个请求产生的张量，不是另一份权重。', eagleDraftCheckpoint: 'EAGLE-2 Draft checkpoint', dsparkDraftCheckpoint: 'DSpark Draft checkpoint', sharedReuseHint: 'Embedding 与 LM Head 使用 Target 的冻结参数；逻辑共享，物理是否别名复用取决于引擎。', controllerEagle: '动态树 Top-k / Top-m + Tree Mask', controllerDspark: '存活率累计 + 硬件吞吐 Scheduler', noLearnedWeights: '运行时控制逻辑：没有学习参数',
-    runtimeActivationTitle: '② 运行时激活顺序（单个请求）', runtimeActivationSubtitle: '上面的同一组权重按请求阶段被调用；播放下方算法轨迹时，这里同步高亮当前所有者。', runtimePrefill: 'Prefill', runtimePrefillHint: '只运行 Target 全部层，建立 Prefix KV；Draft 不参与。', runtimeSeed: 'Decode 起点', runtimeSeedEagleHint: 'Target 已有的 Token 与顶层特征成为 EAGLE 下一轮输入。', runtimeSeedDsparkHint: 'Target 先生成锚点 Token 和隐藏特征，作为 DSpark 块输入。', runtimeDraft: 'Draft 候选阶段', runtimeDraftEagleHint: '只运行 EAGLE 融合层和单层 Draft Decoder，多步扩展候选树。', runtimeDraftDsparkHint: '运行并行 Backbone、Markov Head 和 Confidence Head，产生候选块。', runtimeVerify: 'Target 块验证', runtimeVerifyHint: '候选重新穿过原 Target 的全部 Transformer 层；一次因果块前向评分多个位置。', runtimeCommit: '接受 / KV Commit', runtimeCommitHint: '保留接受前缀对应的 Target KV，回收其余槽位，再进入下一轮 Decode。', loopBack: '循环回到 Decode 起点', activeNow: '当前激活', inactiveNow: '本阶段不运行',
-    promptInput: 'Prompt 输入', prefillOnce: 'Target Prefill（一次）', decodeOnly: '仅在 Decode 循环生效', targetTransformer: '原始 Target Transformer', targetUnchanged: '权重、训练与采样目标不变', baselineLoop: '原始路径：Target 每轮只提交 1 个 Token', targetOneToken: '提交 1 个 Token', speculativeLoop: '推测路径：Draft 提议 → Target 块验证 → 提交 / 修正', draftSidecar: 'Draft 旁路候选器', proposalNotAuthority: '只提议，不拥有最终决定权', targetAuthority: '同一个 Target 仍逐位置裁决',
-    whyFastCard: '为什么更快', whyFastBody: 'Decode 常受 Target 权重带宽限制。一次因果块前向能在一次权重读取中评分多个候选位置，替代多次串行的单 Token 前向；收益必须覆盖 Draft 与调度开销。', whyExactCard: '为什么结果不被 Draft 改写', whyExactBody: 'Draft 只提供提议 q。Target 用自身概率 p 接受或拒绝；首拒后从正残差修正分布采样，因此经典修正拒绝采样仍返回 Target 分布。',
-    prefixKv: 'Prefix / KV', drafter: '候选生成', candidateStructure: '候选结构与调度', targetVerifier: 'Target 验证', acceptCommit: '接受与 KV 提交',
-    prefixKvHint: '读取已提交上下文', targetVerifierHint: '一次前向评分多个候选位置', acceptCommitHint: '仅提交有效前缀并回收其余槽位',
-    draftArchitecture: 'Draft 架构', candidateTopology: '候选拓扑', verificationSchedule: '验证调度', mainTradeoff: '主要权衡',
-    eagleDraftArchitecture: '利用 Target 倒数第二层特征，用轻量自回归头外推未来特征与 Token。',
-    eagleTopology: '依据上下文置信度构建动态候选树，而不是固定长度单链。',
-    eagleScheduling: 'Target 用祖先可见的 Tree Mask 一次验证整棵候选树。',
-    eagleTradeoff: '树越宽，命中路径机会越多，但 Draft 与 Target 验证槽位也越多。',
-    dsparkDraftArchitecture: '并行主干一次产生候选块，低秩 Markov Head 补回块内前一 Token 依赖。',
-    dsparkTopology: '候选以半自回归块组织；位置间既保留并行性，也引入轻量顺序条件。',
-    dsparkScheduling: 'Confidence Head 估计前缀存活率，并结合引擎负载决定实际验证长度。',
-    dsparkTradeoff: '验证更长可能提交更多 Token，也可能占用批容量验证高拒绝风险后缀。',
-    traceTitle: '真实机制轨迹', traceSubtitle: '沿原论文代表路径观察候选如何产生、调度并进入 Target；画面中的结构与数据依赖对应论文算法。',
-    dynamicTree: '上下文感知动态树', treeHint: '实线为本轮接受路径，虚线分支在提交时回收。', maskPurpose: '树被压成一条序列后，普通因果 Mask 会让不同分支互相“偷看”。祖先 Mask 只开放当前节点自己的路径，因此 Target 能一次前向并行评分整棵树，同时保持各分支语义独立。', maskExample: '例：{query} 可见 {visible}；看不到兄弟分支 {blocked}。', maskSize: '{rows} 行 / {cols} 列', parallelBlock: '半自回归候选块',
-    paperMechanism: '论文机制复现', nodeValue: '路径 Value', topKParents: '橙色：当前层 Top-k 扩展父节点', globalTopM: '蓝色：全树重排后 Top-m', flattenSequence: '压平后的 Target 输入', ancestorMask: '祖先可见 Mask', visible: '可见', blocked: '隔离',
-    anchor: '锚点 Token', anchorProduced: 'Target 先从已提交前缀生成锚点', maskInputs: '待预测槽位', maskToken: '[待预测]', dsparkInput: 'DSpark 本轮输入', parallelStage: '重型并行 Backbone', baseLogits: '上下文基础猜测（全部位置同时产生）', baseMeaning: '每个位置的基础分数只看已提交上下文；此时还没看到块内前一个 Draft Token。', positionLabel: '位置 {index}', baseGuess: '基础猜测', previousDraft: '前一个 Draft Token', finalGuess: '修正后候选', confidenceHeadLabel: '置信度头', sequentialStage: '轻量 Markov Head（左到右）', transitionBias: '前一 Token → 低秩转移偏置', conditionalSurvival: '本位置仍会被接受', prefixSurvival: '从开头一路都被接受', hardwareCurve: '引擎吞吐曲线', keepPrefix: '保留前', dropSuffix: '丢弃后', schedulerExplanation: '累计存活率越往后越低；Scheduler 只保留还能提升预计吞吐的连续前缀。', correctionResult: 'Target 接受前缀，并修正首个错误', paperExample: '统一例子：Large models can → 锚点 predict；DSpark 提议 the / future / tokens / faster，Target 接受前两个，把 tokens 修正为 of。',
-    confidence: '置信度', scheduled: '进入验证', notScheduled: '跳过验证', markovDependency: 'Markov Head 注入前一 Token 依赖', confidenceSchedule: 'Confidence Head 选择验证前缀',
-    pending: '待生成', proposed: '候选', expanding: '本轮 Top-k 父节点', reranked: '全树 Top-m', pruned: '重排裁剪', masked: '已进入祖先 Mask', conditioned: '已注入顺序依赖', verifying: '验证中', accepted: '已接受', rejected: '拒绝', committedStatus: '已提交', discarded: '已回收', skipped: '未验证',
-    selectedPath: '接受路径', otherBranch: '其他分支', output: '本轮提交',
-    metricCommitted: '提交 Token', metricBaselinePasses: 'Baseline Target 前向', metricTargetPasses: '推测 Target 前向', metricVerified: '验证 / Draft 位置', metricWasted: '已验证但未采用',
-    costBaseline: 'Baseline：逐 Token Decode', costSpeculative: 'Draft + 块验证 + Runtime', costBreakdown: '成本拆分', draftCost: 'Draft', verifyCost: 'Verify', runtimeCost: 'Runtime',
-    lifecycleTitle: 'Target KV 生命周期', lifecycleSubtitle: '已有 Prefix KV 持续驻留；候选槽只在 Target 验证时临时写入，最终仅保留连续接受的 Draft Token KV。',
-    kvPrefixResident: '已有 Prefix KV', kvCandidateSlots: '本轮候选槽', kvStatePrefix: '仅 Prefix 常驻', kvStateReserved: '槽位已预留', kvStateVerifying: '临时 KV 写入中', kvStateCommitting: '提交 / 回收中', kvStateStable: '新 Prefix 已稳定', kvHintPrefix: '候选尚未进入 Target，本轮 KV 槽未分配。', kvHintReserved: '已预留验证槽；它们还不是可复用历史。', kvHintVerifying: 'Target 块前向正在为验证位置生成临时 KV。', kvHintCommitting: '接受前缀转为常驻，其余临时槽回收。', kvHintCommittingCorrection: '接受前缀转为常驻；拒绝槽回收，修正 Token 的 KV 留到下一次 Target 前向。', kvHintStable: '接受的 Draft KV 已并入 Prefix；其余槽可复用。', kvHintStableCorrection: '接受的 Draft KV 已并入 Prefix；修正 Token 的 KV 将在下一次 Target 前向生成。', kvCorrectionPending: '修正 Token 的 KV 待下一轮',
-    prefixSlot: '上下文', reservedSlot: '验证槽位', committedSlot: '提交', reclaimedSlot: '回收', skippedSlot: '未分配',
-    currentStage: '当前执行阶段', mechanism: '核心机制', principleTitle: '为什么可能更快', exactnessTitle: '为什么仍由 Target 决定结果', formulaVariables: '变量含义',
-    speedupExplanation: 'A 是本轮提交 Token 数，V 是 Target 实际评分位置数。只有当减少的串行 Target 成本大于 Draft、块验证和 Runtime 开销时才会加速。',
-    acceptExplanation: '经典修正拒绝采样按位置顺序接受候选；首个拒绝后从修正分布采样，因此可以保持 Target 分布。具体树形或宽松策略是否无损取决于算法实现。',
-    runtimeOps: 'Engine 风格伪代码', boundary: '适用边界',
-    boundaryText: '这里演示 Decode 阶段、低到中等并发且 Target 受权重带宽限制的情形。高批量、低接受率、重 Drafter 或过长验证块都可能缩小甚至抵消收益。成本值用于展示依赖关系，不代表论文或硬件实测。',
-    stageFeatureDraft: '特征级自回归 Draft', stageExpandTree: '按路径 Value 扩展 Top-k', stageRerankTree: '全树重排 Top-m', stageFlattenMask: '压平并构造祖先 Mask', stageTargetVerifyTree: 'Target 一次验证候选树', stageCommitTree: '接受路径并回收分支',
-    stageParallelBackbone: '并行 Backbone 产生全部基础 Logits', stageSequentialMarkov: 'Markov Head 左到右修正', stageConfidenceHead: '预测逐位置条件存活率', stageScheduleVerify: '累计存活率与硬件曲线联合调度', stageTargetVerifyBlock: 'Target 验证保留前缀', stageCommitBlock: '提交接受前缀与修正 Token',
-    descFeatureDraft: 'EAGLE 的轻量头在特征空间自回归外推，并结合提前一位的 Token 消除特征不确定性。',
-    descExpandTree: 'EAGLE-2 用从根到节点的 Draft 置信度乘积近似全局接受概率，只扩展当前层 Value 最高的 Top-k 节点。',
-    descRerankTree: '扩树结束后对全树所有节点重新按 Value 排序，选 Top-m；同值时浅层优先，因此选中节点仍组成连通树。',
-    descFlattenMask: '把选中的连通树压成一维候选序列，并构造只能看见祖先的 Tree Attention Mask。',
-    descTargetVerifyTree: 'Target 通过祖先可见的 Tree Attention Mask 同时评分树节点；并行评分不等于并行接受。',
-    descCommitTree: 'KV 管理器提交接受路径；未选树节点对应的临时 Target KV 被回收。',
-    descParallelBackbone: 'DSpark 的重型并行 Backbone 以 Anchor + Mask 块一次产生所有位置的 Hidden State 与基础 Logits。',
-    descSequentialMarkov: '轻量低秩 Markov Head 使用已经采样的前一 Token 产生转移偏置，再与当前位置的基础 Logits 相加并左到右采样。',
-    descConfidenceHead: 'Confidence Head 从 Backbone Hidden 与前一 Token 的 Markov Embedding 预测条件存活率，并校准累计前缀概率。',
-    descScheduleVerify: 'Scheduler 累乘各位置条件存活率，再结合引擎吞吐曲线，只保留能提高预期吞吐的连续前缀。',
-    descTargetVerifyBlock: 'Target 对调度后的多个候选位置执行一次因果块前向。',
-    descCommitBlock: '提交连续接受前缀和修正 Token，释放已验证但未采用的后缀。',
-    codeEagle1: 'draft_state = eagle_head.feature_autoregressive(target_cache.last_hidden(request_id))', codeEagle2: 'tree.expand(top_k(tree.latest_layer, key=path_confidence_product))', codeEagle3: 'selected = top_m(tree.all_nodes, key=path_value, tie_break=shallow_first)', codeEagle4: 'tokens, ancestor_mask = flatten_connected_tree(selected); slots = kv_cache.reserve_tree(selected.parents)', codeEagle5: 'scores = target.verify_tree(tokens, ancestor_mask, slots)', codeEagle6: 'kv_cache.commit_path(request_id, accept(scores)); kv_cache.reclaim_others(slots)',
-    codeDspark1: 'hidden, base_logits = parallel_backbone(anchor_token, mask_block, target_context_kv)', codeDspark2: 'block = sample_left_to_right(base_logits + markov_head(previous_token))', codeDspark3: 'conditional_survival = confidence_head(hidden, markov_embedding(block.previous_tokens))', codeDspark4: 'verify_len = scheduler.argmax_expected_tokens_times_sps(conditional_survival, engine.profile)', codeDspark5: 'scores = target.verify_block(block[:verify_len], kv_cache.reserve(verify_len))', codeDspark6: 'kv_cache.commit_prefix(request_id, accept_and_correct(scores)); kv_cache.reclaim_suffix()',
+    title:'推测解码原理可视化', subtitle:'调整候选配置，观察验证后实际接受的 Token、KV 和输出速度',
+    eagle2:'EAGLE-2', dspark:'DSpark', language:'Switch to English', langToggle:'EN',
+    play:'播放', pause:'暂停', replay:'重播', reset:'重置', next:'下一步', nextRound:'进入下一轮',
+    raceControls:'竞速控制', traceControls:'算法轨迹控制', raceTitle:'相同时间内，能提交多少 Token？',
+    raceHint:'两条路径都从 Target 已生成的 predict 开始。每个周期按实际接受结果推进；点选周期可查看同一轮的内部过程。',
+    settings:'实验参数', details:'参数说明',
+    depthShort:'每轮向前推测多少步', widthShort:'每步展开多少个候选分支', budgetShort:'一次最多送入 Target 的节点数（含锚点）', blockShort:'一次生成的候选数量',
+    parameterSourceEagle:'SGLang · 运行时配置', parameterSourceDspark:'DeepSpec · 模型配置',
+    experimentNote:'固定教学样例与计时条件；接受率由验证结果统计。',
+    depth:'Draft 展开步数', depthHint:'每轮自回归展开深度；不是下方教学阶段数。',
+    width:'Top-k 展开宽度', widthHint:'每层选 Top-k 父节点继续，每个父节点保留 Top-k 子候选。',
+    budget:'Target 验证容量', budgetHint:'包括 1 个已知锚点。Top-k=1 时按 SGLang 口径设为 steps+1；实际节点不足时不补虚假候选。',
+    block:'Draft 候选块长度', blockHint:'对应 DeepSpec 模型配置 block_size。输入为 1 个锚点及其余 Mask；实际送验长度由调度选择。这里比较不同块长的教学配置，不表示任意 checkpoint 可直接修改块长。',
+    baseline:'标准自回归', speculative:'当前推测方案', baselineHint:'每单位时间完成一次 Target 单 Token 前向',
+    drafting:'Draft', verifying:'Target 验证', committing:'接受 / 提交', seconds:'Target 单 Token 时间单位',
+    current:'当前', round:'轮', inspect:'查看此轮', seed:'共同起点 · 已有 Target 锚点', output:'已提交输出', noOutput:'尚未提交新 Token',
+    more:'领先', less:'落后', tied:'输出持平', tokens:'Token', finished:'时间预算结束', waiting:'等待开始',
+    actualRate:'实际接受率（候选利用率）', cumulative:'累计候选利用率', meanLength:'平均每轮新增', rateHint:'已接受 / 已送验 Draft；含旁支和首拒后后缀，不含锚点与 Target 补发。比例更高不一定更快。',
+    unknown:'待验证', noDraft:'未送验 Draft', actual:'实际', accepted:'已接受 Draft', verified:'已送验 Draft',
+    architecture:'模型如何协作，候选如何变成输出？', architectureHint:'左侧跟随当前阶段标出正在运行的部件；右侧从同一解码轮次展开算法细节。主轨迹使用贪心验证，词和分数均为合成教学数据。',
+    overview:'模型关系总览', target:'Target 原模型', transformer:'Transformer 层堆叠', targetHint:'完整原权重 · 候选带正确位置与 Mask 穿过所有层',
+    featurePort:'特征 / 锚点 → Draft', returnPort:'候选 + Mask → Target', draft:'Draft 旁路模型',
+    shared:'共享冻结权重', learned:'Draft 权重', runtime:'运行时逻辑', activation:'请求张量',
+    featureEagle:'Target 特征', featureDspark:'多层 Target 特征', embedding:'Token Embedding', projection:'特征融合 / 投影',
+    eagleDecoder:'一层自回归 Decoder', parallelDecoder:'块并行 Backbone', lmHead:'共享 LM Head', markov:'低秩 Markov Head',
+    confidenceHead:'Confidence Head', controller:'选取 / Mask / 调度', draftCache:'Draft 上下文状态', draftCacheHint:'由 Target 特征建立 Draft 自己的上下文 KV；临时树分支不冒充 Target KV。后续轮按已接受前缀同步。',
+    kv:'Target KV', prefix:'已有 Prefix', reserve:'预留', temporary:'临时写入', stable:'已提交 / 回收', empty:'未分配', free:'回收',
+    kvHint:'按节点 ID 选取接受路径并压紧，其余回收。映射左侧是从 1 起算的本轮输入编号，右侧是从 0 起算的新 Prefix 索引。',
+    gather:'接受路径 → 新 Prefix 槽', pendingAnchor:'新锚点已输出，KV 待下一轮 Target 前向', carried:'上一轮补发 Token → 本轮锚点',
+    anchorKv:'本轮锚点的 KV 在此 Target 验证中生成', length:'长度', draftActive:'读取 / 生成 Draft 状态',
+    mechanism:'算法过程', eventStep:'教学阶段', ready:'准备开始', done:'本轮完成', eventHint:'阶段是教学操作；EAGLE 的展开深度与 DSpark 的顺序位置单独标出。',
+    stageExpand:'Draft 按层展开', stageSelect:'路径分数重排', stageBackbone:'并行 Backbone', stageMarkov:'顺序 Markov',
+    stageConfidence:'预测条件存活率', stageSchedule:'因果前缀调度', stageReserve:'预留 KV / 构造 Mask',
+    stageVerify:'Target 一次块前向', stageAccept:'按路径判断接受', stageCommit:'提交并压紧 KV',
+    depthNow:'深度', position:'位置', tree:'动态候选树', treeHint:'点击节点查看祖先路径与 Mask 行；灰色占位尚未生成。每层扩展来自上一层的 Top-k 选择；窄屏可横向滚动查看旁支。',
+    root:'Target 锚点', selected:'选中', pending:'待生成', proposed:'已生成', skipped:'未送验', discarded:'未采用', committed:'已提交',
+    mask:'祖先可见 Mask', maskHint:'行是 Query，列是 Key；保留 Prefix 另行全部可见。同层节点位置相同，兄弟分支不可互看。',
+    query:'当前 Query', visible:'可见', isolated:'隔离', noMask:'选取候选后生成 Mask', targetInput:'本轮 Target 输入（含锚点）',
+    blockInput:'DSpark 输入', masks:'Mask', base:'并行基础分数', baseHint:'所有基础 logits 同时产生；随后轻量 Markov 头用前一个已采样 Token 调整当前分布。',
+    previous:'前一 Token', proposal:'当前候选', baseGuess:'基础首选', confidence:'条件存活率', survival:'前缀存活率',
+    scheduler:'验证长度如何决定', schedulerHint:'从仅锚点开始，依次加入连续前缀；预期吞吐第一次不再增加时立即停止。此处为单请求、合成负载曲线，非生产异步调度复刻。',
+    candidates:'候选', expectedNew:'预期新增', cost:'Target 成本', throughput:'预期吞吐', decision:'调度', admit:'纳入', stop:'停止', notEvaluated:'未再评估',
+    schedulingPending:'等待置信度与调度阶段', checks:'Target 贪心验证', checksHint:'一次并行评分后，沿可接受路径顺序判定；首个不匹配即结束，再由 Target 补发。',
+    targetChoice:'Target 首选', verdict:'判定', match:'匹配', reject:'首拒', bonus:'Target 补发', correction:'Target 修正',
+    bonusHint:'全部通过或路径终止后补发一个 Token；它成为下一轮锚点。补发不计入 Draft 接受数量。',
+    actualOutput:'本轮新增输出', utilization:'候选利用率', whyFast:'为什么可能更快', whyFastText:'用较少的 Target 串行前向提交多个 Token。改变步数、宽度或块长，对照实际采用的候选与每轮新增输出；更多候选也会增加 Draft 和验证开销。',
+    sampling:'为什么随机采样仍保持 Target 分布？', samplingHint:'独立的单位置三词实验：主轨迹是贪心验证；这里演示严格拒绝采样。分布一致不等于每次随机结果或随机种子下的文本相同。',
+    draw:'接受判断随机数', residualDraw:'补采样随机数', sampleOutput:'本次输出', chooseProposal:'假设 Draft 抽中了', sampleAccept:'接受 Draft 候选', sampleReject:'拒绝 → 从正残差分布补采样',
+    threshold:'接受阈值', residual:'拒绝后的分布', mass:'最终概率', exactHint:'p 是 Target 分布，q 是 Draft 分布。直接接受与拒绝后补采样的概率相加，得到表中始终不变的 Target 概率。两者分布相同时没有拒绝，也无需残差采样。',
+    acceptanceFormula:'逐位置接受与拒绝修正', lossless:'严格拒绝采样；调度不得依赖未来候选信息。置信度只分配计算量，不决定最终接受。',
+    code:'引擎操作伪代码', boundary:'范围与来源', boundaryText:'固定合成候选、分数与归一化成本，不运行真实 checkpoint。参数改变候选展开与送验范围；接受率由验证统计，不代表真实模型预测值。EAGLE-2 使用贪心树验证；DSpark 使用 Markov 版本与单请求因果调度。Prefill 及训练成本不计入竞速。',
+    paperEagle:'EAGLE-2 原论文', paperDspark:'DSpark 原论文', docs:'SGLang 参数说明', dsparkConfig:'DSpark 配置来源', samplingPaper:'严格推测采样论文',
+    tail:'本轮尚未验证；最终接受率与输出在相应阶段出现。',
+    reclaiming:'回收中', logitSlice:'当前顺序位置 · 三词分数切片', sliceHint:'教学分数：前一 Token 选择转移偏置，再加到基础 logits。展示词表的三个代表项，省略其余维度。', bias:'转移偏置', combined:'相加后分数', noMarkov:'逐步播放以观察每个位置的转移偏置',
   },
   en: {
-    title: 'Speculative Decoding Visualization',
-    subtitle: 'See the source of speedup first, then compare EAGLE-2 dynamic trees with DSpark confidence scheduling',
-    teachingQuestion: 'How can cheap Draft work remove expensive serial Target decode steps?',
-    eagle2: 'EAGLE-2', dspark: 'DSpark', representative: 'Representative trace', lowAcceptance: 'Low acceptance', scenario: 'Scenario',
-    langToggle: '中文', switchEnglish: '切换到中文', reset: 'Reset', play: 'Play', pause: 'Pause', replay: 'Replay', next: 'Next step',
-    ready: 'Ready', done: 'Cycle complete', stepProgress: 'Step {current} / {total}',
-    committedPrefix: 'Committed prefix', sameOutput: 'Same committed output', whyFaster: 'Speedup comes from fewer serial Target forwards, not from skipping Target verification.',
-    baseline: 'Autoregressive baseline', selectedAlgorithm: 'Selected speculative path', baselineSubtitle: 'Each Target forward generates and commits one token',
-    speculativeSubtitle: 'A Drafter proposes candidates, then one Target block forward scores several positions', targetModel: 'Large Target Model', draftModel: 'Lightweight Drafter',
-    targetForward: 'Target forward', targetWeightStream: 'Target weight-stream rounds', serialDecode: 'Serial decode', blockVerify: 'Block verification',
-    draftCandidates: 'Draft candidates', targetScores: 'Target scores together', committed: 'commit', correction: 'correction token', pass: 'pass', passes: 'passes', tokenUnit: 'tokens', positions: 'positions',
-    raceTitle: 'Same time budget: which path outputs more tokens?', raceSubtitle: 'The baseline adds one token per Target forward. The speculative path repeatedly drafts, verifies a block once, and commits a burst, so its lead remains visible when the shared time budget ends.',
-    raceClock: 'Shared time budget', raceNow: 'now', raceBaselineCount: 'Baseline output', raceSpeculativeCount: 'Speculative output', raceLead: 'Extra output so far', raceTie: 'Low acceptance erased the gain in this cycle', raceNoLead: 'Waiting for the first commit cycle',
-    cheapProposal: 'Cheap proposal', cheapProposalHint: 'Each short cycle repeats Draft → Verify → Commit', oneBlockVerify: 'Target block verify', commitBurst: 'Burst commit', baselineStillRunning: 'Baseline continues token by token',
-    racePending: 'Waiting to start', raceDrafting: 'Current cycle: drafting candidates', raceVerifying: 'Current cycle: Target verifies several positions', raceCommitting: 'Current cycle: committing accepted results', raceFinished: 'The shared time budget is exhausted', raceAllDone: 'Time budget reached',
-    outputStream: 'Live output stream', cycle: 'cycle', tokenGain: 'tokens committed this cycle', localRaceControls: 'Principle race controls', localTraceControls: 'Algorithm trace controls',
-    comparisonTitle: 'Execution cost for the same output count', normalizedCost: 'Normalized cost', estimatedSpeedup: 'Teaching speedup estimate', teachingModel: 'Shared-scale teaching model, not a hardware benchmark.',
-    architectureTitle: 'Transformer static weights and runtime relationship', architectureSubtitle: 'First separate long-lived parameters in storage/GPU memory, then see which weights execute during Prefill, Draft, Verify, and Commit for one request.',
-    modelWeightCanvas: '① Two real models: matrix shapes, layer stacks, and links', modelWeightCanvasHint: 'Rectangle proportions encode matrix shape; stacked cards encode repeated layers. Target and Draft are separate checkpoints, while arrows show runtime tensors and candidates crossing between them.',
-    targetTower: 'Target Transformer (complete original model)', draftTower: 'Draft sidecar (additional small model)', representativeLayer: 'one representative layer expanded', stackedLayers: 'repeated homogeneous layers', shapeLabel: 'shape',
-    inputTokenTensor: 'Input token IDs', targetHiddenTensor: 'Target hidden state', logitsTensor: 'Target logits', candidateTensor: 'Candidate structure',
-    matrixQuery: 'Query projection', matrixKeyValue: 'Key / Value projections', matrixOutput: 'output projection', matrixGateUp: 'Gate / Up projections', matrixDown: 'Down projection', matrixDraftQkv: 'Draft QKV projection', matrixMarkovIn: 'vocabulary to low-rank space', matrixMarkovOut: 'low-rank space to vocabulary',
-    targetKvPerLayer: 'runtime KV for every Target layer', targetKvState: 'KV is request state, not checkpoint weight', draftWorkspace: 'temporary Draft candidate workspace',
-    dimensionLegend: 'Dimension symbols', dimBatch: 'batch size', dimSequence: 'sequence length', dimVocab: 'vocabulary size', dimHidden: 'hidden width', dimFfn: 'MLP intermediate width', dimHeads: 'KV heads / head width', dimFeatureTaps: 'selected Target feature layers', dimBlock: 'candidate block length', dimRank: 'Markov low-rank width',
-    modelCoupling: 'Runtime coupling', targetFeatureToDraft: 'Target features → Draft', draftCandidatesToTarget: 'candidates → all Target layers', targetScoresToKv: 'Target scores → accept / KV commit',
-    liveRuntimeTitle: '② Live execution in the same canvas', liveRuntimeSubtitle: 'Playing the algorithm trace below highlights the model, tensors, and KV action that are actually active here.', liveTensorTrace: 'Current tensors and candidates', currentActivation: 'Target activation passed to Draft', currentCandidates: 'Candidates this cycle', targetKvInside: 'Every Target layer reads or produces its own KV; verification slots become permanent only after acceptance.', draftOffDuringPrefill: 'Prefill runs only the Target. The Draft joins at the Decode seed.',
-    relationOverview: 'Model relationship overview', relationOverviewHint: 'Only speculative-decoding interfaces remain visible; internal Transformer details are collapsed.', targetCompactStructure: 'Embedding → Transformer layer stack → LM head', targetInputLabel: 'input: committed prefix / candidates to verify', targetOutputLabel: 'output: hidden states, logits, and Target KV', draftInputLabel: 'input: Target features + token / anchor', draftOutputLabel: 'output: candidate tree / block + confidence',
-    draftStructureNow: 'Current Draft structure', eagleCompactStructure: 'shared embedding + Target feature → fusion projection → one Draft decoder → shared LM head', dsparkCompactStructure: 'multiple Target features → projection → block-parallel backbone → Markov / confidence heads', separateCheckpointBadge: 'separate Draft checkpoint', sharedWeightBadge: 'reused frozen Target weights', runtimeInteraction: 'Decode runtime loop', interactionHidden: '① Target features enter Draft', interactionCandidates: '② Draft returns multi-token candidates', interactionVerify: '③ the full Target verifies once', interactionKv: '④ commit accepted KV prefix; reclaim the rest', algorithmWorkbench: 'Concrete algorithm trace + Draft structure', algorithmWorkbenchHint: 'The right side skips another generic architecture and shows how this algorithm generates, schedules, and submits candidates to Target verification.',
-    expandDraft: 'Expand Draft internals', collapseDraft: 'Collapse Draft internals', draftInternalTitle: 'Draft weights and tensor flow', draftInternalHint: 'Read along the arrows: cyan is per-request tensor data, violet is new trainable Draft weight, amber is reused frozen Target weight, and dashed gray is parameter-free runtime logic.', trainableWeightBadge: 'trainable Draft weight', runtimeTensorBadge: 'runtime tensor', runtimeLogicBadge: 'parameter-free control', targetStagePorts: 'invoked by these Target stages', draftStagePorts: 'invoked by the Draft proposal stage', kvStagePorts: 'written after the Target verdict', targetFeaturePort: 'Target features / token flow down', candidateReturnPort: 'candidates return up to Target', targetVerdictPort: 'Target logits / acceptance verdict', internalMatrices: 'internal weight matrices',
-    macroTitle: 'Where are the static weights, and when do they activate?', macroSubtitle: 'The Target remains the original full Transformer. Speculative decoding loads a separate Draft checkpoint; it is not inserted as another Target layer. The two cooperate during Decode through Target hidden states, reused output weights, and the verification loop.',
-    staticWeightsTitle: '① Static weight topology (resident after model load)', staticWeightsSubtitle: 'This view encodes parameter ownership, not execution order; card width is not parameter count.', targetCheckpoint: 'Original Target checkpoint', targetCheckpointHint: 'The complete, unmodified Transformer weights', draftCheckpoint: 'Additional Draft checkpoint', targetOwnWeights: 'Target-owned weights', sharedFrozenWeights: 'reused / frozen Target weights', draftTrainableWeights: 'new trainable Draft weights', runtimeActivationOnly: 'runtime activation, no static parameter', notToScale: 'Not scaled by parameter count; layer counts depend on the checkpoint.',
-    weightEmbedding: 'Token embedding', weightDecoderStack: 'Transformer decoder stack', weightNormStage: 'RMSNorm', weightAttention: 'Causal self-attention', weightMlp: 'SwiGLU / MLP', weightFinalNorm: 'Final RMSNorm', weightLmHead: 'LM head', weightFusionProjection: 'feature + token fusion projection', weightEagleDecoder: 'one-layer Draft decoder', weightFeatureProjection: 'Target feature projection', weightParallelBackbone: 'block-parallel Draft backbone', weightMarkovHead: 'low-rank Markov head', weightConfidenceHead: 'confidence head', repeatedTargetLayers: 'repeated Target layer', layerResidual: 'Residual + KV cache', targetOwnerShort: 'Target', draftOwnerShort: 'Draft', kvOwnerShort: 'KV manager',
-    activationEagleFeature: 'Target top feature / LM-head input', activationDsparkFeature: 'selected Target hidden states', activationTapHint: 'This is a per-request tensor, not another set of weights.', eagleDraftCheckpoint: 'EAGLE-2 Draft checkpoint', dsparkDraftCheckpoint: 'DSpark Draft checkpoint', sharedReuseHint: 'Embedding and LM head use frozen Target parameters. Logical sharing is fixed; physical aliasing depends on the serving engine.', controllerEagle: 'dynamic-tree Top-k / Top-m + Tree Mask', controllerDspark: 'prefix survival + hardware-throughput scheduler', noLearnedWeights: 'Runtime control logic: no learned parameters',
-    runtimeActivationTitle: '② Runtime activation order (one request)', runtimeActivationSubtitle: 'The same weight objects above execute by request stage. Playing the algorithm trace below highlights the current owner here.', runtimePrefill: 'Prefill', runtimePrefillHint: 'Only the full Target runs and builds Prefix KV; the Draft is off.', runtimeSeed: 'Decode seed', runtimeSeedEagleHint: 'The existing Target token and top feature become the next EAGLE input.', runtimeSeedDsparkHint: 'The Target first emits an anchor token and hidden features for the DSpark block.', runtimeDraft: 'Draft proposal stage', runtimeDraftEagleHint: 'Only the EAGLE fusion and one-layer Draft decoder run repeatedly to expand a candidate tree.', runtimeDraftDsparkHint: 'The parallel backbone, Markov head, and confidence head produce a candidate block.', runtimeVerify: 'Target block verification', runtimeVerifyHint: 'Candidates pass through every original Target Transformer layer; one causal block forward scores several positions.', runtimeCommit: 'Accept / KV commit', runtimeCommitHint: 'Keep Target KV for the accepted prefix, reclaim the other slots, and start the next Decode round.', loopBack: 'loop back to Decode seed', activeNow: 'active now', inactiveNow: 'off in this stage',
-    promptInput: 'Prompt input', prefillOnce: 'Target prefill (once)', decodeOnly: 'Active only in the decode loop', targetTransformer: 'Original Target Transformer', targetUnchanged: 'Weights, training, and sampling objective unchanged', baselineLoop: 'Original path: Target commits one token per round', targetOneToken: 'commit 1 token', speculativeLoop: 'Speculative path: Draft proposes → Target block-verifies → commit / correct', draftSidecar: 'Draft proposal sidecar', proposalNotAuthority: 'Proposes only; it has no final authority', targetAuthority: 'The same Target still judges every position',
-    whyFastCard: 'Why it is faster', whyFastBody: 'Decode is often limited by streaming Target weights. One causal block forward can score several candidate positions during one weight read, replacing multiple serial one-token forwards; the gain must still exceed Draft and scheduling overhead.', whyExactCard: 'Why Draft does not change the result', whyExactBody: 'The Draft only proposes from q. The Target accepts or rejects using its own p; after the first rejection, sampling from the positive residual correction preserves the Target distribution in classical modified rejection sampling.',
-    prefixKv: 'Prefix / KV', drafter: 'Candidate generation', candidateStructure: 'Candidate structure and schedule', targetVerifier: 'Target verification', acceptCommit: 'Acceptance and KV commit',
-    prefixKvHint: 'Read committed context', targetVerifierHint: 'Score several candidate positions in one forward', acceptCommitHint: 'Commit only the valid prefix and reclaim the rest',
-    draftArchitecture: 'Draft architecture', candidateTopology: 'Candidate topology', verificationSchedule: 'Verification schedule', mainTradeoff: 'Main tradeoff',
-    eagleDraftArchitecture: 'Reuse the Target second-to-top-layer feature and extrapolate future features and tokens with a lightweight autoregressive head.',
-    eagleTopology: 'Build a context-aware dynamic candidate tree instead of a fixed-length single chain.',
-    eagleScheduling: 'Verify the whole tree once with an ancestor-visible Tree Mask.',
-    eagleTradeoff: 'A wider tree raises the chance of finding a good path but consumes more Draft and Target verification slots.',
-    dsparkDraftArchitecture: 'A parallel backbone produces a block at once; a low-rank Markov head restores previous-token dependence inside the block.',
-    dsparkTopology: 'Candidates form a semi-autoregressive block that keeps parallelism while adding lightweight sequential conditioning.',
-    dsparkScheduling: 'A confidence head estimates prefix survival and chooses verification length with the engine load profile.',
-    dsparkTradeoff: 'A longer verification block may commit more tokens, but can waste batch capacity on a high-rejection-risk suffix.',
-    traceTitle: 'Concrete mechanism trace', traceSubtitle: 'Follow paper-based representative paths from proposal through scheduling and Target verification; structure and dependencies mirror the algorithms.',
-    dynamicTree: 'Context-aware dynamic tree', treeHint: 'Solid edges form the accepted path; dashed branches are reclaimed at commit.', maskPurpose: 'After the tree is flattened, a normal causal mask would let sibling branches peek at one another. The ancestor mask exposes only a node’s own path, so one Target forward can score the whole tree while branches remain semantically independent.', maskExample: 'Example: {query} can see {visible}; it cannot see sibling branch {blocked}.', maskSize: '{rows} rows / {cols} columns', parallelBlock: 'Semi-autoregressive candidate block',
-    paperMechanism: 'Paper-faithful mechanism', nodeValue: 'path value', topKParents: 'Orange: Top-k expansion parents in the current layer', globalTopM: 'Blue: global Top-m after reranking', flattenSequence: 'Flattened Target input', ancestorMask: 'Ancestor-visible mask', visible: 'visible', blocked: 'isolated',
-    anchor: 'Anchor token', anchorProduced: 'The Target first generates an anchor from the committed prefix', maskInputs: 'positions to predict', maskToken: '[MASK]', dsparkInput: 'DSpark input this round', parallelStage: 'Heavy parallel backbone', baseLogits: 'Context-only base guesses (all positions at once)', baseMeaning: 'Each position’s base score sees only committed context; it has not yet seen the previous Draft token inside this block.', positionLabel: 'Position {index}', baseGuess: 'base guess', previousDraft: 'previous Draft token', finalGuess: 'corrected candidate', confidenceHeadLabel: 'Confidence head', sequentialStage: 'Lightweight Markov head (left to right)', transitionBias: 'Previous token → low-rank transition bias', conditionalSurvival: 'this position survives', prefixSurvival: 'the whole prefix survives', hardwareCurve: 'engine throughput curve', keepPrefix: 'keep first', dropSuffix: 'drop last', schedulerExplanation: 'Prefix survival falls with depth. The scheduler retains only the continuous prefix that still raises expected throughput.', correctionResult: 'Target accepts the prefix and corrects the first error', paperExample: 'Unified example: Large models can → anchor predict. DSpark proposes the / future / tokens / faster; the Target accepts the first two and corrects tokens to of.',
-    confidence: 'Confidence', scheduled: 'verified', notScheduled: 'not verified', markovDependency: 'Markov head injects previous-token dependence', confidenceSchedule: 'Confidence head chooses the verification prefix',
-    pending: 'pending', proposed: 'candidate', expanding: 'Top-k parent this round', reranked: 'global Top-m', pruned: 'pruned by rerank', masked: 'in ancestor mask', conditioned: 'sequential dependency added', verifying: 'verifying', accepted: 'accepted', rejected: 'rejected', committedStatus: 'committed', discarded: 'reclaimed', skipped: 'not verified',
-    selectedPath: 'accepted path', otherBranch: 'other branch', output: 'Cycle output',
-    metricCommitted: 'Committed tokens', metricBaselinePasses: 'Baseline Target forwards', metricTargetPasses: 'Speculative Target forwards', metricVerified: 'Verified / drafted positions', metricWasted: 'Verified but unused',
-    costBaseline: 'Baseline: token-by-token decode', costSpeculative: 'Draft + block verify + runtime', costBreakdown: 'Cost breakdown', draftCost: 'Draft', verifyCost: 'Verify', runtimeCost: 'Runtime',
-    lifecycleTitle: 'Target KV lifecycle', lifecycleSubtitle: 'Existing Prefix KV stays resident. Candidate slots are written temporarily during Target verification, and only consecutive accepted Draft-token KV survives.',
-    kvPrefixResident: 'resident Prefix KV', kvCandidateSlots: 'candidate slots this round', kvStatePrefix: 'Prefix only', kvStateReserved: 'slots reserved', kvStateVerifying: 'writing temporary KV', kvStateCommitting: 'commit / reclaim', kvStateStable: 'new Prefix stable', kvHintPrefix: 'Candidates have not entered the Target, so this round has no allocated KV slots yet.', kvHintReserved: 'Verification slots are reserved but are not reusable history yet.', kvHintVerifying: 'The Target block forward is generating temporary KV for every verified position.', kvHintCommitting: 'The accepted prefix becomes resident and the remaining temporary slots are reclaimed.', kvHintCommittingCorrection: 'Accepted Draft KV becomes resident; rejected slots are reclaimed, while correction-token KV waits for the next Target forward.', kvHintStable: 'Accepted Draft KV has joined the Prefix; the other slots are reusable.', kvHintStableCorrection: 'Accepted Draft KV has joined the Prefix; correction-token KV will be generated by the next Target forward.', kvCorrectionPending: 'correction-token KV waits for next round',
-    prefixSlot: 'prefix', reservedSlot: 'verification slot', committedSlot: 'committed', reclaimedSlot: 'reclaimed', skippedSlot: 'unallocated',
-    currentStage: 'Current execution stage', mechanism: 'Core mechanism', principleTitle: 'Why it can be faster', exactnessTitle: 'Why the Target still determines the result', formulaVariables: 'Variables',
-    speedupExplanation: 'A is the number of tokens committed this cycle and V is the number of positions actually scored by the Target. Speedup exists only when removed serial Target work exceeds Draft, block verification, and runtime overhead.',
-    acceptExplanation: 'Classical modified rejection sampling accepts candidates in order; after the first rejection it samples from a correction distribution, preserving the Target distribution. Whether a tree or relaxed policy is lossless depends on the concrete method.',
-    runtimeOps: 'Engine-style pseudocode', boundary: 'Capability boundary',
-    boundaryText: 'This view models decode at low-to-medium concurrency when the Target is weight-bandwidth-bound. High batching, poor acceptance, a heavy Drafter, or an oversized verification block can shrink or erase the gain. Cost values expose dependencies; they are not paper or hardware measurements.',
-    stageFeatureDraft: 'Feature-level autoregressive Draft', stageExpandTree: 'Expand Top-k by path value', stageRerankTree: 'Rerank Top-m over the full tree', stageFlattenMask: 'Flatten and build ancestor mask', stageTargetVerifyTree: 'Target verifies the candidate tree once', stageCommitTree: 'Accept a path and reclaim branches',
-    stageParallelBackbone: 'Parallel backbone produces all base logits', stageSequentialMarkov: 'Markov head corrects left to right', stageConfidenceHead: 'Predict per-position conditional survival', stageScheduleVerify: 'Schedule with survival and hardware curve', stageTargetVerifyBlock: 'Target verifies the retained prefix', stageCommitBlock: 'Commit accepted prefix and correction',
-    descFeatureDraft: 'The lightweight EAGLE head extrapolates autoregressively in feature space and uses a one-step-ahead token to resolve feature uncertainty.',
-    descExpandTree: 'EAGLE-2 approximates global acceptance with the product of Draft confidences from the root, then expands only the highest-value Top-k nodes in the current layer.',
-    descRerankTree: 'After expansion, all nodes are reranked by value and the global Top-m are kept. Shallower nodes win ties, preserving a connected tree.',
-    descFlattenMask: 'The connected tree is flattened into one candidate sequence with a Tree Attention Mask that exposes only ancestors.',
-    descTargetVerifyTree: 'The Target scores tree nodes together with an ancestor-visible Tree Attention Mask. Parallel scoring does not make acceptance parallel.',
-    descCommitTree: 'The KV manager commits the accepted path and reclaims temporary Target KV for unselected nodes.',
-    descParallelBackbone: 'DSpark’s heavy parallel backbone consumes an anchor-plus-mask block and produces hidden states and base logits for every position in one pass.',
-    descSequentialMarkov: 'A lightweight low-rank Markov head uses the sampled previous token to form a transition bias, adds it to the current base logits, and samples left to right.',
-    descConfidenceHead: 'The confidence head combines backbone hidden state with the previous token’s Markov embedding to predict conditional survival and calibrate prefix survival.',
-    descScheduleVerify: 'The scheduler multiplies conditional survival estimates along each prefix and combines them with the engine throughput curve, retaining only the continuous prefix that improves expected throughput.',
-    descTargetVerifyBlock: 'The Target executes one causal block forward over the scheduled candidate positions.',
-    descCommitBlock: 'Commit the continuous accepted prefix plus the correction token, then release the verified but unused suffix.',
-    codeEagle1: 'draft_state = eagle_head.feature_autoregressive(target_cache.last_hidden(request_id))', codeEagle2: 'tree.expand(top_k(tree.latest_layer, key=path_confidence_product))', codeEagle3: 'selected = top_m(tree.all_nodes, key=path_value, tie_break=shallow_first)', codeEagle4: 'tokens, ancestor_mask = flatten_connected_tree(selected); slots = kv_cache.reserve_tree(selected.parents)', codeEagle5: 'scores = target.verify_tree(tokens, ancestor_mask, slots)', codeEagle6: 'kv_cache.commit_path(request_id, accept(scores)); kv_cache.reclaim_others(slots)',
-    codeDspark1: 'hidden, base_logits = parallel_backbone(anchor_token, mask_block, target_context_kv)', codeDspark2: 'block = sample_left_to_right(base_logits + markov_head(previous_token))', codeDspark3: 'conditional_survival = confidence_head(hidden, markov_embedding(block.previous_tokens))', codeDspark4: 'verify_len = scheduler.argmax_expected_tokens_times_sps(conditional_survival, engine.profile)', codeDspark5: 'scores = target.verify_block(block[:verify_len], kv_cache.reserve(verify_len))', codeDspark6: 'kv_cache.commit_prefix(request_id, accept_and_correct(scores)); kv_cache.reclaim_suffix()',
+    title:'Speculative Decoding Visualization', subtitle:'Adjust proposal settings; observe accepted tokens, KV, and output speed after verification',
+    eagle2:'EAGLE-2', dspark:'DSpark', language:'切换到中文', langToggle:'中文',
+    play:'Play',pause:'Pause',replay:'Replay',reset:'Reset',next:'Next step',nextRound:'Next round',
+    raceControls:'Race controls',traceControls:'Trace controls',raceTitle:'How many tokens can fit in the same time budget?',
+    raceHint:'Both paths start with the Target-produced anchor predict. Each cycle advances by its verified output. Select a cycle to inspect that same round.',
+    settings:'Experiment settings',details:'Parameter details',
+    depthShort:'How far to draft per round',widthShort:'Candidate branches expanded per step',budgetShort:'Maximum Target input nodes, including the anchor',blockShort:'Candidates produced in one block',
+    parameterSourceEagle:'SGLang · runtime configuration',parameterSourceDspark:'DeepSpec · model configuration',
+    experimentNote:'Fixed teaching data and timing; acceptance is measured after verification.',
+    depth:'Draft expansion steps',depthHint:'Autoregressive expansion depth per round, not the number of teaching stages.',
+    width:'Top-k expansion width',widthHint:'Expand the top-k parents in each layer, retaining top-k children per parent.',
+    budget:'Target verification capacity',budgetHint:'Includes one known anchor. With top-k=1, use steps+1 as in SGLang. Do not pad a small tree with fictitious candidates.',
+    block:'Draft proposal block length',blockHint:'DeepSpec model field: block_size. Input is one anchor plus masks; the scheduler chooses the verified prefix. This compares teaching configurations, not arbitrary block-size changes to an existing checkpoint.',
+    baseline:'Autoregressive baseline',speculative:'Current speculative path',baselineHint:'One Target single-token forward per time unit',
+    drafting:'Draft',verifying:'Target verify',committing:'Accept / commit',seconds:'Target single-token time units',
+    current:'Current',round:'Round',inspect:'Inspect round',seed:'Shared start · existing Target anchor',output:'Committed output',noOutput:'No new tokens committed',
+    more:'Ahead by',less:'Behind by',tied:'Same output count',tokens:'tokens',finished:'Time budget reached',waiting:'Ready',
+    actualRate:'Observed acceptance (candidate utilization)',cumulative:'Cumulative candidate utilization',meanLength:'Mean new tokens / round',rateHint:'Accepted / verified drafts, including branches and rejected suffixes, excluding the anchor and Target bonus. A higher ratio need not be faster.',
+    unknown:'Not verified',noDraft:'No draft verified',actual:'Observed',accepted:'Accepted drafts',verified:'Verified drafts',
+    architecture:'How do the models turn proposals into output?',architectureHint:'Left: components active in the current stage. Right: operations in the same decoding round. The main trace uses greedy verification with synthetic tokens and scores.',
+    overview:'Model relationships',target:'Original Target',transformer:'Transformer layer stack',targetHint:'Original full weights · candidates traverse every layer with correct positions and masks',
+    featurePort:'Features / anchor → Draft',returnPort:'Candidates + mask → Target',draft:'Draft sidecar',
+    shared:'Shared frozen weights',learned:'Draft weights',runtime:'Runtime logic',activation:'Request activations',
+    featureEagle:'Target feature',featureDspark:'Target layer features',embedding:'Token embedding',projection:'Feature fusion / projection',
+    eagleDecoder:'One autoregressive decoder',parallelDecoder:'Block-parallel backbone',lmHead:'Shared LM head',markov:'Low-rank Markov head',
+    confidenceHead:'Confidence head',controller:'Selection / mask / scheduling',draftCache:'Draft context state',draftCacheHint:'Target features build the Draft’s own context KV. Temporary draft branches are not Target KV; later rounds synchronize the accepted prefix.',
+    kv:'Target KV',prefix:'Existing prefix',reserve:'Reserved',temporary:'Temporary writes',stable:'Committed / reclaimed',empty:'Unallocated',free:'Reclaimed',
+    kvHint:'Gather accepted node IDs into a compact prefix and reclaim the others. The mapping uses 1-based input numbers on the left and 0-based new prefix indices on the right.',
+    gather:'Accepted path → new prefix slots',pendingAnchor:'New anchor emitted; KV waits for the next Target forward',carried:'Previous bonus → current anchor',
+    anchorKv:'Anchor KV is produced in this Target verification',length:'Length',draftActive:'Read / build Draft state',
+    mechanism:'Algorithm trace',eventStep:'Teaching stage',ready:'Ready',done:'Round complete',eventHint:'These are teaching operations. Draft depth and sequential position are shown separately.',
+    stageExpand:'Layer-wise Draft expansion',stageSelect:'Rerank path scores',stageBackbone:'Parallel backbone',stageMarkov:'Sequential Markov',
+    stageConfidence:'Predict conditional survival',stageSchedule:'Causal prefix scheduling',stageReserve:'Reserve KV / build mask',
+    stageVerify:'One Target block forward',stageAccept:'Accept along the path',stageCommit:'Commit and compact KV',
+    depthNow:'Depth',position:'Position',tree:'Dynamic candidate tree',treeHint:'Select a node to inspect its ancestors and mask row. Gray placeholders are not generated yet. Each depth expands the previous top-k selection. Scroll horizontally for side branches on narrow screens.',
+    root:'Target anchor',selected:'Selected',pending:'Pending',proposed:'Proposed',skipped:'Not verified',discarded:'Unused',committed:'Committed',
+    mask:'Ancestor-visible mask',maskHint:'Rows are queries; columns are keys. The existing prefix is separately visible. Siblings share positions but cannot see one another.',
+    query:'Selected query',visible:'Visible',isolated:'Isolated',noMask:'Mask appears after candidate selection',targetInput:'Target input this round (includes anchor)',
+    blockInput:'DSpark input',masks:'Mask',base:'Parallel base scores',baseHint:'Base logits appear together. The lightweight Markov head then conditions each distribution on the previous sampled token.',
+    previous:'Previous token',proposal:'Current proposal',baseGuess:'Base top choice',confidence:'Conditional survival',survival:'Prefix survival',
+    scheduler:'How is verification length chosen?',schedulerHint:'Start with the anchor; admit a prefix until expected throughput first stops improving. Single-request synthetic profile, not a production asynchronous scheduler.',
+    candidates:'Candidates',expectedNew:'Expected new',cost:'Target cost',throughput:'Expected throughput',decision:'Decision',admit:'Admit',stop:'Stop',notEvaluated:'Not evaluated',
+    schedulingPending:'Waiting for confidence and scheduling',checks:'Target greedy verification',checksHint:'Parallel scoring is followed by sequential path acceptance. Stop at the first mismatch; the Target emits the next token.',
+    targetChoice:'Target top choice',verdict:'Verdict',match:'Match',reject:'First rejection',bonus:'Target bonus',correction:'Target correction',
+    bonusHint:'After accepting or ending the path, emit one Target token as the next anchor. It is not counted as an accepted draft.',
+    actualOutput:'New output this round',utilization:'Candidate utilization',whyFast:'Why it can be faster',whyFastText:'Fewer serial Target forwards can commit more tokens. Change depth, width, or block length and compare used candidates with new output per round. More candidates also add drafting and verification work.',
+    sampling:'Why does random sampling preserve the Target distribution?',samplingHint:'Separate one-position, three-word experiment. The main trace uses greedy verification; this lab uses exact rejection sampling. Equal distributions do not mean identical random draws or seeded text.',
+    draw:'Acceptance random draw',residualDraw:'Residual random draw',sampleOutput:'Sample output',chooseProposal:'Assume Draft sampled',sampleAccept:'Accept the draft proposal',sampleReject:'Reject → resample from the positive residual',
+    threshold:'Acceptance threshold',residual:'Distribution after rejection',mass:'Final probability',exactHint:'p is the Target distribution; q is the Draft distribution. Direct acceptance and resampling contributions add up to the unchanged Target probabilities. With equal distributions, rejection is impossible and residual sampling is unnecessary.',
+    acceptanceFormula:'Per-position acceptance and correction',lossless:'Exact rejection sampling requires non-anticipating scheduling. Confidence allocates compute; it does not decide final acceptance.',
+    code:'Engine pseudocode',boundary:'Scope and sources',boundaryText:'Fixed synthetic proposals, scores, and normalized costs, not a live checkpoint. Parameters change proposal expansion and verification; acceptance is an observed teaching result, not a real-model prediction. EAGLE-2 uses greedy trees; DSpark uses Markov drafting and single-request causal scheduling. Prefill and training are outside the race.',
+    paperEagle:'EAGLE-2 paper',paperDspark:'DSpark paper',docs:'SGLang parameters',dsparkConfig:'DSpark configuration source',samplingPaper:'Exact speculative sampling',
+    tail:'Verification has not happened yet. Acceptance and output appear at their corresponding stages.',
+    reclaiming:'Reclaiming',logitSlice:'Current sequential position · three-word score slice',sliceHint:'Synthetic scores: the previous token selects a transition bias, added to base logits. Three representative vocabulary entries are shown; others are omitted.',bias:'Transition bias',combined:'Combined logits',noMarkov:'Step through the trace to inspect each position’s transition bias',
   },
 };
-
-const candidateTone = {
-  pending: 'border-slate-200 bg-slate-50 text-slate-400',
-  proposed: 'border-violet-300 bg-violet-50 text-violet-800',
-  expanding: 'border-orange-400 bg-orange-50 text-orange-800 ring-2 ring-orange-200',
-  reranked: 'border-blue-400 bg-blue-50 text-blue-800 ring-2 ring-blue-100',
-  pruned: 'border-dashed border-slate-300 bg-slate-100 text-slate-400 line-through',
-  masked: 'border-cyan-400 bg-cyan-50 text-cyan-800 ring-2 ring-cyan-100',
-  conditioned: 'border-violet-400 bg-violet-50 text-violet-800 ring-2 ring-violet-100',
-  verifying: 'border-blue-400 bg-blue-50 text-blue-800 ring-2 ring-blue-200',
-  accepted: 'border-emerald-400 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-200',
-  rejected: 'border-rose-500 bg-rose-50 text-rose-800 ring-2 ring-rose-200',
-  committed: 'border-emerald-500 bg-emerald-100 text-emerald-900',
-  discarded: 'border-slate-300 bg-slate-100 text-slate-400 line-through',
-  skipped: 'border-dashed border-slate-300 bg-white text-slate-400',
+const FORMULAS = {
+  path:'v_i=\\prod_{j\\in\\mathrm{path}(i)}q_j',
+  markov:'q_k(v)=\\mathrm{softmax}\\!\\left(U_k+W_1[x_{k-1}]W_2\\right)_v',
+  survival:'a_j=\\prod_{i=1}^{j}c_i',
+  schedule:'\\Theta_\\ell=\\left(1+\\sum_{j=1}^{\\ell}a_j\\right)/C_T(1+\\ell)',
+  accept:'\\alpha(x)=\\min(1,p(x)/q(x))',
+  residual:'r(x)=[p(x)-q(x)]_+\\,/\\!\\sum_y[p(y)-q(y)]_+',
 };
-
-const stageTone = {
-  pending: 'border-slate-200 bg-slate-50 text-slate-400',
-  active: 'border-blue-400 bg-blue-50 text-blue-900 ring-2 ring-blue-100',
-  passed: 'border-emerald-300 bg-emerald-50 text-emerald-800',
-  done: 'border-emerald-400 bg-emerald-50 text-emerald-900',
+const CODES = {
+  eagle2:[
+    'for depth in range(steps): tree.expand(top_k(frontier), draft.forward)',
+    'selected = [anchor] + top_m_connected(tree, verify_capacity - 1)',
+    'slots, positions, mask = reserve_and_flatten(selected, prefix_kv)',
+    'logits, hidden, kv = target.forward(selected.tokens, positions, mask)',
+    'path, bonus = greedy_accept_path_and_target_sample(logits, selected)',
+    'gather_kv(slots[path]); reclaim_others(); sync_draft(hidden[path]); next_anchor = bonus',
+  ],
+  dspark:[
+    'U, hidden = backbone([anchor] + [MASK] * (gamma - 1), draft_context_kv)',
+    'for k in range(gamma): x[k] = sample(U[k] + W1[x[k-1]] @ W2)',
+    'c = confidence_head(hidden, previous_token_embeddings)',
+    'length = causal_prefix_scan(c, profile, stop_on_first_non_improvement=True)',
+    'slots = reserve([anchor] + x[:length], prefix_kv)',
+    'logits, hidden, kv = target.forward([anchor] + x[:length], slots)',
+    'path, bonus = greedy_accept_prefix_and_target_sample(logits, x[:length])',
+    'gather_kv(slots[path]); reclaim_suffix(); sync_draft(hidden[path]); next_anchor = bonus',
+  ],
 };
-
-const kvSlotTone = {
-  empty: 'border-dashed border-slate-300 bg-white',
-  reserved: 'border-dashed border-blue-400 bg-blue-50',
-  temporary: 'animate-pulse border-cyan-500 bg-cyan-200 ring-1 ring-cyan-200',
-  committing: 'border-emerald-500 bg-emerald-200 ring-1 ring-emerald-300',
-  reclaiming: 'border-rose-400 bg-rose-50 bg-[linear-gradient(135deg,transparent_42%,#fda4af_43%,#fda4af_57%,transparent_58%)]',
-  committed: 'border-emerald-500 bg-emerald-200',
-  free: 'border-dashed border-slate-300 bg-slate-50',
+const tones = {
+  pending:'border-slate-200 bg-slate-50 text-slate-500',proposed:'border-violet-300 bg-violet-50 text-violet-900',
+  selected:'border-blue-400 bg-blue-50 text-blue-900',verifying:'border-blue-500 bg-blue-100 text-blue-950',
+  accepted:'border-emerald-500 bg-emerald-50 text-emerald-900',committed:'border-emerald-500 bg-emerald-100 text-emerald-950',
+  skipped:'border-dashed border-slate-300 bg-slate-50 text-slate-500',discarded:'border-rose-300 bg-rose-50 text-rose-800',
 };
-
-function interpolate(text, vars = {}) {
-  return Object.entries(vars).reduce((result, [key, value]) => result.replaceAll(`{${key}}`, String(value)), text);
+const pct = n => (100*n).toFixed(0)+'%';
+function Controls({playing,done,onPlay,onNext,onReset,t,label}) {
+  return <div className="flex shrink-0 items-center gap-1" aria-label={t(label)}>
+    <button className="spec-icon" onClick={onReset} aria-label={t('reset')} title={t('reset')}><RotateCcw size={15}/></button>
+    <button className="spec-icon !bg-blue-600 !text-white" onClick={onPlay} aria-label={t(playing?'pause':done?'replay':'play')} title={t(playing?'pause':done?'replay':'play')}>{playing?<Pause size={16}/>:<Play size={16}/>}</button>
+    <button className="spec-icon" onClick={onNext} aria-label={t('next')} title={t('next')} disabled={done}><SkipForward size={16}/></button>
+  </div>;
 }
-
-function StatusHeader({ snapshot, t }) {
-  const label = snapshot.phase === 'idle' ? t('ready') : snapshot.phase === 'done' ? t('done') : t(snapshot.activeOperation.stageKey);
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className={`h-2.5 w-2.5 rounded-full ${snapshot.phase === 'running' ? 'animate-pulse bg-blue-500' : snapshot.phase === 'done' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-      <span className="text-sm font-semibold text-slate-800">{label}</span>
-      <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{t('stepProgress', { current: snapshot.phase === 'idle' ? 0 : snapshot.phase === 'done' ? snapshot.maxStep : snapshot.step + 1, total: snapshot.maxStep })}</span>
+function Parameter({name,hint,short,value,min,max,onChange,disabled=false,flag,t}) {
+  return <div className="min-w-0 space-y-1">
+    <label htmlFor={'spec-param-'+name} className="flex items-start justify-between gap-2 text-xs font-semibold"><span>{t(name)}</span><strong className="text-blue-700">{value}</strong></label>
+    {flag&&<code className="block break-all text-[10px] text-slate-500">{flag}</code>}
+    <input id={'spec-param-'+name} aria-label={t(name)} type="range" min={min} max={max} step="1" value={value} disabled={disabled} onChange={e=>onChange(Number(e.target.value))} className="w-full accent-blue-600 disabled:opacity-40"/>
+    <details className="text-[11px] leading-relaxed text-slate-500"><summary aria-label={t(name)+' · '+t('details')} className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">{t(short)}</summary><p className="mt-1 rounded border border-slate-200 bg-white p-2">{t(hint)}</p></details>
+  </div>;
+}
+function Settings({s,config,setConfig,t}) {
+  const update=(key,value)=>setConfig({...config,[key]:value});
+  return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid="speculative-settings">
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-bold">{t('settings')} · {t(s.algorithm)}</h3><span className="text-[11px] text-slate-500">{t(s.algorithm==='eagle2'?'parameterSourceEagle':'parameterSourceDspark')}</span></div>
+    <div className={'grid gap-4 '+(s.algorithm==='eagle2'?'sm:grid-cols-3':'max-w-sm')}>
+      {s.algorithm==='eagle2'?<>
+        <Parameter name="depth" hint="depthHint" short="depthShort" value={s.depth} min={1} max={5} onChange={v=>update('depth',v)} flag="--speculative-num-steps" t={t}/>
+        <Parameter name="width" hint="widthHint" short="widthShort" value={s.width} min={1} max={3} onChange={v=>update('width',v)} flag="--speculative-eagle-topk" t={t}/>
+        <Parameter name="budget" hint="budgetHint" short="budgetShort" value={s.budget} min={2} max={16} onChange={v=>update('budget',v)} disabled={s.width===1} flag="--speculative-num-draft-tokens" t={t}/>
+      </>:<Parameter key="block" name="block" hint="blockHint" short="blockShort" value={s.blockSize} min={1} max={8} onChange={v=>update('blockSize',v)} flag="block_size" t={t}/>}
     </div>
-  );
+    <p className="mt-2 text-[11px] text-slate-500">{t('experimentNote')}</p>
+  </div>;
 }
-
-function TimelineControls({ isPlaying, isDone, onReset, onPlay, onNext, t, label }) {
-  return (
-    <div className="flex items-center gap-2" aria-label={t(label)}>
-      <button type="button" onClick={onReset} aria-label={t('reset')} title={t('reset')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200"><RotateCcw size={15} /></button>
-      <button type="button" onClick={onPlay} aria-label={isPlaying ? t('pause') : isDone ? t('replay') : t('play')} title={isPlaying ? t('pause') : isDone ? t('replay') : t('play')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm hover:bg-blue-700">{isPlaying ? <Pause size={15} /> : <Play size={15} />}</button>
-      <button type="button" onClick={onNext} disabled={isPlaying || isDone} aria-label={t('next')} title={t('next')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"><SkipForward size={15} /></button>
+function TokenStream({tokens,t}) {
+  return <div className="flex min-h-8 flex-wrap items-center gap-1">{tokens.length?tokens.map((token,i)=><motion.span key={i} initial={{opacity:0,y:3}} animate={{opacity:1,y:0}} className="rounded border border-emerald-200 bg-white px-1.5 py-1 text-xs text-emerald-900">{token}</motion.span>):<span className="text-xs text-slate-400">{t('noOutput')}</span>}</div>;
+}
+function Race({s,t,playing,onPlay,onNext,onReset,onInspect,config,setConfig}) {
+  const r=s.race;
+  return <section className="spec-card space-y-3" data-testid="speculative-race">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-bold">{t('raceTitle')}</h2><p className="mt-1 max-w-4xl text-xs leading-relaxed text-slate-500">{t('raceHint')}</p></div><Controls t={t} label="raceControls" playing={playing} done={r.isDone} onPlay={onPlay} onNext={onNext} onReset={onReset}/></div>
+    <Settings s={s} config={config} setConfig={setConfig} t={t}/>
+    <div className="flex flex-wrap justify-between gap-2 text-xs"><span>{t('seed')}: <strong>{[...PREFIX,STREAM[0]].join(' ')}</strong></span><span className="font-semibold tabular-nums">{r.elapsed.toFixed(1)} / {r.timeBudget} · {t('seconds')}</span></div>
+    <div className="space-y-3">
+      <div className="spec-lane"><div className="flex justify-between text-sm font-bold"><span>{t('baseline')}</span><span>{r.baselineCount} {t('tokens')}</span></div>
+        <div className="my-2 flex h-8 gap-1">{Array.from({length:r.timeBudget},(_,i)=><div key={i} className={'flex flex-1 items-center justify-center rounded border text-[10px] '+(i<r.baselineCount?'border-emerald-300 bg-emerald-100':'border-slate-200 bg-white')}>{i+1}</div>)}</div><TokenStream tokens={r.baselineTokens} t={t}/>
+      </div>
+      <div className="spec-lane !border-blue-200 !bg-blue-50/40"><div className="flex justify-between text-sm font-bold text-blue-950"><span>{t('speculative')} · {t(s.algorithm)}</span><span>{r.speculativeCount} {t('tokens')}</span></div>
+        <div className="relative my-2 h-12" aria-label={t('inspect')}>
+          {r.cycles.map(c=>{
+            const end=Math.min(c.end,r.timeBudget),span=end-c.start;
+            return <button key={c.index} title={t('inspect')+' '+(c.index+1)} aria-label={t('inspect')+' '+(c.index+1)} onClick={()=>onInspect(c.index)} className={'absolute inset-y-0 overflow-hidden rounded border text-left '+(s.roundIndex===c.index?'border-blue-600 ring-1 ring-blue-500':'border-blue-200')} style={{left:c.start/r.timeBudget*100+'%',width:span/r.timeBudget*100+'%'}}>
+              <span className="absolute inset-y-0 left-0 bg-violet-200" style={{width:Math.min(span,c.draftEnd-c.start)/span*100+'%'}}/>
+              <span className="absolute inset-y-0 bg-blue-200" style={{left:(c.draftEnd-c.start)/span*100+'%',width:Math.max(0,Math.min(end,c.verifyEnd)-c.draftEnd)/span*100+'%'}}/>
+              <span className="absolute inset-y-0 bg-amber-200" style={{left:(c.verifyEnd-c.start)/span*100+'%',width:Math.max(0,end-c.verifyEnd)/span*100+'%'}}/>
+              <span className="relative block px-1 pt-1 text-[10px] font-bold">{t('round')} {c.index+1}</span>
+              {c.completed&&<span className="relative block px-1 text-xs font-bold text-emerald-900">+{c.output.length}</span>}
+            </button>;
+          })}
+          <div className="pointer-events-none absolute inset-y-0 border-l-2 border-rose-500" style={{left:r.elapsed/r.timeBudget*100+'%'}}/>
+        </div><div className="mb-2 flex flex-wrap gap-3 text-[11px] text-slate-600">{[['drafting','bg-violet-200'],['verifying','bg-blue-200'],['committing','bg-amber-200']].map(([key,color])=><span key={key} className="flex items-center gap-1"><i className={'h-2 w-3 rounded '+color}/>{t(key)}</span>)}</div><TokenStream tokens={r.speculativeTokens} t={t}/>
+      </div>
     </div>
-  );
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs">
+      <span>{r.isDone?t('finished'):r.event?t(r.event.labelKey):t('waiting')} · <strong className={r.lead<0?'text-rose-700':'text-emerald-700'}>{r.lead===0?t('tied'):t(r.lead>0?'more':'less')+' '+Math.abs(r.lead)+' '+t('tokens')}</strong></span>
+      <span>{t('cumulative')}: <strong>{s.acceptance.cumulativeRate===null?'—':pct(s.acceptance.cumulativeRate)}</strong> ({s.acceptance.cumulativeAccepted}/{s.acceptance.cumulativeVerified}) · {t('meanLength')}: {s.acceptance.meanLength.toFixed(2)}</span>
+    </div>
+  </section>;
 }
-
-function TokenChip({ token, status = 'proposed', t, confidence, value }) {
-  return (
-    <motion.div layout className={`min-w-[78px] rounded-lg border px-2 py-1.5 text-center shadow-sm ${candidateTone[status] || candidateTone.pending}`}>
-      <div className="text-xs font-extrabold">{token}</div>
-      <div className="mt-0.5 whitespace-nowrap text-[8px] opacity-75">{typeof confidence === 'number' ? `c ${confidence.toFixed(2)}` : ''}{typeof value === 'number' ? ` · V ${value.toFixed(2)}` : ''}</div>
-      <div className="mt-0.5 text-[8px] font-semibold">{t(status === 'committed' ? 'committedStatus' : status)}</div>
-    </motion.div>
-  );
+function Relation({s,t}) {
+  const owner=s.architecture.activeOwner;
+  return <aside className="min-w-0 space-y-3" data-testid="static-weight-topology">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><h3 className="mb-2 text-sm font-bold">{t('overview')}</h3>
+      <div data-testid="target-model-tower" className={'rounded-lg border-2 bg-white p-3 '+(owner==='target'?'border-rose-400 ring-2 ring-rose-100':'border-blue-200')}>
+        <div className="flex items-center gap-2 text-sm font-bold text-blue-950"><Cpu size={16}/>{t('target')}<MathFormula>{'\\theta_T'}</MathFormula></div>
+        <div className="my-2 flex items-center justify-between gap-1 text-[11px]"><span>E</span><ArrowRight size={12}/><span className="rounded border border-blue-300 bg-blue-50 p-1.5 shadow-[2px_-2px_0_0_#bfdbfe]">{t('transformer')} <MathFormula>{'L_T'}</MathFormula></span><ArrowRight size={12}/><span>LM</span></div>
+        <p className="text-[11px] leading-relaxed text-slate-500">{t('targetHint')}</p>
+      </div>
+      <div className="my-2 flex flex-wrap justify-between gap-1 text-[10px] font-semibold"><span className={owner==='draft'?'text-violet-700':'text-slate-500'}>{t('featurePort')}</span><span className={owner==='target'?'text-blue-700':'text-slate-500'}>{t('returnPort')}</span></div>
+      <div data-testid="draft-model-tower" className={'rounded-lg border-2 bg-white p-2.5 '+(owner==='draft'?'border-rose-400':'border-violet-200')}>
+        <div className="mb-2 flex items-center gap-2 text-sm font-bold"><BrainCircuit size={15}/>{t(s.algorithm)} <MathFormula>{'\\theta_D'}</MathFormula></div>
+        <div className="grid grid-cols-2 gap-1.5" data-testid="draft-internal-flow">{s.architecture.groups.map((g,i)=><div key={g.id} title={t(g.kind==='draft'?'learned':g.kind)} className={'min-w-0 rounded border p-1.5 '+(g.active?'border-rose-400 ring-1 ring-rose-300 ':'')+({shared:'bg-amber-50 text-amber-950',draft:'bg-violet-50 text-violet-950',activation:'bg-cyan-50 text-cyan-950',runtime:'bg-slate-100 text-slate-700'}[g.kind])}>
+          <div className="text-[10px] font-semibold leading-snug">{i+1}. {t(g.labelKey)}{g.active&&<span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-rose-500"/>}</div>{g.formula&&<div className="mt-1 overflow-x-auto text-[10px]"><MathFormula>{g.formula}</MathFormula></div>}
+        </div>)}</div>
+        <div className="mt-2 flex flex-wrap gap-2 text-[10px]"><span className="text-amber-800">{t('shared')}</span><span className="text-violet-800">{t('learned')}</span></div>
+      </div>
+      <div className="my-2 text-center text-slate-400"><ArrowDown size={14} className="mx-auto"/></div>
+      <Kv s={s} t={t}/>
+      <div className={'mt-2 rounded border p-2 '+(s.kv.draftContextActive?'border-violet-400 bg-violet-50':'border-slate-200 bg-white')}><div className="text-xs font-semibold">{t('draftCache')} · {s.kv.draftPrefixLength}</div><p className="mt-1 text-[11px] leading-relaxed text-slate-500">{t('draftCacheHint')}</p></div>
+    </div>
+    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3"><h4 className="text-xs font-bold text-blue-950">{t('whyFast')}</h4><p className="mt-1 text-xs leading-relaxed text-blue-900">{t('whyFastText')}</p></div>
+  </aside>;
 }
-
-function WhyFaster({ snapshot, t, racePlaying, onRaceReset, onRacePlay, onRaceNext }) {
-  const { race } = snapshot;
-  const raceStatusKey = race.isDone
-    ? 'raceAllDone'
-    : race.speculativeStage === 'pending'
-      ? 'racePending'
-      : race.speculativeStage === 'drafting'
-        ? 'raceDrafting'
-        : race.speculativeStage === 'verifying'
-          ? 'raceVerifying'
-          : race.speculativeStage === 'committing'
-            ? 'raceCommitting'
-            : 'raceFinished';
-  const timeTicks = Array.from({ length: race.timeBudget + 1 }, (_, index) => index);
-  const outputTone = (index, frontier) => index >= frontier ? 'border-indigo-400 bg-indigo-100 text-indigo-800' : 'border-emerald-300 bg-emerald-50 text-emerald-800';
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="speculative-why-faster">
-      <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
-        <div><div className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">{t('teachingQuestion')}</div><h2 className="mt-1 text-lg font-extrabold text-slate-900">{t('raceTitle')}</h2><p className="mt-1 max-w-4xl text-xs leading-relaxed text-slate-500">{t('raceSubtitle')}</p></div>
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 lg:justify-end">
-          <div><div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{t('raceClock')}</div><div className="mt-0.5 text-sm font-extrabold text-slate-800">t = {race.elapsed.toFixed(2)}</div></div>
-          <TimelineControls isPlaying={racePlaying} isDone={race.isDone} onReset={onRaceReset} onPlay={onRacePlay} onNext={onRaceNext} t={t} label="localRaceControls" />
+function Kv({s,t}) {
+  const tone={empty:'border-dashed border-slate-300 bg-white',reserved:'border-dashed border-blue-400 bg-blue-50',temporary:'border-blue-500 bg-blue-100',committing:'border-emerald-500 bg-emerald-50',reclaiming:'border-rose-400 bg-rose-100',committed:'border-emerald-500 bg-emerald-100',free:'border-dashed border-rose-300 bg-rose-50'};
+  return <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-2.5" data-testid="compact-kv-relation" data-kv-state={s.kv.state}>
+    <div className="flex items-center justify-between text-xs font-bold"><span className="flex items-center gap-1"><Database size={14}/>{t('kv')}</span><span>{t(s.kv.state==='reserved'?'reserve':s.kv.state)}</span></div>
+    <div className="my-2 rounded bg-slate-200 px-2 py-1 text-[11px]">{t('prefix')} · {s.kv.prefixLength} → {s.kv.committedPrefixLength}</div>
+    <div className="flex flex-wrap gap-1">{s.kv.slots.map(slot=><div key={slot.id} data-kv-node={slot.id} data-kv-slot-state={slot.state} title={(s.selectedVisible?slot.token:t('empty'))+' · '+(slot.destination??'—')} className={'min-w-9 rounded border px-1 py-1 text-center text-[11px] '+tone[slot.state]}>{slot.index+1}<span className="block max-w-16 truncate text-[10px]">{slot.id==='root'?s.round.nodes[0].token:s.selectedVisible?slot.token:'—'}</span></div>)}</div>
+    <p className="mt-2 text-[11px] leading-relaxed text-cyan-950">{t('kvHint')}</p>
+    {s.kv.gathered.length>0&&<div className="mt-2 text-[11px]"><strong>{t('gather')}</strong><div className="mt-1 flex flex-wrap gap-1">{s.kv.gathered.map(slot=><span key={slot.id} className="rounded bg-emerald-100 px-1 text-emerald-950">{slot.index+1} → {slot.destination}</span>)}</div></div>}
+    <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-1.5 text-[11px]">{s.committed?t('pendingAnchor'):t('anchorKv')}: <strong>{s.kv.pendingAnchor}</strong></div>
+    {s.kv.carriedAnchor&&<p className="mt-1 text-[11px]">{t('carried')}: <strong>{s.kv.carriedAnchor}</strong></p>}
+  </div>;
+}
+function layoutTree(nodes) {
+  const positions={};
+  const levels=Array.from({length:Math.max(...nodes.map(x=>x.level))+1},(_,level)=>nodes.filter(n=>n.level===level));
+  const width=Math.max(460,Math.max(...levels.map(row=>row.length))*104);
+  levels.forEach((row,level)=>row.forEach((node,index)=>{positions[node.id]={x:(index+0.5)*width/row.length,y:level};}));
+  return {positions,width,height:levels.length*82+24};
+}
+function Eagle({s,t,selectedNode,setSelectedNode}) {
+  const l=layoutTree(s.candidates);
+  const treeRef=useRef(null);
+  useEffect(()=>{
+    const el=treeRef.current;
+    const center=()=>{el.scrollLeft=Math.max(0,(l.width-el.clientWidth)/2);};
+    center();
+    const observer=new ResizeObserver(center);observer.observe(el);
+    return ()=>observer.disconnect();
+  },[l.width,s.roundIndex]);
+  const query=s.candidates.find(x=>x.id===selectedNode&&x.generated)||(s.selectedVisible?s.round.selected[s.round.selected.length-1]:s.candidates[0]);
+  const rowIndex=s.round.selected.findIndex(x=>x.id===query.id);
+  const ancestors=new Set();
+  let ancestor=query;
+  while(ancestor){ancestors.add(ancestor.id);ancestor=s.candidates.find(x=>x.id===ancestor.parent);}
+  const point=id=>({x:l.positions[id].x,y:40+l.positions[id].y*82});
+  return <div className="spec-tree-mask">
+    <div className="min-w-0"><div className="mb-2 flex flex-wrap justify-between gap-2"><h4 className="text-sm font-bold">{t('tree')}</h4><div className="max-w-full overflow-x-auto px-1 text-xs"><MathFormula>{FORMULAS.path}</MathFormula></div></div><p className="mb-2 text-[11px] leading-relaxed text-slate-500">{t('treeHint')}</p>
+      <div ref={treeRef} className="overflow-x-auto rounded-lg border border-violet-200 bg-violet-50/30" data-testid="eagle-tree"><div className="relative" style={{width:l.width,height:l.height}}>
+        <svg width={l.width} height={l.height} className="absolute inset-0" aria-hidden="true">{s.candidates.filter(x=>x.parent).map(n=>{const a=point(n.parent),b=point(n.id);return <line key={n.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={s.hasVerdict&&n.accepted?'#059669':ancestors.has(n.id)&&s.selectedVisible?'#7c3aed':'#cbd5e1'} strokeDasharray={n.generated?undefined:'4 3'} strokeWidth={2}/>;})}</svg>
+        {s.candidates.map(n=>{const p=point(n.id);return <button key={n.id} onClick={()=>setSelectedNode(n.id)} disabled={!n.generated} title={n.generated?n.token:t('pending')} aria-label={t('query')+' '+n.id+' '+(n.generated?n.token:t('pending'))} className={'absolute w-[94px] -translate-x-1/2 -translate-y-1/2 rounded-md border px-1 py-1 text-center '+tones[n.status]+(query.id===n.id?' ring-2 ring-violet-400':'')} style={{left:p.x,top:p.y}}>
+          <span className="block truncate text-xs font-bold">{n.generated?n.token:'···'}</span><span className="block text-[10px]">{n.id==='root'?t('root'):t(n.status)}</span><span className="block text-[10px] tabular-nums">{n.generated&&n.id!=='root'?'q '+n.probability.toFixed(2)+' · v '+n.value.toFixed(2):n.id}</span>
+        </button>;})}
+      </div></div>
+    </div>
+    <div className="min-w-0 rounded-lg border border-cyan-200 bg-cyan-50/30 p-3" data-testid="ancestor-mask">
+      <h4 className="text-sm font-bold">{t('mask')}</h4><p className="my-2 text-[11px] leading-relaxed text-slate-600">{t('maskHint')}</p>
+      {s.selectedVisible?<><div className="mb-2 text-xs">{t('query')}: <strong>{query.token}</strong> · {rowIndex<0?t('skipped'):t('visible')+': '+s.round.selected.filter(x=>ancestors.has(x.id)).map(x=>x.token).join(' → ')}</div>
+        <div className="overflow-x-auto"><table className="border-separate border-spacing-0.5 text-[10px]"><thead><tr><th>Q / K</th>{s.round.selected.map((n,i)=><th key={n.id} title={n.token}>{i+1}</th>)}</tr></thead><tbody>{s.round.mask.map((row,i)=><tr key={i}><th className="max-w-20 truncate pr-1 text-left" title={s.round.selected[i].token}><button onClick={()=>setSelectedNode(s.round.selected[i].id)} className={rowIndex===i?'text-violet-700 underline':''}>{i+1}. {s.round.selected[i].token}</button></th>{row.map((v,j)=><td key={j} title={s.round.selected[i].token+' → '+s.round.selected[j].token+' · '+t(v?'visible':'isolated')} className={'h-4 min-w-4 border text-center '+(rowIndex===i?'border-violet-500 ':'border-transparent ')+(v?'bg-cyan-500 text-white':'bg-slate-100 text-slate-400')}>{v?'1':'0'}</td>)}</tr>)}</tbody></table></div>
+        <div className="mt-2 flex flex-wrap gap-1 text-[10px]">{s.round.selected.map((n,i)=><span key={n.id} className="rounded border border-blue-200 bg-white px-1 py-0.5">{i+1}. {n.token} · {t('position')} {PREFIX.length+s.round.cursor+n.level}</span>)}</div>
+      </>:<p className="text-xs text-slate-400">{t('noMask')}</p>}
+    </div>
+  </div>;
+}
+function Dspark({s,t}) {
+  const nodes=s.candidates.slice(1);
+  const detail=nodes[Math.max(0,Math.min(nodes.length-1,s.markovPosition-1))];
+  const backboneReady=s.phase!=='idle';
+  const confidenceReady=s.hasVerdict||s.phase==='done'||s.step>=s.round.events.findIndex(x=>x.type==='confidence')&&s.phase==='running';
+  return <div className="space-y-3" data-testid="dspark-block">
+    <div className="rounded-lg border border-cyan-200 bg-cyan-50/30 p-3"><h4 className="text-sm font-bold">{t('blockInput')}</h4>
+      <div className="my-2 flex flex-wrap items-center gap-1 text-xs"><strong className="rounded bg-slate-800 px-2 py-1 text-white">{s.round.nodes[0].token}</strong>{Array.from({length:s.blockSize-1},(_,i)=><span key={i} className="rounded border border-dashed border-cyan-400 px-2 py-1">{t('masks')}</span>)}<ArrowRight size={14}/><span>{s.blockSize} {t('base')}</span></div>
+      <p className="text-xs leading-relaxed text-slate-600">{t('baseHint')}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{nodes.map((n,i)=><div key={n.id} className={'rounded border p-2 '+(s.event?.type==='backbone'?'border-rose-400 bg-white':'border-cyan-200 bg-white')}><div className="text-[11px] text-cyan-800"><MathFormula>{'U_{'+(i+1)+'}'}</MathFormula> · {t('baseGuess')}</div><div className="mt-1 text-sm font-bold">{backboneReady?n.baseToken:'···'}</div></div>)}</div>
+    </div>
+    <div className="rounded-lg border border-violet-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h4 className="text-sm font-bold">{t('markov')}</h4><div className="max-w-full overflow-x-auto text-xs"><MathFormula>{FORMULAS.markov}</MathFormula></div></div>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{nodes.map((n,i)=><div key={n.id} className={'rounded border p-2 '+(s.event?.type==='markov'&&s.event.position===i+1?'border-rose-400 ring-1 ring-rose-200 ':'')+tones[n.status]}>
+        <div className="text-[11px]">{t('position')} {i+1}</div><div className="mt-1 text-[10px]">{t('previous')}: {i===0?s.round.nodes[0].token:s.markovPosition>=i?nodes[i-1].token:'···'}</div><div className="my-1 flex items-center gap-1"><ArrowRight size={13}/><strong className="text-sm">{n.generated?n.token:'···'}</strong></div>
+        <div className="text-[10px]">{t(n.status)}</div>
+        {confidenceReady&&<div className="mt-2 border-t border-current/10 pt-1 text-[11px]"><div>{t('confidence')}: {pct(n.confidence)}</div><div>{t('survival')}: {pct(s.round.scheduler.rows[i].survival)}</div></div>}
+      </div>)}</div>
+      {s.markovPosition>0?<div className="mt-3 overflow-x-auto rounded border border-violet-100 p-2"><div className="text-xs font-semibold">{t('logitSlice')} {detail.level} · {t('previous')}: {detail.previous}</div><p className="my-1 text-[11px] text-slate-500">{t('sliceHint')}</p><table className="w-full text-left text-[11px]"><thead><tr><th>{t('candidates')}</th><th><MathFormula>{'U_k'}</MathFormula></th><th>{t('bias')}</th><th>{t('combined')}</th></tr></thead><tbody>{detail.vocabulary.map((word,i)=><tr key={i} className={word===detail.token?'bg-violet-50 text-violet-900 font-semibold':''}><td className="py-1">{word}</td><td>{detail.baseLogits[i].toFixed(1)}</td><td>{detail.bias[i].toFixed(1)}</td><td>{detail.logits[i].toFixed(1)}</td></tr>)}</tbody></table></div>:<p className="mt-2 text-xs text-slate-400">{t('noMarkov')}</p>}
+    </div>
+    <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-3" data-testid="dspark-scheduler">
+      <div className="flex flex-wrap justify-between gap-2"><h4 className="text-sm font-bold">{t('scheduler')}</h4><div className="max-w-full overflow-x-auto text-xs"><MathFormula>{FORMULAS.schedule}</MathFormula></div></div>
+      <p className="my-2 text-xs leading-relaxed text-slate-600">{t('schedulerHint')}</p>
+      {s.selectedVisible?<div className="overflow-x-auto"><table className="w-full text-left text-[11px]"><thead><tr>{['candidates','expectedNew','cost','throughput','decision'].map(key=><th className="px-2 py-1" key={key}>{t(key)}</th>)}</tr></thead><tbody>{s.round.scheduler.rows.map(row=><tr key={row.index} className={row.admitted?'bg-emerald-50':row.evaluated?'bg-rose-50':'text-slate-400'}><td className="px-2 py-1">{row.index+1}</td><td className="px-2">{row.evaluated?row.expected.toFixed(2):'—'}</td><td className="px-2">{row.evaluated?row.cost.toFixed(2):'—'}</td><td className="px-2">{row.evaluated?<div className="flex items-center gap-1"><span>{row.throughput.toFixed(2)}</span><span className="h-1.5 max-w-20 rounded bg-orange-400" style={{width:row.throughput*20}}/></div>:'—'}</td><td className="px-2">{t(row.admitted?'admit':row.evaluated?'stop':'notEvaluated')}</td></tr>)}</tbody></table></div>:<p className="text-xs text-slate-400">{t('schedulingPending')}</p>}
+    </div>
+  </div>;
+}
+function Verification({s,t}) {
+  return <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/20 p-3" data-testid="verification-result">
+    <div className="flex flex-wrap justify-between gap-2"><h4 className="text-sm font-bold">{t('checks')}</h4><span className="text-xs">{t('actualRate')}: <strong>{s.acceptance.rate===null?t(s.hasVerdict?'noDraft':'unknown'):pct(s.acceptance.rate)}</strong> ({s.acceptance.accepted}/{s.acceptance.verified})</span></div>
+    <p className="text-[11px] leading-relaxed text-slate-500">{t('rateHint')}</p>
+    <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs"><span>{t('accepted')}: <strong>{s.hasVerdict?s.acceptance.accepted:'—'}</strong></span><span>{t('verified')}: <strong>{s.selectedVisible?s.acceptance.verified:'—'}</strong></span></div>
+    <div className="h-2 rounded bg-slate-100" aria-label={t('utilization')}><div className="h-full rounded bg-emerald-500" style={{width:pct(s.acceptance.rate??0)}}/></div>
+    {s.selectedVisible&&<div className="flex flex-wrap gap-1 text-[11px]"><span className="mr-1 font-semibold">{t('targetInput')}:</span>{s.round.selected.map((n,i)=><span key={n.id} className="rounded border border-blue-200 bg-white px-1">{i+1}. {n.token}</span>)}</div>}
+    {s.hasVerdict?<><p className="text-xs text-slate-600">{t('checksHint')}</p><div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{['position','candidates','targetChoice','verdict'].map(key=><th key={key} className="py-1 pr-2">{t(key)}</th>)}</tr></thead><tbody>{s.round.checks.map((check,i)=><tr key={i} className={check.accepted?'text-emerald-800':'text-rose-700'}><td className="py-1">{check.position}</td><td>{check.proposals.join(' / ')}</td><td className="font-bold">{check.expected}</td><td>{t(check.accepted?'match':'reject')}</td></tr>)}</tbody></table></div><div className="text-xs"><strong>{t(s.round.rejected?'correction':'bonus')}: {s.round.bonus}</strong><p className="mt-1 text-slate-500">{t('bonusHint')}</p></div></>:<p className="text-xs text-slate-400">{t('tail')}</p>}
+    <div className="border-t border-emerald-100 pt-2"><div className="mb-1 text-xs font-semibold">{t('actualOutput')}</div><TokenStream tokens={s.committedTokens} t={t}/></div>
+  </div>;
+}
+function Workbench({s,t,playing,onPlay,onNext,onReset,onRound,selectedNode,setSelectedNode}) {
+  return <section className="spec-card" data-testid="speculative-architecture">
+    <h2 className="text-lg font-bold">{t('architecture')}</h2><p className="mb-4 mt-1 text-xs leading-relaxed text-slate-500">{t('architectureHint')}</p>
+    <div className="grid min-w-0 items-start gap-3 xl:grid-cols-[310px_minmax(0,1fr)]">
+      <Relation s={s} t={t}/>
+      <div className="spec-workbench min-w-0 space-y-3" data-testid="algorithm-workbench">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div><h3 className="text-sm font-bold">{t('mechanism')} · {t(s.algorithm)}</h3><label className="mt-2 flex items-center gap-2 text-xs">{t('round')}<select aria-label={t('round')} className="rounded border bg-white px-2 py-1" value={s.roundIndex} onChange={e=>onRound(Number(e.target.value))}>{s.rounds.map(r=><option key={r.index} value={r.index}>{r.index+1}</option>)}</select><span className="max-w-56 truncate" title={[...PREFIX,...STREAM.slice(0,s.round.cursor+1)].join(' ')}>{s.round.nodes[0].token}</span></label></div>
+          <Controls playing={playing} done={s.phase==='done'} onPlay={onPlay} onNext={onNext} onReset={onReset} t={t} label="traceControls"/>
         </div>
+        <div className="text-xs font-semibold" data-testid="trace-stage">{t('eventStep')} {s.phase==='idle'?0:s.phase==='done'?s.maxStep:s.step+1}/{s.maxStep} · {s.event?t(s.event.labelKey):t(s.phase==='done'?'done':'ready')}{s.event?.level?' · '+t('depthNow')+' '+s.event.level:''}{s.event?.position?' · '+t('position')+' '+s.event.position:''}</div>
+        <div className="flex h-1.5 gap-1" aria-hidden="true">{s.stages.map((stage,i)=><div key={i} className={'flex-1 rounded '+(stage.status==='active'?'bg-rose-500':stage.status==='passed'?'bg-emerald-400':'bg-slate-200')}/>)}</div>
+        <p className="text-[11px] text-slate-500">{t('eventHint')}</p>
+        {s.algorithm==='eagle2'?<Eagle s={s} t={t} selectedNode={selectedNode} setSelectedNode={setSelectedNode}/>:<Dspark s={s} t={t}/>}
+        <Verification s={s} t={t}/>
+        {s.phase==='done'&&<button className="spec-small-button" onClick={()=>onRound((s.roundIndex+1)%s.rounds.length)}>{t('nextRound')} →</button>}
       </div>
-      <div className="mb-4 flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-500">{t('committedPrefix')}</span>{snapshot.prefixTokens.map((token) => <span key={token} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700">{token}</span>)}</div>
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="principle-race">
-        <div className="min-w-[720px]">
-          <div className="grid grid-cols-[150px_minmax(440px,1fr)_110px] items-end gap-3 text-[9px] text-slate-400">
-            <div>{t('outputStream')}</div>
-            <div className="relative h-8 border-b border-slate-300">
-              {timeTicks.map((tick) => <div key={tick} className="absolute bottom-0 -translate-x-1/2" style={{ left: `${tick / race.timeBudget * 100}%` }}><div className="mx-auto h-2 w-px bg-slate-300" /><span>{tick}</span></div>)}
-              <div className="absolute bottom-0 top-0 z-20 w-0.5 bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.45)]" style={{ left: `${race.progress * 100}%` }}><span className="absolute -top-1 left-1 rounded bg-rose-100 px-1 text-[8px] font-bold text-rose-700">{t('raceNow')}</span></div>
-            </div>
-            <div className="text-right">0 → {race.timeBudget}</div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-[150px_minmax(440px,1fr)_110px] items-center gap-3" data-testid="baseline-target-passes">
-            <div><h3 className="text-xs font-extrabold text-slate-800">{t('baseline')}</h3><p className="mt-1 text-[9px] text-slate-500">{t('baselineSubtitle')}</p></div>
-            <div>
-              <div className="grid h-12 gap-1" style={{ gridTemplateColumns: `repeat(${race.timeBudget}, minmax(0, 1fr))` }}>
-              {Array.from({ length: race.timeBudget }, (_, index) => {
-                const complete = index < race.baselineCompleted;
-                const active = index === race.baselineActivePass;
-                return <motion.div key={index} animate={{ scale: active ? 1.03 : 1 }} className={`flex flex-col items-center justify-center rounded-lg border text-center ${complete ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : active ? 'border-rose-400 bg-rose-50 text-rose-800 ring-2 ring-rose-100' : 'border-slate-200 bg-white text-slate-400'}`}><Cpu size={14} /><span className="mt-0.5 text-[8px] font-bold">{t('targetForward')} #{index + 1}</span></motion.div>;
-              })}
-              </div>
-              <div className="mt-2 flex min-h-7 flex-wrap items-center gap-1"><span className="mr-1 text-[8px] font-bold uppercase text-slate-400">{t('outputStream')}</span>{race.baselineTokens.map((token, index) => <motion.span initial={{ y: 4, opacity: 0 }} animate={{ y: 0, opacity: 1 }} key={`${token}-${index}`} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[8px] font-bold text-emerald-800">{token}</motion.span>)}</div>
-            </div>
-            <div className="rounded-lg bg-white p-2 text-right"><div className="text-[8px] uppercase text-slate-400">{t('raceBaselineCount')}</div><div className="text-lg font-extrabold text-slate-700">{race.baselineCompleted}</div><div className="text-[8px] text-slate-400">{t('tokenUnit')}</div></div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-[150px_minmax(440px,1fr)_110px] items-center gap-3" data-testid="speculative-target-passes">
-            <div><h3 className="text-xs font-extrabold text-indigo-900">{t('selectedAlgorithm')}</h3><p className="mt-1 text-[9px] text-indigo-600">{t('cheapProposalHint')}</p></div>
-            <div>
-              <div className="relative h-12 overflow-hidden rounded-lg border border-indigo-200 bg-white">
-                {race.cycles.map((cycle) => {
-                  const cycleWidth = Math.max(0.001, cycle.end - cycle.start);
-                  const draftWidth = (cycle.draftEnd - cycle.start) / cycleWidth * 100;
-                  const verifyWidth = (cycle.verifyEnd - cycle.draftEnd) / cycleWidth * 100;
-                  const commitWidth = Math.max(0, 100 - draftWidth - verifyWidth);
-                  return <div key={cycle.index} className={`absolute inset-y-1 rounded border ${cycle.completed ? 'border-emerald-300' : cycle.active ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'}`} style={{ left: `${cycle.start / race.timeBudget * 100}%`, width: `${(cycle.end - cycle.start) / race.timeBudget * 100}%` }}><div className="absolute inset-y-0 left-0 bg-violet-100" style={{ width: `${draftWidth}%` }} title={t('cheapProposal')} /><div className="absolute inset-y-0 bg-blue-100" style={{ left: `${draftWidth}%`, width: `${verifyWidth}%` }} title={t('oneBlockVerify')} /><div className="absolute inset-y-0 bg-amber-100" style={{ left: `${draftWidth + verifyWidth}%`, width: `${commitWidth}%` }} title={t('commitBurst')} /><span className="absolute left-1 top-0.5 z-10 text-[7px] font-bold text-indigo-700">{t('cycle')} {cycle.index + 1}</span>{cycle.completed && <span className="absolute bottom-0.5 right-1 z-10 rounded bg-emerald-600 px-1 text-[7px] font-bold text-white">+{snapshot.committedCount}</span>}</div>;
-                })}
-                <div className="absolute inset-y-0 z-10 w-0.5 bg-rose-500" style={{ left: `${race.progress * 100}%` }} />
-              </div>
-              <div className="mt-2 flex min-h-7 flex-wrap items-center gap-1"><span className="mr-1 text-[8px] font-bold uppercase text-indigo-400">{t('outputStream')}</span>{race.speculativeTokens.map((token, index) => <motion.span initial={{ y: 4, opacity: 0 }} animate={{ y: 0, opacity: 1 }} key={`${token}-${index}`} className={`rounded border px-1.5 py-1 text-[8px] font-bold ${outputTone(index, race.baselineCompleted)}`}>{token}</motion.span>)}</div>
-              <div className="mt-1 flex gap-2 text-[8px] font-semibold"><span className="text-violet-700">■ {t('cheapProposal')}</span><span className="text-blue-700">■ {t('oneBlockVerify')}</span><span className="text-amber-700">■ {t('commitBurst')}</span></div>
-            </div>
-            <div className="rounded-lg bg-indigo-50 p-2 text-right"><div className="text-[8px] uppercase text-indigo-500">{t('raceSpeculativeCount')}</div><div className="text-lg font-extrabold text-indigo-800">{race.speculativeCommitted}</div><div className="text-[8px] text-indigo-400">{t('tokenUnit')}</div></div>
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center"><div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800"><span className={`h-2 w-2 rounded-full ${racePlaying ? 'animate-pulse bg-blue-500' : race.isDone ? 'bg-emerald-500' : 'bg-slate-300'}`} />{t(raceStatusKey)}</div><div className={`rounded-lg px-3 py-2 text-center text-xs font-extrabold ${race.lead > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{race.lead > 0 ? `${t('raceLead')} +${race.lead} ${t('tokenUnit')}` : race.isDone ? t('raceTie') : t('raceNoLead')}</div></div>
+    </div>
+  </section>;
+}
+function Principles({s,t}) {
+  const [draw,setDraw]=useState(0.82);
+  const [residualDraw,setResidualDraw]=useState(0.37);
+  const [proposal,setProposal]=useState(2);
+  const m=deriveSamplingModel(90,draw,proposal,residualDraw);
+  return <div className="grid min-w-0 items-start gap-3 xl:grid-cols-2">
+    <section className="spec-card min-w-0" data-testid="sampling-lab"><h3 className="text-base font-bold">{t('sampling')}</h3><p className="my-2 text-xs leading-relaxed text-slate-600">{t('samplingHint')}</p>
+      <div className="my-3 flex flex-wrap items-center gap-3"><label className="text-xs">{t('chooseProposal')} <select aria-label={t('chooseProposal')} value={proposal} onChange={e=>setProposal(Number(e.target.value))} className="rounded border px-2 py-1">{['A','B','C'].map((token,i)=><option key={token} value={i}>{token}</option>)}</select></label><label className="flex items-center gap-2 text-xs">{t('draw')} {draw.toFixed(2)}<input aria-label={t('draw')} type="range" min="0" max="0.99" step="0.01" value={draw} onChange={e=>setDraw(Number(e.target.value))} className="w-24 accent-blue-600"/></label></div>
+      <div className="overflow-x-auto"><table className="w-full text-left text-xs tabular-nums"><thead><tr><th>Token</th><th>p</th><th>q</th><th>{t('residual')}</th><th>{t('mass')}</th></tr></thead><tbody>{['A','B','C'].map((token,i)=><tr key={token} className={proposal===i?'bg-blue-50':''}><td className="py-2 font-semibold">{token}</td><td>{m.p[i].toFixed(3)}</td><td>{m.q[i].toFixed(3)}</td><td>{m.rejection<1e-10?'—':m.residual[i].toFixed(3)}</td><td className="font-bold text-emerald-700">{m.result[i].toFixed(3)}</td></tr>)}</tbody></table></div>
+      <div className={'my-2 rounded border px-3 py-2 text-xs '+(m.accepted?'border-emerald-300 bg-emerald-50':'border-orange-300 bg-orange-50')}>{t('threshold')}: {m.threshold.toFixed(3)} · {t(m.accepted?'sampleAccept':'sampleReject')}</div>
+      {!m.accepted&&<label className="my-2 flex flex-wrap items-center gap-2 text-xs">{t('residualDraw')} {residualDraw.toFixed(2)}<input aria-label={t('residualDraw')} type="range" min="0" max="0.99" step="0.01" value={residualDraw} onChange={e=>setResidualDraw(Number(e.target.value))} className="w-28 accent-orange-600"/></label>}
+      <div className="text-xs font-semibold text-emerald-800">{t('sampleOutput')}: {['A','B','C'][m.output]}</div>
+      <div className="space-y-2 overflow-x-auto py-2 text-xs"><div><MathFormula>{FORMULAS.accept}</MathFormula></div><div><MathFormula>{FORMULAS.residual}</MathFormula></div></div>
+      <p className="mt-2 text-xs leading-relaxed text-slate-600">{t('exactHint')}</p><p className="mt-2 text-xs leading-relaxed text-slate-600">{t('lossless')}</p>
     </section>
-  );
-}
-
-const matrixSize = {
-  tall: 'h-12 w-8', wide: 'h-8 w-14', square: 'h-10 w-10', narrow: 'h-10 w-7', vector: 'h-12 w-3',
-};
-
-const matrixPalette = {
-  target: { border: 'border-blue-400', fill: 'bg-blue-100', grid: 'rgba(37,99,235,0.22)', text: 'text-blue-950' },
-  shared: { border: 'border-amber-400', fill: 'bg-amber-100', grid: 'rgba(217,119,6,0.22)', text: 'text-amber-950' },
-  draft: { border: 'border-violet-400', fill: 'bg-violet-100', grid: 'rgba(124,58,237,0.22)', text: 'text-violet-950' },
-};
-
-function WeightMatrixGlyph({ matrix, tone = 'target', active = false, t }) {
-  const palette = matrixPalette[tone];
-  const gridStyle = {
-    backgroundImage: `linear-gradient(to right, ${palette.grid} 1px, transparent 1px), linear-gradient(to bottom, ${palette.grid} 1px, transparent 1px)`,
-    backgroundSize: '7px 7px',
-  };
-  return (
-    <div className={`flex min-w-0 items-center gap-2 rounded-md border bg-white/80 p-2 transition ${palette.border} ${active ? 'ring-2 ring-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.2)]' : ''}`}>
-      <div aria-hidden="true" style={gridStyle} className={`shrink-0 rounded border ${matrixSize[matrix.aspect] || matrixSize.square} ${palette.border} ${palette.fill}`} />
-      <div className="min-w-0 flex-1"><div className={`text-[8px] font-extrabold leading-tight ${palette.text}`}>{t(matrix.labelKey)}</div><div className="mt-0.5 overflow-x-auto text-[9px]"><MathFormula>{matrix.formula}</MathFormula></div><div className="mt-0.5 flex flex-wrap items-center gap-1 text-[7px] text-slate-500"><span>{t('shapeLabel')}</span><MathFormula>{matrix.shape}</MathFormula></div></div>
+    <div className="min-w-0 space-y-3"><section className="overflow-hidden rounded-xl border border-slate-800 bg-[#0d1117] text-slate-300"><h3 className="border-b border-slate-700 p-3 text-xs font-bold">{t('code')} · {t(s.algorithm)}</h3><pre className="overflow-x-auto p-3 text-[11px] leading-6">{CODES[s.algorithm].map((line,i)=><div key={line} className={s.event?.codeIndex===i?'rounded bg-blue-500/20 text-blue-100':''}>{line}</div>)}</pre></section>
+      <section className="spec-card !bg-amber-50"><h3 className="text-sm font-bold">{t('boundary')}</h3><p className="my-2 text-xs leading-relaxed text-amber-950">{t('boundaryText')}</p><div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-blue-700">{[['paperEagle','https://arxiv.org/html/2406.16858v1'],['paperDspark','https://arxiv.org/html/2607.05147v1'],['docs','https://docs.sglang.io/docs/advanced_features/speculative_decoding'],['dsparkConfig','https://github.com/deepseek-ai/DeepSpec/blob/main/config/dspark/dspark_qwen3_4b.py'],['samplingPaper','https://proceedings.mlr.press/v202/leviathan23a.html']].map(([key,url])=><a key={key} href={url} target="_blank" rel="noreferrer" className="underline">{t(key)}</a>)}</div></section>
     </div>
-  );
+  </div>;
 }
-
-function SimpleWeightBlock({ group, tone, t }) {
-  return <WeightMatrixGlyph matrix={group} tone={tone} active={group.active} t={t} />;
-}
-
-function StackedTransformerLayer({ group, tone, showKv = false, kvShape, t }) {
-  const isTarget = tone === 'target';
-  const isLayerStack = ['decoderStack', 'draftDecoder', 'parallelBackbone'].includes(group.id);
-  return (
-    <div className={`relative mb-2 mt-2 ${isLayerStack ? 'ml-2' : ''}`}>
-      {isLayerStack && <><div className={`absolute inset-0 translate-x-2 translate-y-2 rounded-xl border ${isTarget ? 'border-blue-200 bg-blue-50' : 'border-violet-200 bg-violet-50'}`} /><div className={`absolute inset-0 translate-x-1 translate-y-1 rounded-xl border ${isTarget ? 'border-blue-300 bg-blue-50' : 'border-violet-300 bg-violet-50'}`} /></>}
-      <div className={`relative rounded-xl border-2 bg-white p-2.5 transition ${isTarget ? 'border-blue-400' : 'border-violet-400'} ${group.active ? 'ring-2 ring-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.22)]' : ''}`}>
-        <div className="flex flex-wrap items-center justify-between gap-1"><div className={`text-[9px] font-extrabold ${isTarget ? 'text-blue-950' : 'text-violet-950'}`}>{t(group.labelKey)}</div><div className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-700"><MathFormula>{group.formula}</MathFormula></div></div>
-        {isLayerStack && <div className="mt-1 text-[7px] font-semibold uppercase tracking-wide text-slate-400">{t('representativeLayer')} · {t('stackedLayers')}</div>}
-        <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{group.matrices.map((matrix) => <WeightMatrixGlyph key={matrix.id} matrix={matrix} tone={tone} active={group.active} t={t} />)}</div>
-        <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-center text-[8px] font-semibold text-slate-600">{t('weightNormStage')} → {t('weightAttention')} → {t('layerResidual')} → {t('weightNormStage')} → {t('weightMlp')}</div>
-        {showKv && <div className={`mt-2 rounded-lg border border-dashed border-cyan-400 bg-cyan-50 p-2 ${group.active ? 'ring-2 ring-cyan-200' : ''}`}><div className="flex flex-wrap items-center justify-between gap-1 text-[8px] font-extrabold text-cyan-900"><span>{t('targetKvPerLayer')}</span><MathFormula>{String.raw`K^{(\ell)},V^{(\ell)}`}</MathFormula></div><div className="mt-1 text-[8px] text-cyan-800"><MathFormula>{kvShape}</MathFormula></div><div className="mt-1 text-[7px] text-cyan-700">{t('targetKvState')}</div></div>}
-        {group.active && <div className="mt-2 text-[8px] font-bold uppercase tracking-wide text-rose-600">{t('activeNow')}</div>}
-      </div>
-    </div>
-  );
-}
-
-function FlowArrow({ label, tone = 'slate' }) {
-  const tones = { slate: 'text-slate-400', cyan: 'text-cyan-700', violet: 'text-violet-700', emerald: 'text-emerald-700' };
-  return <div className={`flex items-center justify-center gap-1 py-1 text-center text-[8px] font-bold ${tones[tone]}`}><ArrowRight className="rotate-90" size={14} />{label}</div>;
-}
-
-function ArchitectureDetailedLegacy({ snapshot, t }) {
-  const { architecture } = snapshot;
-  const target = Object.fromEntries(architecture.targetWeights.map((group) => [group.id, group]));
-  const draft = Object.fromEntries(architecture.draftWeights.map((group) => [group.id, group]));
-  const shared = Object.fromEntries(architecture.sharedWeights.map((group) => [group.id, group]));
-  const descriptionKey = {
-    featureDraft: 'descFeatureDraft', expandTree: 'descExpandTree', rerankTree: 'descRerankTree', flattenMask: 'descFlattenMask', targetVerify: snapshot.algorithm === 'eagle2' ? 'descTargetVerifyTree' : 'descTargetVerifyBlock', commitKv: snapshot.algorithm === 'eagle2' ? 'descCommitTree' : 'descCommitBlock',
-    parallelBackbone: 'descParallelBackbone', sequentialMarkov: 'descSequentialMarkov', confidenceHead: 'descConfidenceHead', scheduleVerify: 'descScheduleVerify',
-  }[snapshot.activeOperation?.type];
-  const stageKey = snapshot.phase === 'idle' ? 'ready' : snapshot.phase === 'done' ? 'done' : snapshot.activeOperation.stageKey;
-  const liveCandidates = (snapshot.algorithm === 'eagle2' ? snapshot.flattenedCandidates : snapshot.candidates).slice(0, 8);
-  const dimensionItems = [
-    [String.raw`B`, 'dimBatch'], [String.raw`L`, 'dimSequence'], [String.raw`V`, 'dimVocab'], [String.raw`d`, 'dimHidden'], [String.raw`d_{ff}`, 'dimFfn'], [String.raw`H_{kv},d_h`, 'dimHeads'],
-    ...(snapshot.algorithm === 'dspark' ? [[String.raw`M`, 'dimFeatureTaps'], [String.raw`\gamma`, 'dimBlock'], [String.raw`r`, 'dimRank']] : []),
-  ];
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4" data-testid="speculative-architecture">
-      <div className="mb-4"><div className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">{t('architectureTitle')}</div><h2 className="mt-1 text-base font-extrabold text-slate-900">{t('macroTitle')}</h2><p className="mt-1 max-w-5xl text-xs leading-relaxed text-slate-500">{t('macroSubtitle')}</p></div>
-      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(350px,0.75fr)]">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="static-weight-topology">
-          <div><h3 className="text-sm font-extrabold text-slate-900">{t('modelWeightCanvas')}</h3><p className="mt-1 text-[10px] leading-relaxed text-slate-500">{t('modelWeightCanvasHint')}</p></div>
-          <div className="mt-2 flex flex-wrap gap-1.5 text-[8px] font-bold"><span className="rounded border border-blue-300 bg-blue-50 px-2 py-1 text-blue-800">■ {t('targetOwnWeights')}</span><span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-800">■ {t('sharedFrozenWeights')}</span><span className="rounded border border-violet-300 bg-violet-50 px-2 py-1 text-violet-800">■ {t('draftTrainableWeights')}</span><span className="rounded border border-dashed border-cyan-400 bg-cyan-50 px-2 py-1 text-cyan-800">□ {t('runtimeActivationOnly')}</span></div>
-          <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2"><div className="text-[8px] font-bold uppercase tracking-wide text-slate-500">{t('dimensionLegend')}</div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{dimensionItems.map(([formula, key]) => <span key={key} className="inline-flex items-center gap-1 text-[8px] text-slate-600"><MathFormula>{formula}</MathFormula>= {t(key)}</span>)}</div></div>
-
-          <div className="mt-3 grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_104px_minmax(0,1fr)]">
-            <div className={`rounded-xl border-2 bg-white p-3 transition ${architecture.activeOwner === 'target' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-blue-300'}`} data-testid="target-model-tower">
-              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-2 text-xs font-extrabold text-blue-950"><Cpu size={16} />{t('targetTower')}</div><p className="mt-0.5 text-[8px] text-blue-700">{t('targetCheckpointHint')}</p></div><div className="rounded bg-blue-50 px-2 py-1 text-[9px] text-blue-700"><MathFormula>{String.raw`\theta_T`}</MathFormula></div></div>
-              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-900 p-2 text-center text-[9px] font-bold text-white">{t('inputTokenTensor')} · <MathFormula>{architecture.tensorShapes.input}</MathFormula></div>
-              <FlowArrow label={t('weightEmbedding')} />
-              <SimpleWeightBlock group={target.embedding} tone="target" t={t} />
-              <FlowArrow label={t('targetHiddenTensor')} tone="cyan" />
-              <StackedTransformerLayer group={target.decoderStack} tone="target" showKv kvShape={architecture.tensorShapes.targetKv} t={t} />
-              <FlowArrow label={t('weightFinalNorm')} />
-              <SimpleWeightBlock group={target.finalNorm} tone="target" t={t} />
-              <FlowArrow label={t('weightLmHead')} />
-              <SimpleWeightBlock group={target.lmHead} tone="target" t={t} />
-              <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-center text-[9px] font-bold text-blue-900">{t('logitsTensor')} · <MathFormula>{architecture.tensorShapes.logits}</MathFormula></div>
-            </div>
-
-            <div className="rounded-xl border border-dashed border-cyan-300 bg-cyan-50/60 p-2 2xl:mt-24" data-testid="model-coupling">
-              <div className="text-center text-[8px] font-extrabold uppercase tracking-wide text-cyan-900">{t('modelCoupling')}</div>
-              <div className="mt-2 space-y-3"><div className="text-center text-[8px] font-bold text-cyan-800"><ArrowRight className="mx-auto mb-1 rotate-90 2xl:rotate-0" size={16} />{t('targetFeatureToDraft')}</div><div className="text-center text-[8px] font-bold text-violet-800"><ArrowRight className="mx-auto mb-1 rotate-90 2xl:rotate-180" size={16} />{t('draftCandidatesToTarget')}</div><div className="text-center text-[8px] font-bold text-emerald-800"><ArrowRight className="mx-auto mb-1 rotate-90 2xl:rotate-180" size={16} />{t('targetScoresToKv')}</div></div>
-            </div>
-
-            <div className={`rounded-xl border-2 bg-white p-3 transition ${architecture.activeOwner === 'draft' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-violet-300'}`} data-testid="draft-model-tower">
-              <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-2 text-xs font-extrabold text-violet-950"><BrainCircuit size={16} />{t('draftTower')}</div><p className="mt-0.5 text-[8px] text-violet-700">{t(architecture.checkpointKey)}</p></div><div className="rounded bg-violet-50 px-2 py-1 text-[9px] text-violet-700"><MathFormula>{String.raw`\theta_D`}</MathFormula></div></div>
-              <div className="mt-3 grid grid-cols-2 gap-1.5"><SimpleWeightBlock group={shared.sharedEmbedding} tone="shared" t={t} /><SimpleWeightBlock group={architecture.activationTap} tone="shared" t={t} /></div>
-              <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-[7px] leading-relaxed text-amber-800">{t('activationTapHint')}</p>
-              <FlowArrow label={snapshot.algorithm === 'eagle2' ? t('weightFusionProjection') : t('weightFeatureProjection')} tone="violet" />
-              <SimpleWeightBlock group={snapshot.algorithm === 'eagle2' ? draft.fusionProjection : draft.featureProjection} tone="draft" t={t} />
-              <FlowArrow label={snapshot.algorithm === 'eagle2' ? t('weightEagleDecoder') : t('weightParallelBackbone')} tone="violet" />
-              <StackedTransformerLayer group={snapshot.algorithm === 'eagle2' ? draft.draftDecoder : draft.parallelBackbone} tone="draft" t={t} />
-              {snapshot.algorithm === 'dspark' && <><FlowArrow label={t('weightMarkovHead')} tone="violet" /><StackedTransformerLayer group={draft.markovHead} tone="draft" t={t} /><FlowArrow label={t('weightConfidenceHead')} tone="violet" /><SimpleWeightBlock group={draft.confidenceHead} tone="draft" t={t} /></>}
-              <FlowArrow label={t('sharedFrozenWeights')} tone="violet" />
-              <SimpleWeightBlock group={shared.sharedLmHead} tone="shared" t={t} />
-              <div className={`mt-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2 transition ${architecture.controller.active ? 'ring-2 ring-rose-300' : ''}`}><div className="text-[8px] font-extrabold text-slate-800">{t(architecture.controller.labelKey)}</div><p className="mt-1 text-[7px] leading-relaxed text-slate-500">{t('noLearnedWeights')}</p></div>
-              <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-center text-[9px] font-bold text-violet-900">{t('candidateTensor')} · <MathFormula>{architecture.tensorShapes.candidates}</MathFormula></div>
-              <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[8px] leading-relaxed text-amber-800">{t('sharedReuseHint')}</p>
-            </div>
-          </div>
-          <p className="mt-3 text-[8px] text-slate-400">{t('notToScale')}</p>
-        </div>
-
-        <aside className="space-y-3" data-testid="runtime-activation-order">
-          <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-3"><h3 className="text-sm font-extrabold text-slate-900">{t('liveRuntimeTitle')}</h3><p className="mt-1 text-[10px] leading-relaxed text-slate-500">{t('liveRuntimeSubtitle')}</p><div className="mt-3 rounded-lg border border-blue-200 bg-white p-3"><div className="text-[8px] font-bold uppercase tracking-wide text-blue-600">{t('currentStage')}</div><div className="mt-1 text-sm font-extrabold text-slate-900">{t(stageKey)}</div><p className="mt-1 text-[10px] leading-relaxed text-slate-600">{descriptionKey ? t(descriptionKey) : t('draftOffDuringPrefill')}</p></div>
-            <div className="mt-2 space-y-1.5">{architecture.runtimeStages.map((stage) => { const Icon = stage.owner === 'target' ? Cpu : stage.owner === 'draft' ? BrainCircuit : ShieldCheck; const ownerKey = stage.owner === 'target' ? 'targetOwnerShort' : stage.owner === 'draft' ? 'draftOwnerShort' : 'kvOwnerShort'; return <div key={stage.id} className={`grid grid-cols-[20px_1fr_auto] items-center gap-2 rounded-lg border px-2.5 py-2 transition ${stageTone[stage.status]}`}><Icon size={14} /><div><div className="text-[9px] font-extrabold">{t(stage.labelKey)}</div><div className="text-[7px] opacity-75">{t(stage.hintKey)}</div></div><span className="text-[7px] font-bold uppercase">{t(ownerKey)}</span></div>; })}</div>
-            <div className="mt-2 flex items-center justify-end gap-1 text-[8px] font-semibold text-slate-500"><RotateCcw size={12} />{t('loopBack')}</div>
-          </div>
-
-          <div className="rounded-xl border border-cyan-200 bg-white p-3"><h3 className="text-xs font-extrabold text-cyan-950">{t('liveTensorTrace')}</h3><div className="mt-2 rounded-lg border border-dashed border-cyan-300 bg-cyan-50 p-2"><div className="text-[8px] font-bold text-cyan-800">{t('currentActivation')}</div><div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-[9px]"><MathFormula>{architecture.activationTap.formula}</MathFormula><MathFormula>{architecture.activationTap.shape}</MathFormula></div></div><div className="mt-2 text-[8px] font-bold text-slate-500">{t('currentCandidates')}</div><div className="mt-1 flex flex-wrap gap-1">{liveCandidates.map((candidate) => <span key={candidate.id} className={`rounded border px-1.5 py-1 text-[8px] font-bold ${candidateTone[candidate.status] || candidateTone.proposed}`}>{candidate.token}</span>)}</div><p className="mt-2 text-[8px] leading-relaxed text-cyan-800">{t('targetKvInside')}</p></div>
-
-          <KvLifecycle snapshot={snapshot} t={t} />
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"><div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3"><div className="flex items-center gap-1 text-[10px] font-extrabold text-indigo-900"><Gauge size={14} />{t('whyFastCard')}</div><div className="mt-2 overflow-x-auto rounded bg-white p-1 text-[8px]"><MathFormula block>{SPEEDUP_FORMULA}</MathFormula></div><p className="mt-2 text-[9px] leading-relaxed text-indigo-900">{t('whyFastBody')}</p></div><div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3"><div className="flex items-center gap-1 text-[10px] font-extrabold text-emerald-900"><ShieldCheck size={14} />{t('whyExactCard')}</div><div className="mt-2 overflow-x-auto rounded bg-white p-1 text-[8px]"><MathFormula block>{ACCEPT_FORMULA}</MathFormula></div><p className="mt-2 text-[9px] leading-relaxed text-emerald-900">{t('whyExactBody')}</p></div></div>
-        </aside>
-      </div>
-    </section>
-  );
-}
-
-const draftFlowTone = {
-  activation: 'border-dashed border-cyan-400 bg-cyan-50 text-cyan-950',
-  shared: 'border-amber-300 bg-amber-50 text-amber-950',
-  draft: 'border-violet-300 bg-violet-50 text-violet-950',
-  runtime: 'border-dashed border-slate-300 bg-slate-50 text-slate-700',
-};
-
-function DraftFlowNode({ group, t }) {
-  const tone = draftFlowTone[group.kind] || draftFlowTone.draft;
-  return (
-    <div className={`min-w-0 rounded-md border p-1.5 transition ${tone} ${group.active ? 'ring-2 ring-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.16)]' : ''}`}>
-      <div className="flex min-w-0 items-start justify-between gap-1">
-        <span className="min-w-0 text-[7px] font-extrabold leading-tight">{t(group.labelKey)}</span>
-        {group.active && <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" aria-label={t('activeNow')} title={t('activeNow')} />}
-      </div>
-      {(group.formula || group.shape) && <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[6px] leading-none opacity-75">{group.formula && <MathFormula>{group.formula}</MathFormula>}{group.shape && <MathFormula>{group.shape}</MathFormula>}</div>}
-      {group.matrices && <div className="mt-1 grid grid-cols-2 gap-0.5">{group.matrices.map((matrix) => <div key={matrix.id} className="min-w-0 rounded border border-current/15 bg-white/70 px-1 py-0.5 text-center text-[6px] font-bold leading-none"><MathFormula>{matrix.formula}</MathFormula></div>)}</div>}
-    </div>
-  );
-}
-
-function DraftInternalFlow({ snapshot, t }) {
-  const { architecture } = snapshot;
-  const groups = Object.fromEntries(architecture.draftWeights.map((group) => [group.id, group]));
-  const shared = Object.fromEntries(architecture.sharedWeights.map((group) => [group.id, group]));
-  return (
-    <div className="mt-2 space-y-1" data-testid="draft-internal-flow">
-      <div className="grid grid-cols-2 gap-1"><DraftFlowNode group={architecture.activationTap} t={t} /><DraftFlowNode group={shared.sharedEmbedding} t={t} /></div>
-      {snapshot.algorithm === 'eagle2' ? <>
-        <div className="grid grid-cols-[0.72fr_1.28fr] gap-1"><DraftFlowNode group={groups.fusionProjection} t={t} /><DraftFlowNode group={groups.draftDecoder} t={t} /></div>
-        <div className="grid grid-cols-2 gap-1"><DraftFlowNode group={shared.sharedLmHead} t={t} /><DraftFlowNode group={architecture.controller} t={t} /></div>
-      </> : <>
-        <div className="grid grid-cols-[0.72fr_1.28fr] gap-1"><DraftFlowNode group={groups.featureProjection} t={t} /><DraftFlowNode group={groups.parallelBackbone} t={t} /></div>
-        <div className="grid grid-cols-2 gap-1"><DraftFlowNode group={shared.sharedLmHead} t={t} /><DraftFlowNode group={groups.markovHead} t={t} /></div>
-        <div className="grid grid-cols-[0.8fr_1.2fr] gap-1"><DraftFlowNode group={groups.confidenceHead} t={t} /><DraftFlowNode group={architecture.controller} t={t} /></div>
-      </>}
-    </div>
-  );
-}
-
-function Architecture({ snapshot, t, isPlaying, onReset, onPlay, onNext }) {
-  const { architecture } = snapshot;
-  const targetActive = architecture.activeOwner === 'target';
-  const draftActive = architecture.activeOwner === 'draft';
-  const kvActive = snapshot.kvLifecycle.isChanging;
-  const targetStages = architecture.runtimeStages.filter((stage) => stage.owner === 'target');
-  const draftStage = architecture.runtimeStages.find((stage) => stage.owner === 'draft');
-  const metrics = [
-    [t('metricCommitted'), `${snapshot.committedCount} ${t('tokenUnit')}`],
-    [t('metricBaselinePasses'), `${snapshot.baselineTargetPasses} ${t('passes')}`],
-    [t('metricTargetPasses'), `${snapshot.targetPasses} ${t('pass')}`],
-    [t('metricVerified'), `${snapshot.verifiedCount} / ${snapshot.draftedCount}`],
-    [t('metricWasted'), `${snapshot.wastedCount} ${t('positions')}`],
-  ];
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4" data-testid="speculative-architecture">
-      <div className="mb-4"><div className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-600">{t('architectureTitle')}</div><h2 className="mt-1 text-base font-extrabold text-slate-900">{t('macroTitle')}</h2><p className="mt-1 max-w-5xl text-xs leading-relaxed text-slate-500">{t('macroSubtitle')}</p></div>
-      <div className="mx-auto grid w-full max-w-[1240px] items-start gap-2.5 xl:grid-cols-[310px_minmax(0,920px)]">
-        <aside className="space-y-3" data-testid="static-weight-topology">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5"><h3 className="text-sm font-extrabold text-slate-900">{t('relationOverview')}</h3><p className="mt-1 text-[10px] leading-relaxed text-slate-500">{t('relationOverviewHint')}</p>
-            <div className={`mt-2.5 rounded-xl border-2 bg-white p-2.5 transition ${targetActive ? 'border-rose-400 ring-2 ring-rose-200' : 'border-blue-300'}`} data-testid="target-model-tower">
-              <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2 text-xs font-extrabold text-blue-950"><Cpu size={15} />{t('targetModel')}</div><span className="rounded bg-blue-50 px-2 py-1 text-[9px] text-blue-800"><MathFormula>{String.raw`\theta_T`}</MathFormula></span></div>
-              <div className="mt-2 flex items-center gap-1" aria-label={t('targetCompactStructure')}><span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[8px] font-bold text-blue-800">E</span><ArrowRight size={11} className="text-blue-300" /><div className="relative flex-1 py-1"><div className="absolute inset-x-1 top-0 h-5 rounded border border-blue-200 bg-blue-50" /><div className="absolute inset-x-0 top-1 h-5 rounded border border-blue-300 bg-blue-100" /><div className="relative mt-2 rounded border border-blue-400 bg-white px-2 py-1 text-center text-[8px] font-bold text-blue-900">{t('weightDecoderStack')} <MathFormula>{String.raw`L_T`}</MathFormula></div></div><ArrowRight size={11} className="text-blue-300" /><span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[8px] font-bold text-blue-800">LM</span></div>
-              <div className="mt-2 text-[8px] font-semibold text-blue-800">{t('targetCompactStructure')}</div><div className="mt-2 space-y-1 text-[8px] leading-relaxed text-slate-600"><div>→ {t('targetInputLabel')}</div><div>← {t('targetOutputLabel')}</div></div>
-              <div className="mt-2 border-t border-blue-100 pt-2"><div className="text-[6px] font-bold uppercase tracking-wide text-blue-500">{t('targetStagePorts')}</div><div className="mt-1 flex flex-wrap gap-1">{targetStages.map((stage) => <span key={stage.id} className={`rounded border px-1.5 py-1 text-[7px] font-bold ${stageTone[stage.status]}`}>{t(stage.labelKey)}</span>)}</div></div>
-            </div>
-
-            <div className="my-1 grid grid-cols-2 gap-2"><div className={`flex items-center gap-1 rounded px-1 py-1 text-[7px] font-bold ${draftActive ? 'bg-cyan-100 text-cyan-900' : 'text-cyan-700'}`}><ArrowRight className="rotate-90" size={13} /><span>{t('targetFeaturePort')}</span></div><div className={`flex items-center justify-end gap-1 rounded px-1 py-1 text-right text-[7px] font-bold ${targetActive ? 'bg-violet-100 text-violet-900' : 'text-violet-700'}`}><span>{t('candidateReturnPort')}</span><ArrowRight className="-rotate-90" size={13} /></div></div>
-
-            <div className={`rounded-xl border-2 bg-white p-2.5 transition ${draftActive ? 'border-rose-400 ring-2 ring-rose-200' : 'border-violet-300'}`} data-testid="draft-model-tower">
-              <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2 text-xs font-extrabold text-violet-950"><BrainCircuit size={15} />{t(snapshot.algorithm)}</div><div className="flex items-center gap-1"><span className="rounded bg-violet-50 px-2 py-1 text-[9px] text-violet-800"><MathFormula>{String.raw`\theta_D`}</MathFormula></span>{draftStage && <span className={`rounded border px-1.5 py-1 text-[7px] font-bold ${stageTone[draftStage.status]}`}>{t(draftStage.labelKey)}</span>}</div></div>
-              <DraftInternalFlow snapshot={snapshot} t={t} />
-            </div>
-
-            <div className={`my-1 grid grid-cols-[18px_1fr] items-center gap-2 rounded px-1 py-1 text-[8px] font-bold ${targetActive || kvActive ? 'bg-emerald-100 text-emerald-900' : 'text-emerald-700'}`}><ArrowRight className="rotate-90" size={15} /><span>{t('targetVerdictPort')} · {t('interactionVerify')}</span></div>
-
-            <div
-              className={`rounded-xl border p-2.5 transition ${snapshot.kvLifecycle.state === 'verifying' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200' : snapshot.kvLifecycle.state === 'committing' ? 'border-rose-400 bg-rose-50 ring-2 ring-rose-200' : snapshot.kvLifecycle.state === 'stable' ? 'border-emerald-300 bg-emerald-50' : 'border-cyan-300 bg-cyan-50'}`}
-              data-testid="compact-kv-relation"
-              data-kv-state={snapshot.kvLifecycle.state}
-            >
-              <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2 text-[10px] font-extrabold text-cyan-950"><Boxes size={14} />{t('lifecycleTitle')}</div><span className="rounded border border-current/15 bg-white/70 px-1.5 py-1 text-[7px] font-bold text-slate-700">{t(snapshot.kvLifecycle.statusKey)}</span></div>
-              <div className="mt-2 flex items-center gap-1">
-                <div className="flex h-5 w-16 shrink-0 items-center justify-center rounded border border-slate-400 bg-slate-300 px-1 text-[6px] font-bold text-slate-700">{t('kvPrefixResident')}</div>
-                <ArrowRight size={10} className="shrink-0 text-cyan-500" />
-                <div className="flex min-w-0 flex-1 gap-1">{snapshot.kvLifecycle.slots.map((slot) => <div key={slot.id} data-kv-slot-state={slot.state} aria-label={`${t('kvCandidateSlots')} ${slot.index + 1}`} className={`h-5 min-w-2 flex-1 rounded border transition ${kvSlotTone[slot.state]}`} />)}</div>
-              </div>
-              {snapshot.kvLifecycle.correctionPending && <div className="mt-1.5 flex items-center justify-between gap-2 rounded border border-orange-200 bg-orange-50 px-1.5 py-1 text-[7px] font-bold text-orange-800"><span>{t('kvCorrectionPending')}</span><span>{snapshot.kvLifecycle.correctionToken}</span></div>}
-              <p className="mt-1.5 text-[8px] leading-relaxed text-cyan-900">{t(snapshot.kvLifecycle.hintKey)}</p>
-            </div>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1"><div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3"><div className="flex items-center gap-1 text-[9px] font-extrabold text-indigo-900"><Gauge size={13} />{t('whyFastCard')}</div><p className="mt-1 text-[8px] leading-relaxed text-indigo-900">{t('whyFastBody')}</p></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><div className="flex items-center gap-1 text-[9px] font-extrabold text-emerald-900"><ShieldCheck size={13} />{t('whyExactCard')}</div><p className="mt-1 text-[8px] leading-relaxed text-emerald-900">{t('whyExactBody')}</p></div></div>
-        </aside>
-
-        <div className="min-w-0 space-y-3" data-testid="algorithm-workbench">
-          <div className="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 lg:flex-row lg:items-start"><div><h3 className="text-sm font-extrabold text-slate-900">{t('algorithmWorkbench')} · {t(snapshot.algorithm)}</h3><p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-500">{t('algorithmWorkbenchHint')}</p></div><div className="flex flex-wrap items-center justify-between gap-3"><StatusHeader snapshot={snapshot} t={t} /><TimelineControls isPlaying={isPlaying} isDone={snapshot.phase === 'done'} onReset={onReset} onPlay={onPlay} onNext={onNext} t={t} label="localTraceControls" /></div></div>
-          <div className="grid gap-2 sm:grid-cols-3 2xl:grid-cols-6">{snapshot.stages.map((stage, index) => <div key={stage.type} className={`relative rounded-lg border p-2 text-[9px] font-bold ${stageTone[stage.status]}`}><span className="mr-1 opacity-60">{index + 1}.</span>{t(stage.stageKey)}{index < snapshot.stages.length - 1 && <FastForward className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 text-slate-300 2xl:block" size={12} />}</div>)}</div>
-          {snapshot.algorithm === 'eagle2' ? <EagleTrace snapshot={snapshot} t={t} /> : <DsparkTrace snapshot={snapshot} t={t} />}
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3"><Check size={16} className="text-emerald-600" /><span className="mr-1 text-[9px] font-bold uppercase tracking-wide text-emerald-700">{t('output')}</span>{snapshot.committedTokens.map((token, index) => <span key={`${token}-${index}`} className={`rounded px-2 py-1 text-[9px] font-bold ${index === snapshot.committedTokens.length - 1 && snapshot.hasCorrection ? 'bg-orange-100 text-orange-800' : 'bg-white text-emerald-800'}`}>{token}</span>)}</div>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">{metrics.map(([label, value]) => <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-2"><div className="text-[8px] uppercase tracking-wide text-slate-400">{label}</div><div className="mt-1 text-sm font-extrabold text-slate-800">{value}</div></div>)}</div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function EagleTrace({ snapshot, t }) {
-  const positions = Object.fromEntries(snapshot.candidates.map((node) => [node.id, { x: 8 + node.column * 13.5, y: 12 + node.level * 26 } ]));
-  const candidateById = Object.fromEntries(snapshot.candidates.map((node) => [node.id, node]));
-  const rerankVisible = snapshot.phase === 'done' || snapshot.operationIndex >= 2;
-  const maskVisible = snapshot.phase === 'idle' || snapshot.phase === 'done' || snapshot.operationIndex >= 3;
-  return (
-    <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3" data-testid="eagle-tree">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2 text-xs font-bold text-violet-800"><GitBranch size={15} />{t('paperMechanism')} · {t('dynamicTree')}</div><div className="rounded bg-white px-2 py-1 text-[10px] text-violet-800"><MathFormula>{EAGLE_VALUE_FORMULA}</MathFormula></div></div>
-      <div className="grid items-start gap-2.5 xl:grid-cols-[minmax(560px,1.35fr)_minmax(260px,0.65fr)]">
-        <div className="self-start overflow-x-auto rounded-lg border border-violet-100 bg-white/70 p-2">
-          <div className="relative h-[280px] min-w-[560px]">
-            <svg className="absolute inset-0 h-full w-full" aria-hidden="true">{snapshot.edges.map((edge) => { const from = positions[edge.from]; const to = positions[edge.to]; const selected = candidateById[edge.from]?.selected && candidateById[edge.to]?.selected; const committedPath = snapshot.phase === 'done' && edge.accepted; return <line key={`${edge.from}-${edge.to}`} x1={`${from.x}%`} y1={`${from.y}%`} x2={`${to.x}%`} y2={`${to.y}%`} stroke={committedPath ? '#10b981' : rerankVisible && selected ? '#3b82f6' : '#cbd5e1'} strokeWidth={committedPath || selected ? 3 : 2} strokeDasharray={committedPath || selected ? undefined : '5 4'} />; })}</svg>
-            {snapshot.candidates.map((node) => <div key={node.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${positions[node.id].x}%`, top: `${positions[node.id].y}%` }}><TokenChip token={node.token} status={node.status} confidence={node.confidence} value={node.value} t={t} /></div>)}
-          </div>
-          <div className="flex flex-wrap gap-3 border-t border-violet-100 pt-2 text-[9px]"><span className="text-orange-700">■ {t('topKParents')}</span><span className="text-blue-700">■ {t('globalTopM')}</span><span className="text-emerald-700">━━ {t('selectedPath')}</span></div>
-        </div>
-        <div className={`self-start space-y-2 transition ${maskVisible ? 'opacity-100' : 'opacity-45'}`}>
-          <div className="rounded-lg border border-blue-200 bg-white p-3"><div className="text-[9px] font-bold uppercase tracking-wide text-blue-600">{t('flattenSequence')}</div><div className="mt-2 flex flex-wrap gap-1">{snapshot.flattenedCandidates.map((node, index) => <span key={node.id} className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[9px] font-bold text-blue-800">{index + 1}. {node.token}</span>)}</div></div>
-          <div className="rounded-lg border border-cyan-200 bg-white p-3"><div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-wide text-cyan-700">{t('ancestorMask')}</span><span className="text-[8px] text-slate-400">{t('maskSize', { rows: snapshot.attentionMask.length, cols: snapshot.attentionMask.length })}</span></div><div className="mx-auto grid w-fit gap-0.5" style={{ gridTemplateColumns: `repeat(${snapshot.attentionMask.length}, 20px)` }}>{snapshot.attentionMask.flatMap((row, rowIndex) => row.map((visible, columnIndex) => <div key={`${rowIndex}-${columnIndex}`} title={visible ? t('visible') : t('blocked')} className={`h-5 w-5 rounded-sm border ${visible ? 'border-cyan-400 bg-cyan-400' : 'border-slate-200 bg-slate-50'}`} />))}</div><div className="mt-2 flex justify-center gap-3 text-[8px] text-slate-500"><span className="text-cyan-700">■ {t('visible')}</span><span>□ {t('blocked')}</span></div></div>
-          <p className="rounded-lg border border-cyan-100 bg-cyan-50 p-3 text-[10px] leading-relaxed text-cyan-900">{t('maskPurpose')}</p>
-          <p className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-[9px] leading-relaxed text-violet-800">{t('maskExample', { query: snapshot.maskExample.queryToken, visible: snapshot.maskExample.visibleTokens.join(' → '), blocked: snapshot.maskExample.blockedTokens.join(' / ') })}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DsparkTrace({ snapshot, t }) {
-  const revealBackbone = snapshot.phase === 'idle' || snapshot.phase === 'done' || snapshot.operationIndex >= 0;
-  const revealMarkov = snapshot.phase === 'idle' || snapshot.phase === 'done' || snapshot.operationIndex >= 1;
-  const revealConfidence = snapshot.phase === 'idle' || snapshot.phase === 'done' || snapshot.operationIndex >= 2;
-  const revealSchedule = snapshot.phase === 'idle' || snapshot.phase === 'done' || snapshot.operationIndex >= 3;
-  const revealVerify = snapshot.phase === 'idle' || snapshot.phase === 'done' || snapshot.operationIndex >= 4;
-  return (
-    <div className="rounded-xl border border-cyan-200 bg-cyan-50/40 p-3" data-testid="dspark-block">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2 text-xs font-bold text-cyan-900"><Activity size={15} />{t('paperMechanism')} · {t('parallelBlock')}</div><p className="max-w-3xl text-[9px] text-cyan-800">{t('paperExample')}</p></div>
-      <div className="space-y-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{t('anchorProduced')}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">{snapshot.prefixTokens.map((token) => <span key={token} className="rounded bg-slate-100 px-2 py-1 text-[9px] font-bold text-slate-600">{token}</span>)}<ArrowRight size={14} className="text-slate-300" /><span className="rounded bg-slate-800 px-2 py-1 text-[9px] font-bold text-white">{t('anchor')}: {snapshot.anchorToken}</span></div>
-        </div>
-
-        <div className={`rounded-lg border border-cyan-200 bg-white p-3 transition ${revealBackbone ? 'opacity-100' : 'opacity-40'}`}>
-          <div className="grid items-center gap-2 md:grid-cols-[1fr_26px_170px]">
-            <div><div className="text-[9px] font-bold uppercase text-cyan-700">{t('dsparkInput')}</div><div className="mt-2 flex flex-wrap gap-1"><span className="rounded bg-slate-800 px-2 py-1 text-[9px] font-bold text-white">{snapshot.anchorToken}</span>{snapshot.candidates.map((candidate) => <span key={candidate.id} className="rounded border border-dashed border-cyan-300 bg-cyan-50 px-2 py-1 text-[9px] text-cyan-700">{t('maskToken')}</span>)}</div></div>
-            <ArrowRight className="m-auto rotate-90 text-cyan-400 md:rotate-0" size={18} />
-            <div className={`rounded-lg border p-3 text-center ${snapshot.activeOperation?.type === 'parallelBackbone' ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-100' : 'border-cyan-300 bg-cyan-50'}`}><BrainCircuit className="mx-auto text-cyan-700" size={18} /><div className="mt-1 text-[10px] font-extrabold text-cyan-900">{t('parallelStage')}</div></div>
-          </div>
-          <div className="mt-3 border-t border-cyan-100 pt-3"><div className="text-[9px] font-bold uppercase text-cyan-700">{t('baseLogits')}</div><p className="mt-1 text-[9px] leading-relaxed text-cyan-800">{t('baseMeaning')}</p><div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">{snapshot.candidates.map((candidate, index) => <div key={candidate.id} className="rounded border border-cyan-200 bg-cyan-50 p-2 text-center"><div className="text-[8px] font-semibold text-cyan-600">{t('positionLabel', { index: index + 1 })}</div><div className="mt-1 text-[10px] text-cyan-900"><MathFormula>{String.raw`U_{${index + 1}}`}</MathFormula></div><div className="mt-1 text-[8px] text-slate-500">{t('baseGuess')}</div><div className="text-xs font-extrabold text-cyan-900">{candidate.baseToken}</div></div>)}</div></div>
-        </div>
-
-        <div className={`rounded-lg border border-violet-200 bg-white p-3 transition ${revealMarkov ? 'opacity-100' : 'opacity-40'}`}><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><div className="text-[9px] font-bold uppercase text-violet-700">{t('sequentialStage')} · {t('transitionBias')}</div><div className="rounded bg-violet-50 px-2 py-1 text-[10px] text-violet-900"><MathFormula>{DSPARK_MARKOV_FORMULA}</MathFormula></div></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{snapshot.candidates.map((candidate, index) => { const previous = index === 0 ? snapshot.anchorToken : snapshot.candidates[index - 1].token; return <div key={candidate.id} className={`relative rounded-lg border p-2 ${snapshot.activeOperation?.type === 'sequentialMarkov' ? 'border-violet-400 bg-violet-50' : 'border-slate-200 bg-slate-50'}`}><div className="text-[8px] text-slate-400">{t('previousDraft')}</div><div className="mt-0.5 text-[10px] font-bold text-slate-700">{previous}</div><div className="my-1 flex items-center gap-1 text-[8px] text-violet-500"><ArrowRight size={12} /><span>{t('transitionBias')}</span></div><div className="text-[8px] text-slate-400">{t('finalGuess')}</div><div className="text-sm font-extrabold text-violet-800">{candidate.token}</div></div>; })}</div></div>
-
-        <div className={`grid gap-3 transition lg:grid-cols-[1.2fr_0.8fr] ${revealConfidence ? 'opacity-100' : 'opacity-40'}`}>
-          <div className="rounded-lg border border-blue-200 bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[9px] font-bold uppercase text-blue-700">{t('confidenceHeadLabel')}</span><span className="rounded bg-blue-50 px-2 py-1 text-[10px] text-blue-900"><MathFormula>{DSPARK_SURVIVAL_FORMULA}</MathFormula></span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{snapshot.candidates.map((candidate) => <div key={candidate.id} className={`rounded border p-2 ${candidate.scheduled || !revealSchedule ? 'border-blue-200 bg-blue-50' : 'border-dashed border-slate-300 bg-slate-50'}`}><div className="text-[9px] font-extrabold text-blue-900">{candidate.token}</div><div className="mt-1 flex justify-between text-[8px] text-slate-500"><span>{t('conditionalSurvival')}</span><strong>{Math.round(candidate.confidence * 100)}%</strong></div><div className="mt-1 flex justify-between text-[8px] text-slate-500"><span>{t('prefixSurvival')}</span><strong>{Math.round(candidate.survival * 100)}%</strong></div><div className="mt-1 h-1.5 rounded bg-white"><div className="h-full rounded bg-blue-500" style={{ width: `${candidate.survival * 100}%` }} /></div></div>)}</div></div>
-          <div className={`rounded-lg border p-3 ${snapshot.activeOperation?.type === 'scheduleVerify' ? 'border-orange-400 bg-orange-50 ring-2 ring-orange-100' : 'border-orange-200 bg-white'}`}><div className="text-[9px] font-bold uppercase text-orange-700">{t('hardwareCurve')}</div><div className="mt-2 flex h-14 items-end gap-1">{[78, 92, 100, 88].map((height, index) => <div key={index} className={`flex-1 rounded-t ${index < snapshot.verifiedCount ? 'bg-orange-400' : 'bg-slate-200'}`} style={{ height: `${height}%` }} />)}</div><div className="mt-2 flex justify-between text-[8px]"><span className="font-bold text-emerald-700">{t('keepPrefix')} {snapshot.verifiedCount}</span><span className="text-slate-400">{t('dropSuffix')} {snapshot.draftedCount - snapshot.verifiedCount}</span></div><p className="mt-2 text-[9px] leading-relaxed text-orange-800">{t('schedulerExplanation')}</p></div>
-        </div>
-
-        <div className={`rounded-lg border border-emerald-200 bg-white p-3 transition ${revealVerify ? 'opacity-100' : 'opacity-40'}`}><div className="mb-2 text-[9px] font-bold uppercase text-emerald-700">{t('targetVerifier')} → {t('correctionResult')}</div><div className="flex flex-wrap items-center gap-2"><span className="rounded bg-slate-800 px-2 py-1 text-[10px] font-bold text-white">{snapshot.anchorToken}</span><ArrowRight className="text-slate-300" size={15} />{snapshot.candidates.map((candidate) => <span key={candidate.id} className={`rounded border px-3 py-2 text-[10px] font-extrabold ${candidate.accepted && candidate.scheduled ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : candidate.scheduled ? 'border-rose-400 bg-rose-50 text-rose-800 line-through' : 'border-dashed border-slate-300 bg-slate-50 text-slate-400'}`}>{candidate.token}</span>)}<ArrowRight className="text-slate-300" size={15} /><span className="rounded border border-orange-400 bg-orange-100 px-3 py-2 text-[10px] font-extrabold text-orange-800">{snapshot.correctionToken}</span></div></div>
-      </div>
-    </div>
-  );
-}
-
-function TraceAndMetrics({ snapshot, t, isPlaying, onReset, onPlay, onNext }) {
-  const metrics = [
-    [t('metricCommitted'), `${snapshot.committedCount} ${t('tokenUnit')}`],
-    [t('metricBaselinePasses'), `${snapshot.baselineTargetPasses} ${t('passes')}`],
-    [t('metricTargetPasses'), `${snapshot.targetPasses} ${t('pass')}`],
-    [t('metricVerified'), `${snapshot.verifiedCount} / ${snapshot.draftedCount}`],
-    [t('metricWasted'), `${snapshot.wastedCount} ${t('positions')}`],
-  ];
-  return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4" data-testid="speculative-trace">
-      <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start"><div><h2 className="text-base font-extrabold text-slate-900">{t('traceTitle')} · {t(snapshot.algorithm)}</h2><p className="mt-1 text-xs text-slate-500">{t('traceSubtitle')}</p></div><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><StatusHeader snapshot={snapshot} t={t} /><TimelineControls isPlaying={isPlaying} isDone={snapshot.phase === 'done'} onReset={onReset} onPlay={onPlay} onNext={onNext} t={t} label="localTraceControls" /></div></div>
-      <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6">{snapshot.stages.map((stage, index) => <div key={stage.type} className={`relative rounded-lg border p-3 text-[10px] font-bold ${stageTone[stage.status]}`}><span className="mr-1 opacity-60">{index + 1}.</span>{t(stage.stageKey)}{index < snapshot.stages.length - 1 && <FastForward className="absolute -right-4 top-1/2 z-10 hidden -translate-y-1/2 text-slate-300 xl:block" size={14} />}</div>)}</div>
-      {snapshot.algorithm === 'eagle2' ? <EagleTrace snapshot={snapshot} t={t} /> : <DsparkTrace snapshot={snapshot} t={t} />}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3"><Check size={17} className="text-emerald-600" /><span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{t('output')}</span>{snapshot.committedTokens.map((token, index) => <span key={`${token}-${index}`} className={`rounded px-2 py-1 text-[10px] font-bold ${index === snapshot.committedTokens.length - 1 && snapshot.hasCorrection ? 'bg-orange-100 text-orange-800' : 'bg-white text-emerald-800'}`}>{token}</span>)}</div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">{metrics.map(([label, value]) => <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="text-[9px] uppercase tracking-wide text-slate-400">{label}</div><div className="mt-1 text-base font-extrabold text-slate-800">{value}</div></div>)}</div>
-    </section>
-  );
-}
-
-function KvLifecycle({ snapshot, t }) {
-  const commitVisible = snapshot.phase === 'done' || snapshot.activeOperation?.type === 'commitKv';
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4" data-testid="speculative-kv-lifecycle">
-      <div className="mb-3"><h2 className="text-sm font-extrabold text-slate-900">{t('lifecycleTitle')}</h2><p className="mt-1 text-[11px] text-slate-500">{t('lifecycleSubtitle')}</p></div>
-      <div className="grid grid-cols-[80px_1fr] items-center gap-2"><span className="text-[10px] font-bold text-slate-600">{t('prefixSlot')}</span><div className="flex gap-1"><div className="h-7 w-20 rounded border border-slate-300 bg-slate-200" />{snapshot.candidates.map((candidate, index) => { const committed = commitVisible && index < snapshot.acceptedDraftCount; const reclaimed = commitVisible && candidate.scheduled && !committed; const skipped = !candidate.scheduled; return <div key={candidate.id} className={`h-7 min-w-4 flex-1 rounded border ${committed ? 'border-emerald-400 bg-emerald-200' : reclaimed ? 'border-rose-300 bg-rose-50 bg-[linear-gradient(135deg,transparent_45%,#fda4af_46%,#fda4af_54%,transparent_55%)]' : skipped ? 'border-dashed border-slate-300 bg-white' : 'border-dashed border-blue-300 bg-blue-50'}`} />; })}{snapshot.hasCorrection && <div title={t('correction')} className={`h-7 min-w-4 flex-1 rounded border ${commitVisible ? 'border-emerald-500 bg-emerald-200 ring-1 ring-orange-300' : 'border-dashed border-orange-300 bg-orange-50'}`} />}</div></div>
-      <div className="mt-3 flex flex-wrap gap-3 text-[9px] text-slate-500"><span>■ {t('prefixSlot')}</span><span className="text-blue-600">□ {t('reservedSlot')}</span><span className="text-emerald-600">■ {t('committedSlot')}</span><span className="text-rose-500">▧ {t('reclaimedSlot')}</span><span>□ {t('skippedSlot')}</span></div>
-    </section>
-  );
-}
-
-function PrincipleAndRuntime({ snapshot, t }) {
-  const codeIndex = snapshot.phase === 'idle' ? -1 : snapshot.phase === 'done' ? snapshot.codeKeys.length - 1 : Math.min(snapshot.operationIndex, snapshot.codeKeys.length - 1);
-  return (
-    <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
-      <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#0d1117] text-slate-300"><div className="border-b border-slate-800 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-400">{t('runtimeOps')} · {t(snapshot.algorithm)}</div><div className="overflow-x-auto p-4 font-mono text-[11px] leading-6">{snapshot.codeKeys.map((key, index) => <div key={key} className={index === codeIndex ? 'rounded bg-blue-500/15 px-2 text-blue-200' : 'px-2'}>{t(key)}</div>)}</div></section>
-      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h3 className="text-xs font-bold uppercase tracking-wide text-amber-800">{t('boundary')}</h3><p className="mt-2 text-xs leading-relaxed text-amber-900">{t('boundaryText')}</p></section>
-    </div>
-  );
-}
-
 export default function SpeculativeDecoding() {
-  const [algorithm, setAlgorithm] = useState('eagle2');
-  const [scenario, setScenario] = useState('representative');
-  const [phase, setPhase] = useState('idle');
-  const [step, setStep] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [raceStep, setRaceStep] = useState(0);
-  const [racePlaying, setRacePlaying] = useState(false);
-  const [lang, setLang] = useState(getInitialLang());
-  const snapshot = useMemo(() => deriveSpeculativeSnapshot({ algorithm, scenario, phase, step, raceStep }), [algorithm, scenario, phase, step, raceStep]);
-  const t = (key, vars) => interpolate(i18n[lang][key] ?? key, vars);
-
-  const resetTrace = () => { setPhase('idle'); setStep(0); setIsPlaying(false); };
-  const resetRace = () => { setRaceStep(0); setRacePlaying(false); };
-  const resetAll = () => { resetTrace(); resetRace(); };
-  const handleNextStep = () => {
-    const next = getNextLifecycle(snapshot);
-    setPhase(next.phase);
-    setStep(next.step);
-    if (next.phase === 'done') setIsPlaying(false);
+  const [config,setConfigState]=useState({algorithm:'eagle2',depth:3,width:2,budget:8,blockSize:4});
+  const [phase,setPhase]=useState('idle');
+  const [step,setStep]=useState(0);
+  const [roundIndex,setRoundIndex]=useState(0);
+  const [isPlaying,setIsPlaying]=useState(false);
+  const [raceStep,setRaceStep]=useState(0);
+  const [racePlaying,setRacePlaying]=useState(false);
+  const [selectedNode,setSelectedNode]=useState(null);
+  const [lang,setLang]=useState(getInitialLang);
+  const s=useMemo(()=>deriveSpeculativeSnapshot({...config,phase,step,roundIndex,raceStep}),[config,phase,step,roundIndex,raceStep]);
+  const t=key=>i18n[lang][key]??key;
+  const resetTrace=()=>{setPhase('idle');setStep(0);setIsPlaying(false);setSelectedNode(null);};
+  const resetRace=()=>{setRaceStep(0);setRacePlaying(false);};
+  const setConfig=value=>{setConfigState(value);resetTrace();resetRace();setRoundIndex(0);};
+  const handleNextStep=()=>{
+    const next=getNextLifecycle(s);
+    setPhase(next.phase);setStep(next.step);setRoundIndex(next.roundIndex);
+    if(next.phase==='done')setIsPlaying(false);
   };
-  const togglePlay = () => {
-    if (snapshot.phase === 'idle' || snapshot.phase === 'done') { setPhase('running'); setStep(0); setIsPlaying(true); return; }
-    setIsPlaying((value) => !value);
+  const togglePlay=()=>{
+    if(s.phase==='done'){setPhase('running');setStep(0);setIsPlaying(true);}
+    else if(s.phase==='idle'){setPhase('running');setStep(0);setIsPlaying(true);}
+    else setIsPlaying(value=>!value);
   };
-
-  useEffect(() => {
-    if (!isPlaying || snapshot.phase !== 'running') return undefined;
-    const delay = snapshot.activeOperation?.type === 'targetVerify' ? 1150 : 820;
-    const timer = setTimeout(handleNextStep, delay);
-    return () => clearTimeout(timer);
-  }, [isPlaying, snapshot.phase, snapshot.step, snapshot.algorithm, snapshot.scenario]);
-
-  useEffect(() => {
-    if (!racePlaying) return undefined;
-    if (snapshot.race.isDone) { setRacePlaying(false); return undefined; }
-    const timer = setTimeout(() => setRaceStep((value) => Math.min(value + 1, snapshot.race.maxStep)), 620);
-    return () => clearTimeout(timer);
-  }, [racePlaying, snapshot.race.step, snapshot.race.isDone, snapshot.algorithm, snapshot.scenario]);
-
-  const handleRaceNext = () => {
-    setRacePlaying(false);
-    setRaceStep((value) => Math.min(value + 1, snapshot.race.maxStep));
-  };
-  const toggleRacePlay = () => {
-    if (snapshot.race.isDone) { setRaceStep(0); setRacePlaying(true); return; }
-    setRacePlaying((value) => !value);
-  };
-
-  const changeAlgorithm = (value) => { setAlgorithm(value); resetAll(); };
-  const changeScenario = (value) => { setScenario(value); resetAll(); };
-
-  return (
-    <div className="min-h-full bg-slate-50 text-slate-800">
-      <header className="border-b border-slate-200 bg-white px-4 py-4 lg:px-6">
-        <div className="mx-auto flex max-w-[1600px] flex-col justify-between gap-3 xl:flex-row xl:items-start">
-          <div><h1 className="text-2xl font-extrabold tracking-tight text-slate-900">{t('title')}</h1><p className="mt-1 text-sm text-slate-500">{t('subtitle')}</p></div>
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <div className="inline-flex rounded-lg bg-slate-100 p-1">{['eagle2', 'dspark'].map((item) => <button key={item} type="button" onClick={() => changeAlgorithm(item)} aria-pressed={algorithm === item} className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${algorithm === item ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{t(item)}</button>)}</div>
-            <div className="inline-flex rounded-lg bg-slate-100 p-1">{['representative', 'lowAcceptance'].map((item) => <button key={item} type="button" onClick={() => changeScenario(item)} aria-pressed={scenario === item} className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${scenario === item ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{t(item)}</button>)}</div>
-            <button type="button" onClick={() => setLang((value) => value === 'zh' ? 'en' : 'zh')} aria-label={t('switchEnglish')} title={t('langToggle')} className="inline-flex h-9 items-center gap-1 rounded-lg bg-slate-100 px-2 text-xs font-semibold text-slate-600 hover:bg-slate-200"><Globe size={16} />{t('langToggle')}</button>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[1600px] space-y-4 p-4 lg:p-6">
-        <WhyFaster snapshot={snapshot} t={t} racePlaying={racePlaying} onRaceReset={resetRace} onRacePlay={toggleRacePlay} onRaceNext={handleRaceNext} />
-        <Architecture snapshot={snapshot} t={t} isPlaying={isPlaying} onReset={resetTrace} onPlay={togglePlay} onNext={() => { setIsPlaying(false); handleNextStep(); }} />
-        <PrincipleAndRuntime snapshot={snapshot} t={t} />
-      </main>
-    </div>
-  );
+  const inspect=index=>{setRoundIndex(index);resetTrace();setRacePlaying(false);};
+  const raceNext=()=>{setRacePlaying(false);setRaceStep(value=>Math.min(s.race.maxStep,value+1));};
+  const racePlay=()=>{if(s.race.isDone)setRaceStep(0);setRacePlaying(value=>!value);};
+  useEffect(()=>{
+    if(!isPlaying||s.phase!=='running')return undefined;
+    const timer=setTimeout(handleNextStep,s.event?.type==='verify'?1000:650);
+    return ()=>clearTimeout(timer);
+  },[isPlaying,phase,step,roundIndex,config]);
+  useEffect(()=>{
+    if(!racePlaying||s.race.isDone){if(s.race.isDone)setRacePlaying(false);return undefined;}
+    const timer=setTimeout(()=>setRaceStep(value=>Math.min(s.race.maxStep,value+1)),150);
+    return ()=>clearTimeout(timer);
+  },[racePlaying,raceStep,s.race.isDone]);
+  return <div className="spec-page min-h-full bg-slate-50 text-slate-800">
+    <header className="border-b border-slate-200 bg-white px-4 py-4 lg:px-6"><div className="mx-auto flex max-w-[1600px] flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-extrabold">{t('title')}</h1><p className="mt-1 text-sm text-slate-500">{t('subtitle')}</p></div><div className="flex items-center gap-2"><div className="flex rounded-lg bg-slate-100 p-1">{['eagle2','dspark'].map(algorithm=><button key={algorithm} aria-pressed={config.algorithm===algorithm} className={'rounded-md px-3 py-1.5 text-xs font-semibold '+(config.algorithm===algorithm?'bg-white text-blue-700 shadow-sm':'text-slate-600')} onClick={()=>setConfig({...config,algorithm})}>{t(algorithm)}</button>)}</div><button onClick={()=>setLang(value=>value==='zh'?'en':'zh')} aria-label={t('language')} className="spec-icon !w-auto gap-1 !px-2 text-xs"><Globe size={15}/>{t('langToggle')}</button></div></div></header>
+    <main className="mx-auto max-w-[1600px] space-y-4 p-4 lg:p-6">
+      <Race s={s} t={t} config={config} setConfig={setConfig} playing={racePlaying} onPlay={racePlay} onNext={raceNext} onReset={resetRace} onInspect={inspect}/>
+      <Workbench s={s} t={t} playing={isPlaying} onPlay={togglePlay} onNext={()=>{setIsPlaying(false);handleNextStep();}} onReset={resetTrace} onRound={inspect} selectedNode={selectedNode} setSelectedNode={setSelectedNode}/>
+      <Principles s={s} t={t}/>
+    </main>
+  </div>;
 }

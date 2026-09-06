@@ -1,0 +1,13 @@
+.spec-page .spec-card { border: 1px solid #e2e8f0; border-radius: 12px; background: white; padding: 16px; min-width: 0; }
+.spec-page .spec-icon { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border: 1px solid #e2e8f0; border-radius: 8px; background: white; color: #475569; }
+.spec-page .spec-icon:disabled { opacity: .35; cursor: default; }
+.spec-page button:focus-visible, .spec-page input:focus-visible, .spec-page select:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+.spec-page .spec-small-button { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 9px; background: white; color: #334155; font-size: 11px; }
+.spec-page .spec-lane { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; background: #f8fafc; }
+.spec-workbench { container-type: inline-size; }
+.spec-tree-mask { display: grid; gap: 12px; min-width: 0; }
+@container (min-width: 960px) { .spec-tree-mask { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); } }
+.spec-page .katex { font-size: 1.08em; }
+.spec-page .overflow-x-auto:has(.katex) { overflow-y: hidden; padding-block: 4px; padding-inline: 4px; }
+.spec-page table th { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .spec-page * { animation: none !important; transition: none !important; } }
